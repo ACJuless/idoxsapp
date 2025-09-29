@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "901306926171",
+    "project_id": "idoxsapp",
+    "storage_bucket": "idoxsapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:901306926171:android:b99e96d47d23921911eb7e",
+        "android_client_info": {
+          "package_name": "com.example.idoxsapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB2vhsQvcdwI-0rDY0wLsuhr3O4sW5421c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
