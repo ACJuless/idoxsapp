@@ -1,64 +1,39 @@
 import 'package:flutter/material.dart';
-import 'package:animated_splash_screen/animated_splash_screen.dart';
-import 'package:google_fonts/google_fonts.dart';
-import '../constants/app_constants.dart';
-import '../main.dart';
+import 'package:lottie/lottie.dart';
+import 'dart:async';
 
-class SplashScreen extends StatelessWidget {
+class SplashScreen extends StatefulWidget {
+  @override
+  _SplashScreenState createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Splash screen stays for 5 seconds, then routes to /login
+    Timer(Duration(seconds: 6), () {
+      Navigator.pushReplacementNamed(context, '/login');
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AnimatedSplashScreen(
-      duration: 2000,
-      splash: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // App Logo
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              gradient: AppColors.primaryGradient,
-              borderRadius: BorderRadius.circular(30),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withOpacity(0.3),
-                  blurRadius: 20,
-                  offset: Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Icon(
-              Icons.edit_document,
-              size: 60,
-              color: Colors.white,
-            ),
+    return Scaffold(
+      body: Container(
+        color: Colors.black, 
+        width: double.infinity,
+        height: double.infinity,
+        child: Center(
+          child: Lottie.asset(
+            'assets/animations/splash_animation.json', 
+            width: 220,
+            fit: BoxFit.contain,
+            repeat: true,
+            animate: true,
           ),
-          SizedBox(height: 24),
-          // App Name
-          Text(
-            'IdoxsApp',
-            style: GoogleFonts.inter(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              color: AppColors.primary,
-            ),
-          ),
-          SizedBox(height: 8),
-          // Tagline
-          Text(
-            'Digital Signature Solutions',
-            style: GoogleFonts.inter(
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
+        ),
       ),
-      nextScreen: AuthWrapper(),
-      splashTransition: SplashTransition.fadeTransition,
-      backgroundColor: AppColors.background,
-      animationDuration: Duration(milliseconds: 800),
     );
   }
 }
