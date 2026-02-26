@@ -111,15 +111,15 @@ class AppAnimations {
 
 class MenuItems {
   static const List<Map<String, dynamic>> drawerItems = [
-    {'title': 'Home', 'icon': Icons.home, 'route': '/home'},
-    {'title': 'Itinerary', 'icon': Icons.schedule, 'route': '/itinerary'},
-    {'title': 'Doctor', 'icon': Icons.local_hospital, 'route': '/doctor'},
-    {'title': 'Reload', 'icon': Icons.refresh, 'route': '/reload'},
-    {'title': 'Dashboard', 'icon': Icons.dashboard, 'route': '/dashboard'},
-    {'title': 'Outbox', 'icon': Icons.outbox, 'route': '/outbox'},
-    {'title': 'Map/GPS', 'icon': Icons.map, 'route': '/map'},
-    {'title': 'Marketing Tools', 'icon': Icons.campaign, 'route': '/marketing'},
-    {'title': 'Electronic Forms', 'icon': Icons.description, 'route': '/forms'},
-    {'title': 'Sales', 'icon': Icons.trending_up, 'route': '/sales'},
+    {'title': 'Home', 'icon': Icons.home_outlined, 'route': '/home'},
+    {'title': 'Contacts', 'icon': Icons.person_outlined, 'route': '/doctor'},
+    {'title': 'Itinerary', 'icon': Icons.calendar_month_outlined, 'route': '/itinerary'},
+    // {'title': 'Reload', 'icon': Icons.refresh, 'route': '/reload'},
+    // {'title': 'Dashboard', 'icon': Icons.dashboard, 'route': '/dashboard'},
+    // {'title': 'Outbox', 'icon': Icons.outbox, 'route': '/outbox'},
+    {'title': 'Map/GPS', 'icon': Icons.location_pin, 'route': '/map'},
+    // {'title': 'Marketing Tools', 'icon': Icons.campaign, 'route': '/marketing'},
+    {'title': 'Electronic Forms', 'icon': Icons.insert_drive_file_outlined, 'route': '/forms'},
+    // {'title': 'Sales', 'icon': Icons.trending_up, 'route': '/sales'},
   ];
 }

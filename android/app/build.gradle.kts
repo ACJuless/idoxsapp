@@ -1,11 +1,3 @@
-plugins {
-    id("com.android.application")
-    id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
-    id("dev.flutter.flutter-gradle-plugin")
-    // Add Google Services plugin for Firebase
-    id("com.google.gms.google-services")
-}
 
 android {
     namespace = "com.example.idoxsapp"
@@ -13,12 +5,12 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // coreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
+        jvmTarget = "11"
     }
 
     defaultConfig {
@@ -63,4 +55,17 @@ dependencies {
     
     // Firebase Auth and Firestore are handled by Flutter plugins
     // but we include the BOM for version consistency
+
+    // coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+
+
+}
+
+plugins {
+    id("com.android.application")
+    id("kotlin-android")
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id("dev.flutter.flutter-gradle-plugin")
+    // Add Google Services plugin for Firebase
+    id("com.google.gms.google-services")
 }

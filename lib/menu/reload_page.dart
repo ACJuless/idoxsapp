@@ -20,6 +20,42 @@ class ReloadPage extends StatelessWidget {
           title: Text('App Updates'),
           subtitle: Text('Check for latest version'),
         ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: ElevatedButton(
+            onPressed: () {
+              // TODO: Add reload logic here
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange.shade600,
+            ),
+            child: Text('Reload'),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: ElevatedButton(
+            onPressed: () {
+              // TODO: Add send updates logic here
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange.shade600,
+            ),
+            child: Text('Send Updates'),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: ElevatedButton(
+            onPressed: () {
+              // TODO: Add reload notes logic here
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange.shade600,
+            ),
+            child: Text('Reload Notes'),
+          ),
+        ),
       ],
     );
   }

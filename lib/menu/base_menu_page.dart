@@ -1,3 +1,5 @@
+// The skeleton for the pages in the drawer
+
 import 'package:flutter/material.dart';
 import '../constants/app_constants.dart';
 
@@ -111,47 +113,47 @@ class BaseMenuPage extends StatelessWidget {
                       padding: EdgeInsets.all(AppSizes.paddingL),
                       child: Column(
                         children: [
-                          Text(
-                            'Coming Soon',
-                            style: AppTextStyles.heading3,
-                          ),
-                          SizedBox(height: AppSizes.paddingM),
-                          Text(
-                            'This feature is currently under development. We\'re working hard to bring you the best experience.',
-                            style: AppTextStyles.body2,
-                            textAlign: TextAlign.center,
-                          ),
-                          SizedBox(height: AppSizes.paddingL),
+                          // Text(
+                          //   'Coming Soon',
+                          //   style: AppTextStyles.heading3,
+                          // ),
+                          // SizedBox(height: AppSizes.paddingM),
+                          // Text(
+                          //   'This feature is currently under development. We\'re working hard to bring you the best experience.',
+                          //   style: AppTextStyles.body2,
+                          //   textAlign: TextAlign.center,
+                          // ),
+                          // SizedBox(height: AppSizes.paddingL),
                           
                           // Additional content if provided
                           if (additionalContent != null) ...additionalContent!,
                           
-                          Spacer(),
+                          // Spacer(),
                           
                           // Action Button
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('$title feature coming soon!'),
-                                    backgroundColor: pageAccentColor,
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(AppSizes.radiusM),
-                                    ),
-                                  ),
-                                );
-                              },
-                              icon: Icon(Icons.notifications),
-                              label: Text('Notify When Available'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: pageAccentColor,
-                                padding: EdgeInsets.symmetric(vertical: AppSizes.paddingM),
-                              ),
-                            ),
-                          ),
+                          // SizedBox(
+                          //   width: double.infinity,
+                          //   child: ElevatedButton.icon(
+                          //     onPressed: () {
+                          //       ScaffoldMessenger.of(context).showSnackBar(
+                          //         SnackBar(
+                          //           content: Text('$title feature coming soon!'),
+                          //           backgroundColor: pageAccentColor,
+                          //           behavior: SnackBarBehavior.floating,
+                          //           shape: RoundedRectangleBorder(
+                          //             borderRadius: BorderRadius.circular(AppSizes.radiusM),
+                          //           ),
+                          //         ),
+                          //       );
+                          //     },
+                          //     icon: Icon(Icons.notifications),
+                          //     label: Text('Notify When Available'),
+                          //     style: ElevatedButton.styleFrom(
+                          //       backgroundColor: pageAccentColor,
+                          //       padding: EdgeInsets.symmetric(vertical: AppSizes.paddingM),
+                          //     ),
+                          //   ),
+                          // ),
                         ],
                       ),
                     ),
