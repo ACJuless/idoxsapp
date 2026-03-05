@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class CallSignaturePage extends StatefulWidget {
   final String doctorId;
-  final String scheduledVisitId;
+  final String scheduledVisitId; // EXPECTED to be yyyy-MM-dd for this doctor
   final void Function(bool drawing)? onDrawing;
 
   const CallSignaturePage({
@@ -62,7 +62,8 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
     final prefs = await SharedPreferences.getInstance();
     final userEmail = prefs.getString('userEmail') ?? '';
     setState(() {
-      emailKey = userEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
+      emailKey =
+          userEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
     });
     if (emailKey != null && emailKey!.isNotEmpty) {
       _loadExistingSignature();
@@ -75,19 +76,34 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
     super.dispose();
   }
 
+  /// Build the Firestore doc ref where this visit data is stored.
+  /// Path: flowDB/users/{emailKey}/doctors/doctors/{doctorId}
+  ///       /scheduledVisits/months/months/{yyyy-MM}/dates/{scheduledVisitId}
+  DocumentReference<Map<String, dynamic>> _visitDocRef() {
+    final dateId = widget.scheduledVisitId; // assumed yyyy-MM-dd
+    final year = dateId.substring(0, 4);
+    final month = dateId.substring(5, 7);
+    final monthId = '$year-$month'; // yyyy-MM
+
+    return FirebaseFirestore.instance
+        .collection('flowDB')
+        .doc('users')
+        .collection(emailKey!)
+        .doc('doctors')
+        .collection('doctors')
+        .doc(widget.doctorId)
+        .collection('scheduledVisits')
+        .doc('months')
+        .collection('months')
+        .doc(monthId)
+        .collection('dates')
+        .doc(dateId);
+  }
+
   Future<void> _loadExistingSignature() async {
     if (emailKey == null) return;
     try {
-      final visitDoc = await FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('users')
-          .collection(emailKey!)
-          .doc('doctors')
-          .collection('doctors')
-          .doc(widget.doctorId)
-          .collection('scheduledVisits')
-          .doc(widget.scheduledVisitId)
-          .get();
+      final visitDoc = await _visitDocRef().get();
 
       if (visitDoc.exists) {
         final data = visitDoc.data();
@@ -111,9 +127,12 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
 
         // ===== LOAD SIGNATURE AS BEFORE =====
         if (data != null && data.containsKey('signaturePoints')) {
-          final signatureData = data['signaturePoints'] as List<dynamic>;
-          final List<Point> points = signatureData.map((pointData) {
-            final map = pointData as Map<String, dynamic>;
+          final signatureData =
+              data['signaturePoints'] as List<dynamic>;
+          final List<Point> points =
+              signatureData.map((pointData) {
+            final map =
+                pointData as Map<String, dynamic>;
             return Point(
               Offset(map['x'] as double, map['y'] as double),
               PointType.values[map['type'] as int],
@@ -138,7 +157,8 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
         });
       }
     } catch (e) {
-      print('Error loading signature/sample allocations: $e');
+      print(
+          'Error loading signature/sample allocations: $e');
     }
   }
 
@@ -149,15 +169,19 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('Delete Signature'),
-          content: Text('Are you sure you want to delete this signature?'),
+          content: Text(
+              'Are you sure you want to delete this signature?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () =>
+                  Navigator.of(context).pop(false),
               child: Text('Cancel'),
             ),
             TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              onPressed: () =>
+                  Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(
+                  foregroundColor: Colors.red),
               child: Text('Yes'),
             ),
           ],
@@ -167,20 +191,14 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
 
     if (confirmed == true) {
       try {
-        await FirebaseFirestore.instance
-            .collection('flowDB')
-            .doc('users')
-            .collection(emailKey!)
-            .doc('doctors')
-            .collection('doctors')
-            .doc(widget.doctorId)
-            .collection('scheduledVisits')
-            .doc(widget.scheduledVisitId)
-            .update({
-          'signaturePoints': FieldValue.delete(),
-          'signatureSavedAt': FieldValue.delete(),
-          'submitted': false,
-        });
+        await _visitDocRef().set(
+          {
+            'signaturePoints': FieldValue.delete(),
+            'signatureSavedAt': FieldValue.delete(),
+            'submitted': false,
+          },
+          SetOptions(merge: true),
+        );
 
         setState(() {
           _controller.clear();
@@ -190,14 +208,16 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Signature deleted successfully'),
+            content:
+                Text('Signature deleted successfully'),
             backgroundColor: Colors.orange,
           ),
         );
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error deleting signature: ${e.toString()}'),
+            content: Text(
+                'Error deleting signature: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -210,7 +230,8 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
     if (samples.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('You must add at least one sample allocation.'),
+          content: Text(
+              'You must add at least one sample allocation.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -218,9 +239,17 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
     }
     setState(() => _saving = true);
     try {
+      // build base update data
       Map<String, dynamic> updateData = {
         'sampleAllocations': sampleQty,
       };
+
+      // always make sure scheduledDate is present on this doc
+      final dateId = widget.scheduledVisitId; // yyyy-MM-dd
+      updateData['scheduledDate'] = dateId;
+
+      // optionally, if you pass scheduledTime via route or store it:
+      // updateData['scheduledTime'] = someTimeString;
 
       if (_controller.isNotEmpty) {
         final points = _controller.points;
@@ -240,16 +269,12 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
         });
       }
 
-      await FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('users')
-          .collection(emailKey!)
-          .doc('doctors')
-          .collection('doctors')
-          .doc(widget.doctorId)
-          .collection('scheduledVisits')
-          .doc(widget.scheduledVisitId)
-          .update(updateData);
+      // Use set(..., merge: true) so doc is created if missing,
+      // and updated otherwise (no more not-found errors).
+      await _visitDocRef().set(
+        updateData,
+        SetOptions(merge: true),
+      );
 
       // Mark allocations as saved at least once
       if (!_allocationsSavedOnce) {
@@ -296,8 +321,10 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
   }
 
   Future<void> _loadPdfSampleProducts() async {
-    final manifestContent = await rootBundle.loadString('AssetManifest.json');
-    final Map<String, dynamic> manifestMap = jsonDecode(manifestContent);
+    final manifestContent =
+        await rootBundle.loadString('AssetManifest.json');
+    final Map<String, dynamic> manifestMap =
+        jsonDecode(manifestContent);
     final pdfs = manifestMap.keys
         .where((String key) =>
             key.startsWith('assets/marketing_tools/') &&
@@ -313,7 +340,9 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
               .replaceAll('.pdf', '')
               .replaceAll('_', ' '))
           .toList();
-      sampleCounts = {for (final s in sampleProducts) s: 0};
+      sampleCounts = {
+        for (final s in sampleProducts) s: 0
+      };
     });
   }
 
@@ -322,8 +351,9 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
     int tempQty = 1;
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setStateDialog) => AlertDialog(
+      builder: (context) =>
+          StatefulBuilder(builder: (context, setStateDialog) {
+        return AlertDialog(
           title: Text('ProMat Allocation'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -336,7 +366,8 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                     .toList(),
                 onChanged: (newVal) {
                   if (newVal != null) {
-                    setStateDialog(() => dropdownValue = newVal);
+                    setStateDialog(
+                        () => dropdownValue = newVal);
                   }
                 },
                 decoration: InputDecoration(
@@ -352,18 +383,21 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                     icon: Icon(Icons.remove_circle_outline,
                         color: Colors.red, size: 28),
                     onPressed: tempQty > 1
-                        ? () => setStateDialog(() => tempQty--)
+                        ? () =>
+                            setStateDialog(() => tempQty--)
                         : null,
                   ),
                   Text(
                     '$tempQty',
-                    style:
-                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold),
                   ),
                   IconButton(
                     icon: Icon(Icons.add_circle_outline,
                         color: Colors.green, size: 28),
-                    onPressed: () => setStateDialog(() => tempQty++),
+                    onPressed: () =>
+                        setStateDialog(() => tempQty++),
                   ),
                 ],
               ),
@@ -371,7 +405,8 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () =>
+                  Navigator.pop(context),
               child: Text('Cancel'),
             ),
             ElevatedButton(
@@ -387,8 +422,8 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
               child: Text('Submit'),
             ),
           ],
-        ),
-      ),
+        );
+      }),
     );
   }
 
@@ -408,27 +443,31 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
         builder: (context, constraints) {
           return SingleChildScrollView(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+              padding:
+                  const EdgeInsets.fromLTRB(24, 32, 24, 24),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
                 children: [
                   // ================================
                   //       PROMO MATERIALS FIRST
                   // ================================
                   Text(
                     'Promo Materials Allocated:',
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16),
                   ),
                   SizedBox(height: 16),
                   ...samples.map(
                     (sample) => Card(
                       elevation: 0,
-                      margin: EdgeInsets.symmetric(vertical: 2),
+                      margin:
+                          EdgeInsets.symmetric(vertical: 2),
                       child: ListTile(
                         leading: IconButton(
-                          icon:
-                              Icon(Icons.close, color: Colors.red, size: 22),
+                          icon: Icon(Icons.close,
+                              color: Colors.red, size: 22),
                           onPressed: _hasSignature
                               ? null
                               : () async {
@@ -438,20 +477,15 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                                   });
 
                                   if (emailKey != null &&
-                                      emailKey!.isNotEmpty) {
-                                    final docRef = FirebaseFirestore.instance
-                                        .collection('flowDB')
-                                        .doc('users')
-                                        .collection(emailKey!)
-                                        .doc('doctors')
-                                        .collection('doctors')
-                                        .doc(widget.doctorId)
-                                        .collection('scheduledVisits')
-                                        .doc(widget.scheduledVisitId);
+                                      emailKey!
+                                          .isNotEmpty) {
+                                    final docRef =
+                                        _visitDocRef();
 
                                     await docRef.update({
                                       'sampleAllocations.$sample':
-                                          FieldValue.delete(),
+                                          FieldValue
+                                              .delete(),
                                     });
                                   }
                                 },
@@ -459,12 +493,14 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                         title: Text(
                           sample,
                           style: TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w500),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500),
                         ),
                         trailing: Text(
                           'Qty: ${sampleQty[sample] ?? 1}',
                           style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold),
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
@@ -472,18 +508,26 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                   SizedBox(height: 16),
                   Center(
                     child: ElevatedButton.icon(
-                      onPressed: _hasSignature ? null : _showAddSampleDialog,
+                      onPressed: _hasSignature
+                          ? null
+                          : _showAddSampleDialog,
                       icon: Icon(Icons.add),
                       label: Text(
                         'Add ProMats',
                         style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16),
                       ),
-                      style: ElevatedButton.styleFrom(
+                      style:
+                          ElevatedButton.styleFrom(
                         padding: EdgeInsets.symmetric(
-                            horizontal: 28, vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                            horizontal: 28,
+                            vertical: 14),
+                        shape:
+                            RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.circular(
+                                  12),
                         ),
                       ),
                     ),
@@ -495,11 +539,13 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                   //   1) has samples
                   //   2) user pressed Save & Submit at least once
                   // ================================
-                  if (samples.isNotEmpty && _allocationsSavedOnce) ...[
+                  if (samples.isNotEmpty &&
+                      _allocationsSavedOnce) ...[
                     Text(
                       "Draw the doctor's signature below:",
                       style: TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16),
                     ),
                     SizedBox(height: 8),
                     if (_hasSignature)
@@ -507,22 +553,33 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                         padding: EdgeInsets.symmetric(
                             horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: Colors.green.shade100,
-                          borderRadius: BorderRadius.circular(12),
-                          border:
-                              Border.all(color: Colors.green.shade700),
+                          color: Colors
+                              .green.shade100,
+                          borderRadius:
+                              BorderRadius.circular(
+                                  12),
+                          border: Border.all(
+                              color: Colors
+                                  .green.shade700),
                         ),
                         child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                          mainAxisSize:
+                              MainAxisSize.min,
                           children: [
-                            Icon(Icons.check_circle,
-                                color: Colors.green.shade700, size: 18),
+                            Icon(
+                              Icons.check_circle,
+                              color: Colors
+                                  .green.shade700,
+                              size: 18,
+                            ),
                             SizedBox(width: 6),
                             Text(
                               'Signature Saved & Submitted',
                               style: TextStyle(
-                                color: Colors.green.shade700,
-                                fontWeight: FontWeight.bold,
+                                color: Colors
+                                    .green.shade700,
+                                fontWeight:
+                                    FontWeight.bold,
                                 fontSize: 13,
                               ),
                             ),
@@ -531,45 +588,76 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                       ),
                     SizedBox(height: 12),
                     Listener(
-                      onPointerDown: (_) => widget.onDrawing?.call(true),
-                      onPointerUp: (_) => widget.onDrawing?.call(false),
+                      onPointerDown: (_) =>
+                          widget.onDrawing
+                              ?.call(true),
+                      onPointerUp: (_) =>
+                          widget.onDrawing
+                              ?.call(false),
                       child: Stack(
                         children: [
                           Container(
                             height: signPadHeight,
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius:
+                                  BorderRadius.circular(
+                                      10),
                               border: Border.all(
-                                  color: Colors.black45, width: 2),
+                                  color: Colors
+                                      .black45,
+                                  width: 2),
                               color: Colors.white,
                             ),
                             child: Signature(
-                              controller: _controller,
-                              backgroundColor: Colors.transparent,
+                              controller:
+                                  _controller,
+                              backgroundColor:
+                                  Colors
+                                      .transparent,
                             ),
                           ),
                           if (_hasSignature)
                             Positioned.fill(
                               child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(10),
-                                  color: Colors.grey.withOpacity(0.1),
+                                decoration:
+                                    BoxDecoration(
+                                  borderRadius:
+                                      BorderRadius
+                                          .circular(
+                                              10),
+                                  color: Colors
+                                      .grey
+                                      .withOpacity(
+                                          0.1),
                                 ),
                                 child: Center(
                                   child: Container(
-                                    padding: EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black54,
+                                    padding: EdgeInsets
+                                        .symmetric(
+                                            horizontal:
+                                                16,
+                                            vertical:
+                                                8),
+                                    decoration:
+                                        BoxDecoration(
+                                      color: Colors
+                                          .black54,
                                       borderRadius:
-                                          BorderRadius.circular(8),
+                                          BorderRadius
+                                              .circular(
+                                                  8),
                                     ),
                                     child: Text(
                                       'Signature Locked',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
+                                      style:
+                                          TextStyle(
+                                        color: Colors
+                                            .white,
+                                        fontWeight:
+                                            FontWeight
+                                                .bold,
+                                        fontSize:
+                                            14,
                                       ),
                                     ),
                                   ),
@@ -589,28 +677,44 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                     child: SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: (_saving || samples.isEmpty)
-                            ? null
-                            : _saveSignatureAndSubmit,
+                        onPressed:
+                            (_saving ||
+                                    samples
+                                        .isEmpty)
+                                ? null
+                                : _saveSignatureAndSubmit,
                         icon: _saving
                             ? SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
+                                child:
+                                    CircularProgressIndicator(
+                                  color:
+                                      Colors.white,
+                                  strokeWidth:
+                                      2,
                                 ),
                               )
                             : Icon(Icons.check),
                         label: Text(
-                          _saving ? "Saving..." : "Save & Submit",
+                          _saving
+                              ? "Saving..."
+                              : "Save & Submit",
                         ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green.shade700,
-                          foregroundColor: Colors.white,
+                        style:
+                            ElevatedButton.styleFrom(
+                          backgroundColor:
+                              Colors.green
+                                  .shade700,
+                          foregroundColor:
+                              Colors.white,
                           padding:
-                              EdgeInsets.symmetric(vertical: 14),
-                          disabledBackgroundColor: Colors.grey,
+                              EdgeInsets
+                                  .symmetric(
+                            vertical: 14,
+                          ),
+                          disabledBackgroundColor:
+                              Colors.grey,
                         ),
                       ),
                     ),

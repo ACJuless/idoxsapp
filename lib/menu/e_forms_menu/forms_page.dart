@@ -6,11 +6,8 @@ import 'attendance_form_transactions_page.dart';
 import 'scp_form_transactions_page.dart';
 import 'abr_form_transactions_page.dart';
 import 'in_field_coaching_form_transactions_page.dart';
-import 'in_field_coaching_form_page.dart';
-import 'incidental_coverage_form_transactions_page.dart';
 import 'sales_order_form_page.dart';
 import 'incidental_coverage_form_page.dart';
-import 'sales_order_form_transactions_page.dart';
 
 class FormsPage extends StatefulWidget {
   const FormsPage({Key? key}) : super(key: key);
@@ -20,7 +17,7 @@ class FormsPage extends StatefulWidget {
 }
 
 class _FormsPageState extends State<FormsPage> {
-  // 0 = Attendance, 1 = SCP, 2 = ABR, 3 = In-Field Coaching, 4 = Incidental Coverage, 5 = Sales Order
+  // 0 = Attendance, 1 = SCP, 2 = ABR, 3 = In-Field Coaching, 4 = Incidental Coverage, 5 = Sales Order, 6 = WebView Form
   int _selectedIndex = -1;
 
   // userKey for Firestore path (shared by Attendance, SCP, ABR, etc.)
@@ -72,7 +69,8 @@ class _FormsPageState extends State<FormsPage> {
               ],
             ),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
               alignment: Alignment.center,
               child: Text(
                 title,
@@ -370,7 +368,8 @@ class _FormsPageState extends State<FormsPage> {
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 12,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight:
+                                          FontWeight.w600,
                                     ),
                                   ),
                                 ),
@@ -576,7 +575,8 @@ class _FormsPageState extends State<FormsPage> {
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 12,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight:
+                                          FontWeight.w600,
                                     ),
                                   ),
                                 ),
@@ -762,7 +762,8 @@ class _FormsPageState extends State<FormsPage> {
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 12,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight:
+                                          FontWeight.w600,
                                     ),
                                   ),
                                 ),
@@ -932,7 +933,8 @@ class _FormsPageState extends State<FormsPage> {
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 12,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight:
+                                          FontWeight.w600,
                                     ),
                                   ),
                                 ),
@@ -1058,9 +1060,9 @@ class _FormsPageState extends State<FormsPage> {
                         MaterialPageRoute(
                           builder: (context) =>
                               SalesOrderFormPage(
-                                formData: data,
-                                readonly: true,
-                              ),
+                            formData: data,
+                            readonly: true,
+                          ),
                         ),
                       );
                     },
@@ -1100,7 +1102,8 @@ class _FormsPageState extends State<FormsPage> {
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 12,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight:
+                                          FontWeight.w600,
                                     ),
                                   ),
                                 ),
@@ -1225,7 +1228,8 @@ class _FormsPageState extends State<FormsPage> {
           const SizedBox(height: 20),
 
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: SizedBox(
               height: 80,
               child: ListView(

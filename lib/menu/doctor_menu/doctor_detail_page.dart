@@ -112,12 +112,13 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
           children: [
             Text(
               "$label:",
-              style: TextStyle(fontSize: 16, color: Color(0xFF555f6f)),
+              style: const TextStyle(fontSize: 16, color: Color(0xFF555f6f)),
             ),
-            SizedBox(height: 2),
+            const SizedBox(height: 2),
             Text(
               _formatPlannedInfo(label, value),
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              style:
+                  const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
           ],
         ),
@@ -162,7 +163,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              padding: EdgeInsets.all(8),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: iconBgColor,
                 borderRadius: BorderRadius.circular(18),
@@ -173,10 +174,10 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                 size: 22,
               ),
             ),
-            SizedBox(width: 8),
+            const SizedBox(width: 8),
             Text(
               title,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: Colors.black,
@@ -196,7 +197,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
         _isUpdatingImage = false;
       });
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Gallery access denied.')));
+          .showSnackBar(const SnackBar(content: Text('Gallery access denied.')));
       return;
     }
     try {
@@ -222,14 +223,16 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
         _isUpdatingImage = false;
       });
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Profile picture updated.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile picture updated.')),
+      );
     } catch (e) {
       setState(() {
         _isUpdatingImage = false;
       });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Failed to upload image.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to upload image.')),
+      );
     }
   }
 
@@ -282,7 +285,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text("Doctor information updated successfully"),
           backgroundColor: Colors.green,
         ),
@@ -343,8 +346,8 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
   Widget build(BuildContext context) {
     if (emailKey == null || emailKey!.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: Text('Doctor')),
-        body: Center(child: CircularProgressIndicator()),
+        appBar: AppBar(title: const Text('Doctor')),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -358,26 +361,26 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
           children: [
             Text(
               "${widget.doctor?['lastName'] ?? ''}, ${widget.doctor?['firstName'] ?? ''}",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 2),
+            const SizedBox(height: 2),
             Text(
               'ID: ${widget.doctor?['doc_id'] ?? ''}',
-              style: TextStyle(fontSize: 14, color: Colors.white70),
+              style: const TextStyle(fontSize: 14, color: Colors.white70),
             ),
           ],
         ),
-        backgroundColor: Color(0xFF5958b2),
+        backgroundColor: const Color(0xFF5958b2),
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white,
           indicatorColor: Colors.white,
-          labelStyle: TextStyle(
+          labelStyle: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.bold,
           ),
-          unselectedLabelStyle: TextStyle(
+          unselectedLabelStyle: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.normal,
           ),
@@ -407,19 +410,19 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Container(
-                              padding: EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: Color(0xFFF3EDFA),
+                                color: const Color(0xFFF3EDFA),
                                 borderRadius: BorderRadius.circular(18),
                               ),
-                              child: Icon(
+                              child: const Icon(
                                 Icons.person,
                                 color: Color(0xFF8269a1),
                                 size: 26,
                               ),
                             ),
-                            SizedBox(width: 8),
-                            Text(
+                            const SizedBox(width: 8),
+                            const Text(
                               "Personal Information",
                               style: TextStyle(
                                 fontSize: 21,
@@ -438,7 +441,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                     child: FloatingActionButton(
                       heroTag: "info_edit_fab",
                       mini: true,
-                      backgroundColor: Color(0xFF5958b2),
+                      backgroundColor: const Color(0xFF5958b2),
                       foregroundColor: Colors.white,
                       onPressed: _isUpdatingDoctor
                           ? null
@@ -462,9 +465,9 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                   onTap: _isUpdatingImage ? null : _pickAndUploadProfileImage,
                   child: CircleAvatar(
                     radius: 95,
-                    backgroundColor: Color(0xFF8269a1),
+                    backgroundColor: const Color(0xFF8269a1),
                     child: _isUpdatingImage
-                        ? CircularProgressIndicator(color: Colors.white)
+                        ? const CircularProgressIndicator(color: Colors.white)
                         : (_profileImageBase64 != null &&
                                 _profileImageBase64!.isNotEmpty)
                             ? ClipOval(
@@ -479,7 +482,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                                 _doctorInitials().isNotEmpty
                                     ? _doctorInitials()
                                     : "DR",
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 68,
                                   color: Colors.white,
@@ -488,7 +491,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                   ),
                 ),
               ),
-              SizedBox(height: 18),
+              const SizedBox(height: 18),
               Card(
                 elevation: 40,
                 shape: RoundedRectangleBorder(
@@ -532,7 +535,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                           ],
                         ),
                       ),
-                      SizedBox(width: 24),
+                      const SizedBox(width: 24),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -577,7 +580,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 child: Container(
-                  padding: EdgeInsets.all(18),
+                  padding: const EdgeInsets.all(18),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -589,13 +592,13 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                 ),
               ),
               sectionTitle(Icons.home, "Address",
-                  iconColor: Color(0xFF2b6cb0),
-                  iconBgColor: Color(0xFFE3EFFF)),
+                  iconColor: const Color(0xFF2b6cb0),
+                  iconBgColor: const Color(0xFFE3EFFF)),
               Card(
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 child: Container(
-                  padding: EdgeInsets.all(18),
+                  padding: const EdgeInsets.all(18),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -613,13 +616,13 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                 ),
               ),
               sectionTitle(Icons.people, "Profile",
-                  iconColor: Color(0xFF8269a1),
-                  iconBgColor: Color(0xFFF3EDFA)),
+                  iconColor: const Color(0xFF8269a1),
+                  iconBgColor: const Color(0xFFF3EDFA)),
               Card(
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 child: Container(
-                  padding: EdgeInsets.all(18),
+                  padding: const EdgeInsets.all(18),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -645,7 +648,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                 child: Container(
                   height: 180,
                   alignment: Alignment.center,
-                  padding: EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(12),
                   child: signaturePoints.isEmpty
                       ? Text(
                           "No specimen signature.",
@@ -653,13 +656,12 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                               TextStyle(fontSize: 15, color: Colors.grey[700]),
                         )
                       : CustomPaint(
-                          painter:
-                              _SignaturePainter(points: signaturePoints),
+                          painter: _SignaturePainter(points: signaturePoints),
                           size: Size.infinite,
                         ),
                 ),
               ),
-              SizedBox(height: 80),
+              const SizedBox(height: 80),
             ],
           ),
           CallNotesTab(docId: widget.doc_id, emailKey: emailKey!),
@@ -680,15 +682,15 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                       heroTag: "edit_cancel",
                       backgroundColor: Colors.grey,
                       onPressed: _isUpdatingDoctor ? null : _cancelEdit,
-                      label: Text("Cancel"),
+                      label: const Text("Cancel"),
                     ),
-                    SizedBox(width: 20),
+                    const SizedBox(width: 20),
                     FloatingActionButton.extended(
                       heroTag: "edit_update",
                       backgroundColor: Colors.green,
                       onPressed: _isUpdatingDoctor ? null : _updateDoctor,
                       label: _isUpdatingDoctor
-                          ? SizedBox(
+                          ? const SizedBox(
                               width: 18,
                               height: 18,
                               child: CircularProgressIndicator(
@@ -696,7 +698,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                                 color: Colors.white,
                               ),
                             )
-                          : Text("Update"),
+                          : const Text("Update"),
                     ),
                   ],
                 )
@@ -704,7 +706,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
           : (currentTabIndex == 2
               ? FloatingActionButton(
                   heroTag: "visits_plus",
-                  backgroundColor: Color(0xFF5958b2),
+                  backgroundColor: const Color(0xFF5958b2),
                   foregroundColor: Colors.white,
                   onPressed: () async {
                     await Navigator.push(
@@ -714,7 +716,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                       ),
                     );
                   },
-                  child: Icon(Icons.add),
+                  child: const Icon(Icons.add),
                 )
               : null),
     );
@@ -732,7 +734,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
         keyboardType: keyboardType,
         decoration: InputDecoration(
           labelText: label,
-          border: OutlineInputBorder(),
+          border: const OutlineInputBorder(),
           isDense: true,
         ),
       ),
@@ -763,10 +765,13 @@ class CallNotesTab extends StatelessWidget {
             .orderBy('timestamp', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData)
-            return Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
           final notes = snapshot.data!.docs;
-          if (notes.isEmpty) return Center(child: Text("No call notes yet."));
+          if (notes.isEmpty) {
+            return const Center(child: Text("No call notes yet."));
+          }
           return ListView.builder(
             itemCount: notes.length,
             itemBuilder: (context, idx) {
@@ -774,11 +779,12 @@ class CallNotesTab extends StatelessWidget {
               final ts = note?['timestamp'] as Timestamp?;
               final dt = ts != null ? ts.toDate() : DateTime.now();
               return Card(
-                margin: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                margin:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 child: ListTile(
                   title: Text(
                     note?['text'] ?? '',
-                    style: TextStyle(fontSize: 17),
+                    style: const TextStyle(fontSize: 17),
                   ),
                   subtitle: Text(
                     "${dt.year}/${dt.month.toString().padLeft(2, '0')}/${dt.day.toString().padLeft(2, '0')} "
@@ -806,29 +812,43 @@ class VisitsTab extends StatelessWidget {
     required this.emailKey,
   }) : super(key: key);
 
+  String _currentMonthId() {
+    final now = DateTime.now();
+    return DateFormat('yyyy-MM').format(now); // e.g. 2026-03
+  }
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
+    final currentMonthId = _currentMonthId();
+
+    final monthDocRef = FirebaseFirestore.instance
+        .collection('flowDB')
+        .doc('users')
+        .collection(emailKey)
+        .doc('doctors')
+        .collection('doctors')
+        .doc(docId)
+        .collection('scheduledVisits')
+        .doc('months')
+        .collection('months')
+        .doc(currentMonthId);
 
     return Padding(
       padding: const EdgeInsets.only(top: 8.0),
       child: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('flowDB')
-            .doc('users')
-            .collection(emailKey)
-            .doc('doctors')
-            .collection('doctors')
-            .doc(docId)
-            .collection('scheduledVisits')
+        stream: monthDocRef
+            .collection('dates')
             .orderBy('scheduledDate')
             .snapshots(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData)
-            return Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
           final visits = snapshot.data!.docs;
-          if (visits.isEmpty)
-            return Center(child: Text("No scheduled visits yet."));
+          if (visits.isEmpty) {
+            return const Center(child: Text("No scheduled visits yet."));
+          }
           return ListView.builder(
             itemCount: visits.length,
             itemBuilder: (context, idx) {
@@ -855,18 +875,20 @@ class VisitsTab extends StatelessWidget {
               } else if (isSubmitted) {
                 cardColor = Colors.green.shade200;
               } else if (visitDate != null &&
-                  DateTime(now.year, now.month, now.day).isAfter(visitDate)) {
+                  DateTime(now.year, now.month, now.day)
+                      .isAfter(visitDate)) {
                 cardColor = Colors.red.shade200;
               }
 
               return Card(
                 color: cardColor,
-                margin: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                margin:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 child: ListTile(
                   title: Text(
                     scheduledDateStr,
-                    style:
-                        TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text("$scheduledTime"),
                   trailing: ElevatedButton(
@@ -885,7 +907,7 @@ class VisitsTab extends StatelessWidget {
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
                     ),
-                    child: Text("Visit Now"),
+                    child: const Text("Visit Now"),
                   ),
                 ),
               );

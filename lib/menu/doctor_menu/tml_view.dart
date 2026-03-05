@@ -13,6 +13,7 @@ class TmlViewPage extends StatefulWidget {
 class _TmlViewPageState extends State<TmlViewPage> {
   bool editMode = false;
   bool isSaving = false;
+  bool isOpeningScheduleDialog = false; // NEW: loading for Schedule Overview
   int? selectedDoctorIdx;
   String? selectedDoctorId;
   Map<String, dynamic>? selectedDoctorRowData;
@@ -22,12 +23,9 @@ class _TmlViewPageState extends State<TmlViewPage> {
   static const double minWeekColWidth = 210;
   static const double rowHeight = 62.0;
 
-  /// weekSelections[docId] = list of 5 strings (week_1..week_5)
   Map<String, List<String>> weekSelections = {};
-  
-  /// scheduledTimes[docId][weekIndex] = scheduled time string (e.g. "09:00")
   Map<String, Map<int, String>> scheduledTimes = {};
-  
+
   final ScrollController _leftController = ScrollController();
   final ScrollController _rightController = ScrollController();
   String userEmail = '';
@@ -92,7 +90,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
           for (int w = 1; w <= 5; w++) (data['week_$w'] ?? "")
         ];
       }
-      // Initialize scheduledTimes for this doctor
       if (!scheduledTimes.containsKey(docId)) {
         scheduledTimes[docId] = {for (int w = 0; w < 5; w++) w: ""};
       }
@@ -131,13 +128,12 @@ class _TmlViewPageState extends State<TmlViewPage> {
     return count > freq;
   }
 
-  /// NEW: Save both week pattern AND scheduled times to Firestore
   Future<void> _saveEditedWeeksWithTimes(
     Map<String, dynamic> originalData,
     List<String> editedWeeks,
     String docId,
+    Map<int, String> times,
   ) async {
-    // 1. Update week pattern in doctor document
     Map<String, dynamic> weekUpdate = {};
     for (int i = 0; i < 5; i++) {
       String orig = (originalData['week_${i + 1}'] ?? "");
@@ -147,10 +143,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
       }
     }
 
-    // 2. Get scheduled times for this doctor
-    final times = scheduledTimes[docId] ?? {};
-    
-    // 3. Update doctor document with week pattern (if changed)
     final doctorRef = FirebaseFirestore.instance
         .collection('flowDB')
         .doc('users')
@@ -158,13 +150,17 @@ class _TmlViewPageState extends State<TmlViewPage> {
         .doc('doctors')
         .collection('doctors')
         .doc(docId);
-    
+
     if (weekUpdate.isNotEmpty) {
       await doctorRef.update(weekUpdate);
     }
 
-    // 4. Sync scheduled visits with new week pattern AND times
-    await _syncVisitsWithTmlScheduleAndTimes(docId, originalData, editedWeeks, times);
+    await _syncVisitsWithTmlScheduleAndTimes(
+      docId,
+      originalData,
+      editedWeeks,
+      times,
+    );
   }
 
   DateTime? getDateForWeekdayOfMonth(
@@ -192,7 +188,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
     return dt;
   }
 
-  /// Reverse: from yyyy-MM-dd -> Su/M/T/W/Th/F/Sa (for current month only)
   String _getDayFromDateString(String dateStr, int year, int month) {
     try {
       final date = DateFormat("yyyy-MM-dd").parse(dateStr);
@@ -213,8 +208,17 @@ class _TmlViewPageState extends State<TmlViewPage> {
     }
   }
 
-  /// UPDATED: Now also saves scheduled times from the dialog
-  /// FIXED: Only delete EMPTY dates (preserve dates with scheduledTime)
+  DateTime _startOfWeekSunday(DateTime d) {
+    final int delta = d.weekday % 7;
+    return DateTime(d.year, d.month, d.day).subtract(Duration(days: delta));
+  }
+
+  bool _isSameCalendarWeek(DateTime a, DateTime b) {
+    final sa = _startOfWeekSunday(a);
+    final sb = _startOfWeekSunday(b);
+    return sa.year == sb.year && sa.month == sb.month && sa.day == sb.day;
+  }
+
   Future<void> _syncVisitsWithTmlScheduleAndTimes(
     String docId,
     Map<String, dynamic> doctorData,
@@ -241,66 +245,121 @@ class _TmlViewPageState extends State<TmlViewPage> {
         .doc(monthId)
         .collection('dates');
 
-    // 1) Build current week pattern
-    final currentWeekDays = <int, String>{}; // weekIndex -> dayCode
-    for (int w = 0; w < weeks.length; w++) {
-      if (weeks[w].isNotEmpty) {
-        currentWeekDays[w] = weeks[w];
+    final desiredDatePerWeek = <int, DateTime>{};
+    for (int w = 0; w < 5; w++) {
+      final dayCode = weeks[w];
+      if (dayCode.isEmpty) continue;
+      final dt = getDateForWeekdayOfMonth(year, month, w + 1, dayCode);
+      if (dt == null || dt.month != month) continue;
+      desiredDatePerWeek[w] = dt;
+    }
+
+    final allDatesSnap = await monthDatesRef.get();
+    final existingDates = <String, Map<String, dynamic>>{};
+    for (final docSnap in allDatesSnap.docs) {
+      existingDates[docSnap.id] = docSnap.data();
+    }
+
+    DateTime? _parseDateId(String id) {
+      try {
+        final d = DateFormat("yyyy-MM-dd").parse(id);
+        if (d.year != year || d.month != month) return null;
+        return d;
+      } catch (_) {
+        return null;
       }
     }
 
-    // 2) Load ALL existing dates
-    final allDatesSnap = await monthDatesRef.get();
+    final Map<int, String> carriedTimes = {};
+    for (final entry in desiredDatePerWeek.entries) {
+      final int weekIndex = entry.key;
+      final DateTime newDate = entry.value;
+      final String newDateStr = DateFormat("yyyy-MM-dd").format(newDate);
 
-    // 3) FIXED: ONLY delete dates that are:
-    //    - NOT in current week pattern AND
-    //    - scheduledTime is EMPTY
-    for (final docSnap in allDatesSnap.docs) {
-      final data = docSnap.data();
-      final dateId = docSnap.id; // "yyyy-MM-dd"
-      final dayCode = _getDayFromDateString(dateId, year, month);
-      
-      // Find which week this date belongs to
-      bool isInCurrentPattern = false;
-      for (int w = 0; w < 5; w++) {
-        final expectedDate = getDateForWeekdayOfMonth(year, month, w + 1, dayCode);
-        if (expectedDate != null && 
-            DateFormat("yyyy-MM-dd").format(expectedDate) == dateId &&
-            currentWeekDays.containsKey(w)) {
-          isInCurrentPattern = true;
+      String carriedTimeForWeek = "";
+
+      for (final existingEntry in existingDates.entries) {
+        final String existingId = existingEntry.key;
+        final data = existingEntry.value;
+
+        final existingDt = _parseDateId(existingId);
+        if (existingDt == null) continue;
+
+        if (_isSameCalendarWeek(existingDt, newDate)) {
+          final existingTime =
+              (data['scheduledTime'] ?? "").toString().trim();
+          if (existingTime.isNotEmpty) {
+            carriedTimeForWeek = existingTime;
+          }
+          if (existingId != newDateStr) {
+            await monthDatesRef.doc(existingId).delete();
+          }
+        }
+      }
+
+      if (carriedTimeForWeek.isNotEmpty) {
+        carriedTimes[weekIndex] = carriedTimeForWeek;
+      }
+    }
+
+    for (final existingEntry in existingDates.entries) {
+      final String existingId = existingEntry.key;
+      final data = existingEntry.value;
+
+      final existingDt = _parseDateId(existingId);
+      if (existingDt == null) continue;
+
+      final bool hasTime =
+          (data['scheduledTime']?.toString().trim().isNotEmpty ?? false);
+
+      bool isDesired = false;
+      for (final d in desiredDatePerWeek.values) {
+        if (DateFormat("yyyy-MM-dd").format(d) == existingId) {
+          isDesired = true;
           break;
         }
       }
 
-      // CRITICAL: Only delete if NOT in pattern AND no scheduled time
-      final hasScheduledTime = (data['scheduledTime']?.toString().trim().isNotEmpty ?? false);
-      
-      if (!isInCurrentPattern && !hasScheduledTime) {
-        await docSnap.reference.delete();
+      if (!isDesired && !hasTime) {
+        await monthDatesRef.doc(existingId).delete();
       }
     }
 
-    // 4) Create/Update dates FOR CURRENT PATTERN ONLY with their scheduled times
-    for (int w = 0; w < weeks.length; w++) {
-      final dayCode = weeks[w];
-      if (dayCode.isEmpty) continue;
-
-      final dt = getDateForWeekdayOfMonth(year, month, w + 1, dayCode);
-      if (dt == null || dt.month != month) continue;
-
+    for (int w = 0; w < 5; w++) {
+      final dt = desiredDatePerWeek[w];
+      if (dt == null) continue;
       final dateStr = DateFormat("yyyy-MM-dd").format(dt);
-      final scheduledTime = scheduledTimesMap[w] ?? "";
-      
-      await monthDatesRef.doc(dateStr).set({
+
+      final String fromUser =
+          (scheduledTimesMap[w] ?? "").toString().trim();
+      final String fromCarried =
+          (carriedTimes[w] ?? "").toString().trim();
+
+      String? finalTime;
+      if (fromUser.isNotEmpty) {
+        finalTime = fromUser;
+      } else if (fromCarried.isNotEmpty) {
+        finalTime = fromCarried;
+      } else {
+        finalTime = null;
+      }
+
+      final Map<String, dynamic> dataToSet = {
         "scheduledDate": dateStr,
-        "scheduledTime": scheduledTime, // Use scheduled time or empty
         "submitted": false,
         "surprise": false,
-      }, SetOptions(merge: true)); // merge preserves existing data
+      };
+      if (finalTime != null) {
+        dataToSet["scheduledTime"] = finalTime;
+      }
+
+      await monthDatesRef.doc(dateStr).set(
+            dataToSet,
+            SetOptions(merge: true),
+          );
     }
   }
 
-  /// Find week indices where the pattern went from no visit -> visit.
   List<int> _getNewVisitWeekIndices(
     List<String> oldWeeks,
     List<String> newWeeks,
@@ -310,17 +369,16 @@ class _TmlViewPageState extends State<TmlViewPage> {
       final String oldVal = oldWeeks[i];
       final String newVal = newWeeks[i];
       if (oldVal.isEmpty && newVal.isNotEmpty) {
-        indices.add(i); // 0-based week index (0..4)
+        indices.add(i);
       }
     }
     return indices;
   }
 
-  /// Auto-assign scheduledTime for a given doctor, weekIndex (0-based), and dayCode,
   Future<void> _autoSetScheduledTimeForVisit({
     required String docId,
-    required String dayCode,  // "M", "Th", etc.
-    required int weekIndex,   // 0..4  -> week_1..week_5
+    required String dayCode,
+    required int weekIndex,
   }) async {
     final now = DateTime.now();
     final int year = now.year;
@@ -392,37 +450,95 @@ class _TmlViewPageState extends State<TmlViewPage> {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _getAllScheduledVisits(
-    CollectionReference visitsRootRef,
+  Future<List<Map<String, String>>> _getDoctorsForDate(
+    String scheduledDate,
   ) async {
-    final monthsSnap = await visitsRootRef
-        .doc('months')
-        .collection('months')
-        .orderBy('label')
+    final String monthId =
+        scheduledDate.substring(0, 7);
+
+    final doctorsSnap = await FirebaseFirestore.instance
+        .collection('flowDB')
+        .doc('users')
+        .collection(emailKey)
+        .doc('doctors')
+        .collection('doctors')
         .get();
 
-    List<Map<String, dynamic>> visits = [];
-    for (final monthDoc in monthsSnap.docs) {
-      final datesSnap = await monthDoc.reference
+    final List<Map<String, String>> result = [];
+
+    for (final doc in doctorsSnap.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final String lastName = (data['lastName'] ?? '').toString();
+      final String firstName = (data['firstName'] ?? '').toString();
+      final String doctorName = "$lastName, $firstName";
+
+      final visitsRootRef = FirebaseFirestore.instance
+          .collection('flowDB')
+          .doc('users')
+          .collection(emailKey)
+          .doc('doctors')
+          .collection('doctors')
+          .doc(doc.id)
+          .collection('scheduledVisits');
+
+      final dateDocRef = visitsRootRef
+          .doc('months')
+          .collection('months')
+          .doc(monthId)
           .collection('dates')
-          .orderBy('scheduledDate')
-          .get();
-      for (final d in datesSnap.docs) {
-        visits.add(d.data() as Map<String, dynamic>);
-      }
+          .doc(scheduledDate);
+
+      final dateSnap = await dateDocRef.get();
+      if (!dateSnap.exists) continue;
+
+      final dateData = dateSnap.data() as Map<String, dynamic>;
+      final String time =
+          (dateData['scheduledTime'] ?? '').toString().trim();
+      if (time.isEmpty) continue;
+
+      result.add({
+        'doctorName': doctorName,
+        'time': time,
+      });
     }
-    return visits;
+
+    result.sort((a, b) {
+      final t1 = a['time'] ?? '';
+      final t2 = b['time'] ?? '';
+      final cmpT = t1.compareTo(t2);
+      if (cmpT != 0) return cmpT;
+      final n1 = a['doctorName'] ?? '';
+      final n2 = b['doctorName'] ?? '';
+      return n1.compareTo(n2);
+    });
+
+    return result;
   }
 
-  /// UPDATED: Now captures the scheduled time and stores it in scheduledTimes map
+  Future<Set<int>> _getBookedHoursForDate(String scheduledDate) async {
+    final List<Map<String, String>> doctorsList =
+        await _getDoctorsForDate(scheduledDate);
+    final Set<int> booked = {};
+    for (final row in doctorsList) {
+      final time = row['time'] ?? '';
+      if (time.length >= 2) {
+        final hourStr = time.split(':').first;
+        final h = int.tryParse(hourStr);
+        if (h != null) booked.add(h);
+      }
+    }
+    return booked;
+  }
+
   Future<void> _showHourSlotsDialog({
     required String docId,
     required Map<String, dynamic> doctorData,
     required DateTime visitDate,
     required String dayLabel,
-    required int weekIndex, // NEW: Pass week index to know which week this is
+    required int weekIndex,
   }) async {
     final String headerDate = DateFormat('MMMM d, yyyy').format(visitDate);
+    final String scheduledDate = DateFormat("yyyy-MM-dd").format(visitDate);
 
     final visitsRootRef = FirebaseFirestore.instance
         .collection('flowDB')
@@ -442,10 +558,9 @@ class _TmlViewPageState extends State<TmlViewPage> {
         .collection('dates');
 
     Future<void> saveHour(int hour) async {
-      final String dateStr = DateFormat("yyyy-MM-dd").format(visitDate);
+      final String dateStr = scheduledDate;
       final String timeStr = hour.toString().padLeft(2, '0') + ":00";
 
-      // 1. Update Firestore immediately
       await monthDatesRef.doc(dateStr).set({
         "scheduledDate": dateStr,
         "scheduledTime": timeStr,
@@ -453,14 +568,21 @@ class _TmlViewPageState extends State<TmlViewPage> {
         "surprise": false,
       }, SetOptions(merge: true));
 
-      // 2. Store in local state for "Done" button
       setState(() {
         if (!scheduledTimes.containsKey(docId)) {
           scheduledTimes[docId] = {};
         }
         scheduledTimes[docId]![weekIndex] = timeStr;
       });
+
+      if (mounted) {
+        await _showScheduledTimesDialogForDate(
+          dateStr,
+        );
+      }
     }
+
+    final Set<int> bookedHours = await _getBookedHoursForDate(scheduledDate);
 
     await showDialog(
       context: context,
@@ -468,7 +590,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
         return Dialog(
           insetPadding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -478,7 +601,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: const BoxDecoration(
                   color: Color(0xFF7030f8),
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+                  borderRadius:
+                      BorderRadius.vertical(top: Radius.circular(8)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -520,8 +644,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
               Flexible(
                 child: SingleChildScrollView(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     child: Column(
                       children: [
                         for (int hour = 8; hour <= 17; hour++) ...[
@@ -552,7 +676,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                 ),
                                 const SizedBox(width: 10),
                                 Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       "${hour.toString().padLeft(2, '0')}:00",
@@ -562,11 +687,15 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                       ),
                                     ),
                                     const SizedBox(height: 2),
-                                    const Text(
-                                      "Available",
+                                    Text(
+                                      bookedHours.contains(hour)
+                                          ? "Not available"
+                                          : "Available",
                                       style: TextStyle(
                                         fontSize: 11,
-                                        color: Colors.green,
+                                        color: bookedHours.contains(hour)
+                                            ? Colors.red
+                                            : Colors.green,
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
@@ -574,43 +703,47 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                 ),
                                 const Spacer(),
                                 GestureDetector(
-                                  onTap: () async {
-                                    await saveHour(hour);
-                                    Navigator.of(context).pop();
-
-                                    if (mounted) {
-                                      await _showScheduledTimesDialog(
-                                        docId: docId,
-                                        doctorData: doctorData,
-                                      );
-                                    }
-                                  },
+                                  onTap: bookedHours.contains(hour)
+                                      ? null
+                                      : () async {
+                                          await saveHour(hour);
+                                          Navigator.of(context).pop();
+                                        },
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 12, vertical: 6),
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(20),
-                                      gradient: const LinearGradient(
-                                        colors: [
-                                          Color(0xFF8226f9),
-                                          Color(0xFF7030f8),
-                                        ],
-                                        begin: Alignment.centerLeft,
-                                        end: Alignment.centerRight,
-                                      ),
+                                      color: bookedHours.contains(hour)
+                                          ? Colors.red
+                                          : null,
+                                      gradient: bookedHours.contains(hour)
+                                          ? null
+                                          : const LinearGradient(
+                                              colors: [
+                                                Color(0xFF8226f9),
+                                                Color(0xFF7030f8),
+                                              ],
+                                              begin: Alignment.centerLeft,
+                                              end: Alignment.centerRight,
+                                            ),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
-                                      children: const [
+                                      children: [
                                         Icon(
-                                          Icons.add,
+                                          bookedHours.contains(hour)
+                                              ? Icons.block
+                                              : Icons.add,
                                           size: 16,
                                           color: Colors.white,
                                         ),
-                                        SizedBox(width: 4),
+                                        const SizedBox(width: 4),
                                         Text(
-                                          "Schedule",
-                                          style: TextStyle(
+                                          bookedHours.contains(hour)
+                                              ? "Booked"
+                                              : "Schedule",
+                                          style: const TextStyle(
                                             fontSize: 13,
                                             color: Colors.white,
                                             fontWeight: FontWeight.w600,
@@ -663,102 +796,103 @@ class _TmlViewPageState extends State<TmlViewPage> {
     };
     final String dayLabel = weekdayNames[dayCode] ?? dayCode;
 
-    await _showHourSlotsDialog(
-      docId: docId,
-      doctorData: doctorData,
-      visitDate: visitDate,
-      dayLabel: dayLabel,
-      weekIndex: weekIndex, // PASS WEEK INDEX
-    );
+    // NEW: show loader while we fetch booked hours and open dialog
+    setState(() => isOpeningScheduleDialog = true);
+    try {
+      await _showHourSlotsDialog(
+        docId: docId,
+        doctorData: doctorData,
+        visitDate: visitDate,
+        dayLabel: dayLabel,
+        weekIndex: weekIndex,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => isOpeningScheduleDialog = false);
+      }
+    }
   }
 
-  Future<void> _showScheduledTimesDialog({
-    required String docId,
-    required Map<String, dynamic> doctorData,
-  }) async {
-    final visitsRootRef = FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
-        .doc(docId)
-        .collection('scheduledVisits');
-
-    final String doctorName =
-        "${doctorData['lastName'] ?? ''}, ${doctorData['firstName'] ?? ''}";
+  Future<void> _showScheduledTimesDialogForDate(
+    String scheduledDate,
+  ) async {
+    final dateObj = DateFormat("yyyy-MM-dd").parse(scheduledDate);
+    final String headerDate =
+        DateFormat('MMMM d, yyyy').format(dateObj);
 
     await showDialog(
       context: context,
       builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text("Scheduled Times\n$doctorName"),
-              content: SizedBox(
-                width: double.maxFinite,
-                height: 400,
-                child: FutureBuilder<List<Map<String, dynamic>>>(
-                  future: _getAllScheduledVisits(visitsRootRef),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
-                    final visits = snapshot.data!;
-                    return visits.isEmpty
-                        ? const Text("No scheduled times yet.")
-                        : ListView.builder(
-                            shrinkWrap: true,
-                            itemCount: visits.length,
-                            itemBuilder: (context, index) {
-                              final v = visits[index];
-                              final dateStr =
-                                  (v['scheduledDate'] ?? '').toString();
-                              final timeStr =
-                                  (v['scheduledTime'] ?? '').toString();
-                              return ListTile(
-                                dense: true,
-                                leading: Icon(
-                                  Icons.schedule,
-                                  color: timeStr.isNotEmpty
-                                      ? Colors.green
-                                      : Colors.orange,
-                                  size: 20,
-                                ),
-                                title: Text(dateStr),
-                                subtitle: Text(
-                                  timeStr.isEmpty ? "No time set" : timeStr,
-                                  style: TextStyle(
-                                    fontWeight: timeStr.isNotEmpty
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                    color: timeStr.isNotEmpty
-                                        ? Colors.green[700]
-                                        : null,
-                                  ),
-                                ),
-                                trailing: timeStr.isNotEmpty
-                                    ? Icon(
-                                        Icons.check_circle,
-                                        color: Colors.green,
-                                        size: 20,
-                                      )
-                                    : null,
-                              );
-                            },
-                          );
-                  },
+        return AlertDialog(
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text("Scheduled Times"),
+              const SizedBox(height: 4),
+              Text(
+                headerDate,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey,
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text("Close"),
-                ),
-              ],
-            );
-          },
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: FutureBuilder<List<Map<String, String>>>(
+              future: _getDoctorsForDate(scheduledDate),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(
+                      child: CircularProgressIndicator());
+                }
+
+                final items = snapshot.data!;
+                if (items.isEmpty) {
+                  return const Text("No scheduled times for this date.");
+                }
+
+                return ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final row = items[index];
+                    final String doctorName =
+                        row['doctorName'] ?? '';
+                    final String time = row['time'] ?? '';
+                    return ListTile(
+                      dense: true,
+                      title: Text(
+                        doctorName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        time,
+                        style: const TextStyle(
+                          fontSize: 13,
+                        ),
+                      ),
+                      leading: const Icon(
+                        Icons.person,
+                        size: 20,
+                        color: Colors.deepPurple,
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text("Close"),
+            ),
+          ],
         );
       },
     );
@@ -771,8 +905,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
     final gridStart = firstOfMonth.subtract(Duration(days: daysBackToSunday));
 
     final lastOfMonth = DateTime(year, month + 1, 0);
-    final totalDaysSpan =
-        lastOfMonth.difference(gridStart).inDays + 1;
+    final totalDaysSpan = lastOfMonth.difference(gridStart).inDays + 1;
     final totalWeeks = (totalDaysSpan / 7.0).ceil();
 
     List<List<DateTime?>> weeks = [];
@@ -816,9 +949,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
     final double mdNameColWidth = minMdNameColWidth;
     final double availableWidth = screenWidth - mdNameColWidth;
     final double weekColWidth =
-        (availableWidth / 5 > minWeekColWidth)
-            ? availableWidth / 5
-            : minWeekColWidth;
+        (availableWidth / 5 > minWeekColWidth) ? availableWidth / 5 : minWeekColWidth;
     final double tableWidth = weekColWidth * 5 + 4;
 
     final DateTime now = DateTime.now();
@@ -859,7 +990,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
                     });
 
                     if (weekSelections.isNotEmpty || scheduledTimes.isNotEmpty) {
-                      // 1) Load original data for ALL doctors once
                       final doctorsSnap = await FirebaseFirestore.instance
                           .collection('flowDB')
                           .doc('users')
@@ -873,20 +1003,31 @@ class _TmlViewPageState extends State<TmlViewPage> {
                           d.id: (d.data() as Map<String, dynamic>)
                       };
 
-                      // 2) Process each doctor that had edits
-                      for (final entry in weekSelections.entries) {
-                        final docId = entry.key;
-                        final List<String> newWeeks = entry.value;
+                      final Set<String> affectedDoctorIds = {
+                        ...weekSelections.keys,
+                        ...scheduledTimes.keys,
+                      };
 
+                      for (final docId in affectedDoctorIds) {
                         final Map<String, dynamic> originalData =
                             originalById[docId] ?? {};
 
-                        // NEW: Save BOTH week pattern AND scheduled times
-                        final times = scheduledTimes[docId] ?? {};
+                        final List<String> newWeeks =
+                            weekSelections[docId] ??
+                                [
+                                  for (int w = 1; w <= 5; w++)
+                                    (originalData['week_$w'] ?? "")
+                                        .toString(),
+                                ];
+
+                        final Map<int, String> timesForDoctor =
+                            scheduledTimes[docId] ?? {};
+
                         await _saveEditedWeeksWithTimes(
                           originalData,
                           newWeeks,
                           docId,
+                          timesForDoctor,
                         );
                       }
                     }
@@ -962,7 +1103,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // LEFT: Doctor/Details + rows
                               Container(
                                 width: mdNameColWidth,
                                 color: Colors.purple.shade50,
@@ -1023,22 +1163,21 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                               as Map<String, dynamic>;
                                           final selList =
                                               weekSelections[docId] ??
-                                              [
-                                                for (int w = 1; w <= 5; w++)
-                                                  (data['week_$w'] ?? "")
-                                              ];
-                                          final freqField = (data['freq'] ??
-                                              data['frequency']);
+                                                  [
+                                                    for (int w = 1; w <= 5; w++)
+                                                      (data['week_$w'] ?? "")
+                                                  ];
+                                          final freqField =
+                                              (data['freq'] ?? data['frequency']);
                                           final freq = int.tryParse(
                                                   freqField
-                                                          ?.toString()
-                                                          .replaceAll(
-                                                              RegExp(r'\D'), '')
-                                                      ??
+                                                      ?.toString()
+                                                      .replaceAll(
+                                                          RegExp(r'\D'), '') ??
                                                       "1") ??
                                               1;
-                                          final overFreq = _isExceededFreq(
-                                              selList, freq);
+                                          final overFreq =
+                                              _isExceededFreq(selList, freq);
 
                                           final bool isSelectedRow =
                                               selectedDoctorIdx == rowIdx;
@@ -1072,7 +1211,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                 color: nameRowColor,
                                                 border: Border(
                                                   bottom: BorderSide(
-                                                    color: Colors.grey.shade400,
+                                                    color:
+                                                        Colors.grey.shade400,
                                                   ),
                                                 ),
                                               ),
@@ -1092,8 +1232,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                   ],
                                 ),
                               ),
-
-                              // RIGHT: Month header, weeks, etc.
                               Expanded(
                                 child: SingleChildScrollView(
                                   scrollDirection: Axis.horizontal,
@@ -1136,7 +1274,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                 Container(
                                                   width: weekColWidth,
                                                   height: 36,
-                                                  alignment: Alignment.center,
+                                                  alignment:
+                                                      Alignment.center,
                                                   child: const Text(
                                                     "WEEK ",
                                                     style: TextStyle(
@@ -1173,7 +1312,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                               for (int w = 0; w < 5; w++) ...[
                                                 Container(
                                                   width: weekColWidth,
-                                                  alignment: Alignment.center,
+                                                  alignment:
+                                                      Alignment.center,
                                                   child: Row(
                                                     mainAxisAlignment:
                                                         MainAxisAlignment
@@ -1246,9 +1386,11 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                               "")
                                                       ];
                                               final overFreq =
-                                                  _isExceededFreq(selList, freq);
+                                                  _isExceededFreq(
+                                                      selList, freq);
                                               final bool isSelectedRow =
-                                                  selectedDoctorIdx == rowIdx;
+                                                  selectedDoctorIdx ==
+                                                      rowIdx;
                                               final bool isEditable =
                                                   editMode &&
                                                       selectedDoctorIdx ==
@@ -1266,8 +1408,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                             .withOpacity(0.9)
                                                         : (isSelectedRow
                                                             ? Colors
-                                                                .purple
-                                                                .shade100
+                                                                .purple.shade100
                                                                 .withOpacity(
                                                                     0.8)
                                                             : null)),
@@ -1283,18 +1424,23 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                             const BoxDecoration(
                                                           border: Border(
                                                             bottom: BorderSide(
-                                                              color:
-                                                                  Color(0xFFDDDDDD),
+                                                              color: Color(
+                                                                  0xFFDDDDDD),
                                                             ),
                                                           ),
                                                         ),
-                                                        child: _weekInteractiveBoxes(
+                                                        child:
+                                                            _weekInteractiveBoxes(
                                                           weekIndex: w,
                                                           currentValue:
                                                               selList[w],
-                                                          isEnabled: isEditable,
-                                                          onChanged: (newVal) async {
-                                                            if (!isEditable) {
+                                                          isEnabled:
+                                                              isEditable &&
+                                                                  !isOpeningScheduleDialog,
+                                                          onChanged:
+                                                              (newVal) async {
+                                                            if (!isEditable ||
+                                                                isOpeningScheduleDialog) {
                                                               return;
                                                             }
                                                             if (newVal
@@ -1401,8 +1547,18 @@ class _TmlViewPageState extends State<TmlViewPage> {
                   },
                 ),
         ),
-
         if (isSaving)
+          Container(
+            color: Colors.black54,
+            child: const Center(
+              child: CircularProgressIndicator(
+                valueColor:
+                    AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
+          ),
+        // NEW: full-screen loader while opening "Schedule Overview"
+        if (isOpeningScheduleDialog)
           Container(
             color: Colors.black54,
             child: const Center(
@@ -1457,9 +1613,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                       ? Colors.deepPurple.shade400
                       : Colors.grey.shade400,
                   border: Border.all(
-                    color: selected
-                        ? Colors.green.shade400
-                        : Colors.white,
+                    color:
+                        selected ? Colors.green.shade400 : Colors.white,
                     width: selected ? 2 : 1,
                   ),
                   borderRadius: BorderRadius.circular(5),
@@ -1502,3 +1657,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
         ],
       );
 }
+
+
+// CHECK HOW THE yyyy-MM is created in the firestore database so 
+// that it can help the AI understand how it's structured and it 
+// can help read the data for it to be transfered to my app

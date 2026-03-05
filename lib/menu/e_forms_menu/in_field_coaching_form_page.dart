@@ -3,11 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'abr_form_page.dart';
 
+
 class InFieldCoachingFormPage extends StatefulWidget {
   @override
   _InFieldCoachingFormPageState createState() =>
       _InFieldCoachingFormPageState();
 }
+
 
 class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
   static const List<String> evaluatorNames = [
@@ -19,6 +21,7 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
     "VICTOR MARIA R. CHUMACERA",
   ];
 
+
   static const Map<String, String> evaluatorToPosition = {
     "ANTONIO S. ADRIANO": "District Sales Manager - Consumer",
     "KITCHON EDWIN TEVAR": "District Manager",
@@ -27,6 +30,7 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
     "VICTOR MARIA R. CHUMACERA": "National Sales Manager",
   };
 
+
   String selectedEvaluator = evaluatorNames.first;
   String evaluatorPosition = '';
   DateTime date = DateTime.now();
@@ -34,6 +38,7 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
   String selectedMdName = "SELECT";
   String improvementComment = '';
   List<int?> ratings = List.filled(9, null);
+
 
   List<String> questionTexts = [
     "Key Message Delivery",
@@ -47,6 +52,7 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
     "Relationship Capital",
   ];
 
+
   List<String> ratingLabels = [
     "Unsatisfactory",
     "Needs Improvement",
@@ -55,7 +61,9 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
     "Excellent"
   ];
 
+
   final TextEditingController dateController = TextEditingController();
+
 
   @override
   void initState() {
@@ -64,11 +72,13 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
         "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
   }
 
+
   Future<String> getSanitizedUserEmail() async {
     final prefs = await SharedPreferences.getInstance();
     final userEmail = prefs.getString('userEmail') ?? '';
     return userEmail.replaceAll(RegExp(r'[.#\$\\\[\]/]'), '_');
   }
+
 
   void _clearForm() {
     setState(() {
@@ -84,6 +94,7 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
     });
   }
 
+
   Future<void> _submitForm() async {
     // basic validation
     if (selectedEvaluator == "---") {
@@ -95,6 +106,7 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
       return;
     }
 
+
     if (selectedMdName == "SELECT") {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -103,6 +115,7 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
       );
       return;
     }
+
 
     // make sure all ratings are filled in (optional but recommended)
     if (ratings.any((r) => r == null)) {
@@ -114,8 +127,10 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
       return;
     }
 
+
     try {
       final userKey = await getSanitizedUserEmail();
+
 
       await FirebaseFirestore.instance
           .collection('flowDB')
@@ -134,12 +149,14 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
         'timestamp': DateTime.now(),
       });
 
+
       // optional: show confirmation before closing
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("In-Field Coaching Form submitted successfully"),
         ),
       );
+
 
       Navigator.of(context).pop();
     } catch (e) {
@@ -151,6 +168,7 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -287,6 +305,7 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
                           );
                         }
 
+
                         final emailKey = emailSnapshot.data!;
                         return StreamBuilder<QuerySnapshot>(
                           stream: FirebaseFirestore.instance
@@ -321,6 +340,7 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
                               );
                             }
 
+
                             final List<String> names = ["SELECT"];
                             for (final d in snapshot.data!.docs) {
                               final dat =
@@ -330,6 +350,7 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
                                     .trim(),
                               );
                             }
+
 
                             return DropdownButtonFormField<String>(
                               value: names.contains(selectedMdName)
@@ -506,6 +527,7 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
     );
   }
 
+
   Widget _modernInput(String label, ValueChanged<String> onChanged) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14.0),
@@ -529,6 +551,7 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
       ),
     );
   }
+
 
   Widget _modernMultilineInput(String label, ValueChanged<String> onChanged) {
     return Padding(
@@ -555,3 +578,4 @@ class _InFieldCoachingFormPageState extends State<InFieldCoachingFormPage> {
     );
   }
 }
+

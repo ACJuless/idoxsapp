@@ -1,0 +1,1757 @@
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'attendance_form_page.dart';
+import 'package:signature/signature.dart';
+
+// Color constants
+const _purple = Color(0xFF6B21C8);
+const _purpleLight = Color(0xFF9C40FF);
+const _gold = Color(0xFFF59E0B);
+const _surface = Color(0xFFF8F5FF);
+const _card = Colors.white;
+const _headerGradient = LinearGradient(
+  colors: [Color(0xFF4C1D95), Color(0xFF7C3AED), Color(0xFF9C40FF)],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
+
+/// Detail page: view attendance + attendee signatures and full data
+class AttendanceFormReadonlyPage extends StatefulWidget {
+  final Map formData;
+  final String docId;
+  final String userKey;
+
+  AttendanceFormReadonlyPage({
+    required this.formData,
+    required this.docId,
+    required this.userKey,
+  });
+
+  @override
+  State createState() =>
+      _AttendanceFormReadonlyPageState();
+}
+
+class _AttendanceFormReadonlyPageState
+    extends State 
+    with SingleTickerProviderStateMixin {
+  // Signature + attendee name controllers
+  late List _signatureControllers;
+  late List _nameControllers;
+  late List _attendeeNames;
+
+  // Parsed attendees and other fields
+  late List> _attendees;
+  late List _dealers;
+  late List _focusProducts;
+  late String _cropFocus;
+  late String _cropStatus;
+
+  // Edit mode flag
+  bool _isEditMode = false;
+
+  // Controllers for Attendance Details fields
+  late TextEditingController _eventNameController;
+  late TextEditingController _cropFocusController;
+  late TextEditingController _cropStatusController;
+  late TextEditingController _dateController;
+  late TextEditingController _locationController;
+  late TextEditingController _remarksController;
+  late TextEditingController _dealersController;
+  late TextEditingController _focusProductsController;
+
+  // Controllers for attendee extra fields (parallel to _attendees / rows)
+  late List _addressControllers;
+  late List _telephoneControllers;
+  late List _hectaresControllers;
+  late List _cropControllers;
+  late List _insecticideControllers;
+  late List _fungicideControllers;
+  late List _herbicideControllers;
+  late List _nutritionControllers;
+  late List _dealerSourceControllers;
+  late List _facebookLinkControllers;
+
+  // UI controllers
+  late AnimationController _animationController;
+  late Animation _fadeAnimation;
+ 
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 420)
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOut
+    );
+    _animationController.forward();
+    _initializeFromData();
+  }
+
+  void _initializeFromData() {
+    final data = widget.formData;
+
+    // Initialize main fields
+    _cropFocus = (data['cropFocus'] ?? '').toString();
+    _cropStatus = (data['cropStatus'] ?? '').toString();
+
+    final List rawDealers = data['dealers'] ?? [];
+    _dealers = rawDealers.map((e) => e.toString()).toList();
+
+    final List rawFocusProducts = data['focusProducts'] ?? [];
+    _focusProducts = rawFocusProducts.map((e) => e.toString()).toList();
+
+    final List attendeesRaw = data['attendees'] ?? [];
+    _attendees = attendeesRaw
+        .whereType()
+        .map((m) => Map.from(m as Map))
+        .toList();
+
+    _initializeDetailControllers(data);
+    _initializeAttendeeControllers();
+    _initializeSignaturesAndNames(data);
+  }
+
+  void _initializeDetailControllers(Map data) {
+    _eventNameController =
+        TextEditingController(text: (data['eventName'] ?? '').toString());
+    _cropFocusController =
+        TextEditingController(text: (data['cropFocus'] ?? '').toString());
+    _cropStatusController =
+        TextEditingController(text: (data['cropStatus'] ?? '').toString());
+    _dateController =
+        TextEditingController(text: (data['date'] ?? '').toString());
+    _locationController =
+        TextEditingController(text: (data['location'] ?? '').toString());
+    _remarksController =
+        TextEditingController(text: (data['remarks'] ?? '').toString());
+    _dealersController =
+        TextEditingController(text: _dealers.join(', '));
+    _focusProductsController =
+        TextEditingController(text: _focusProducts.join(', '));
+  }
+
+  void _initializeAttendeeControllers() {
+    _addressControllers = [];
+    _telephoneControllers = [];
+    _hectaresControllers = [];
+    _cropControllers = [];
+    _insecticideControllers = [];
+    _fungicideControllers = [];
+    _herbicideControllers = [];
+    _nutritionControllers = [];
+    _dealerSourceControllers = [];
+    _facebookLinkControllers = [];
+
+    for (final row in _attendees) {
+      _addressControllers.add(TextEditingController(
+          text: (row['address'] ?? '').toString()));
+      _telephoneControllers.add(TextEditingController(
+          text: (row['telephone'] ?? '').toString()));
+      _hectaresControllers.add(TextEditingController(
+          text: (row['hectares'] ?? '').toString()));
+      _cropControllers.add(TextEditingController(
+          text: (row['crop'] ?? '').toString()));
+      _insecticideControllers.add(TextEditingController(
+          text: (row['insecticide'] ?? '').toString()));
+      _fungicideControllers.add(TextEditingController(
+          text: (row['fungicide'] ?? '').toString()));
+      _herbicideControllers.add(TextEditingController(
+          text: (row['herbicide'] ?? '').toString()));
+      _nutritionControllers.add(TextEditingController(
+          text: (row['nutrition'] ?? '').toString()));
+      _dealerSourceControllers.add(TextEditingController(
+          text: (row['dealerSource'] ?? '').toString()));
+      _facebookLinkControllers.add(TextEditingController(
+          text: (row['facebookLink'] ?? '').toString()));
+    }
+  }
+
+  void _initializeSignaturesAndNames(Map data) {
+    final List namesRaw = data['attendeeNames'] ?? [];
+    if (namesRaw.isNotEmpty) {
+      _attendeeNames = namesRaw.map((e) => e.toString()).toList();
+    } else {
+      _attendeeNames = _attendees
+          .map((row) => (row['name'] ?? '').toString())
+          .where((name) => name.isNotEmpty)
+          .toList();
+    }
+
+    final List signaturesRaw = data['attendeeSignatures'] ?? [];
+
+    _signatureControllers = [];
+    _nameControllers = [];
+
+    for (int index = 0; index < _attendeeNames.length; index++) {
+      final name = _attendeeNames[index];
+
+      final nameController = TextEditingController(text: name);
+      _nameControllers.add(nameController);
+
+      final controller = SignatureController(
+        penStrokeWidth: 3,
+        penColor: Colors.black,
+        exportBackgroundColor: Colors.white,
+      );
+
+      // Try to find matching signature entry by name
+      Map? entry;
+      for (final item in signaturesRaw) {
+        if (item is Map && item['name'] == name) {
+          entry = Map.from(item);
+          break;
+        }
+      }
+
+      // Load points if present
+      if (entry != null && entry['points'] is List) {
+        final List pointsRaw = entry['points'];
+        final List pts = [];
+        for (final p in pointsRaw) {
+          if (p is Map) {
+            final double? x = (p['x'] as num?)?.toDouble();
+            final double? y = (p['y'] as num?)?.toDouble();
+            if (x == null || y == null) continue;
+
+            final String typeStr =
+                (p['type'] as String?) ?? 'PointType.tap';
+            PointType type;
+            switch (typeStr) {
+              case 'PointType.move':
+                type = PointType.move;
+                break;
+              default:
+                type = PointType.tap;
+            }
+
+            final double pressure =
+                (p['pressure'] as num?)?.toDouble() ?? 1.0;
+
+            pts.add(Point(Offset(x, y), type, pressure));
+          }
+        }
+        if (pts.isNotEmpty) {
+          controller.points = pts;
+        }
+      }
+
+      _signatureControllers.add(controller);
+    }
+
+    // If there were no attendee names saved, derive rows from _attendees or create one empty row
+    if (_attendeeNames.isEmpty) {
+      if (_attendees.isNotEmpty) {
+        for (final row in _attendees) {
+          final name = (row['name'] ?? '').toString();
+          _attendeeNames.add(name);
+          _nameControllers.add(TextEditingController(text: name));
+          _signatureControllers.add(
+            SignatureController(
+              penStrokeWidth: 3,
+              penColor: Colors.black,
+              exportBackgroundColor: Colors.white,
+            ),
+          );
+        }
+      } else {
+        _attendeeNames = [];
+        _nameControllers.add(TextEditingController());
+        _signatureControllers.add(
+          SignatureController(
+            penStrokeWidth: 3,
+            penColor: Colors.black,
+            exportBackgroundColor: Colors.white,
+          ),
+        );
+      }
+    }
+
+    // Ensure attendee parallel lists have same length as rows
+    final int rows = _maxAttendeeRows();
+    void _ensureListLength(List list) {
+      while (list.length < rows) {
+        list.add(TextEditingController());
+      }
+    }
+
+    _ensureListLength(_addressControllers);
+    _ensureListLength(_telephoneControllers);
+    _ensureListLength(_hectaresControllers);
+    _ensureListLength(_cropControllers);
+    _ensureListLength(_insecticideControllers);
+    _ensureListLength(_fungicideControllers);
+    _ensureListLength(_herbicideControllers);
+    _ensureListLength(_nutritionControllers);
+    _ensureListLength(_dealerSourceControllers);
+    _ensureListLength(_facebookLinkControllers);
+  }
+
+  @override
+  void dispose() {
+    for (final c in _signatureControllers) {
+      c.dispose();
+    }
+    for (final n in _nameControllers) {
+      n.dispose();
+    }
+
+    _eventNameController.dispose();
+    _cropFocusController.dispose();
+    _cropStatusController.dispose();
+    _dateController.dispose();
+    _locationController.dispose();
+    _remarksController.dispose();
+    _dealersController.dispose();
+    _focusProductsController.dispose();
+
+    _animationController.dispose();
+
+    for (final c in _addressControllers) {
+      c.dispose();
+    }
+    for (final c in _telephoneControllers) {
+      c.dispose();
+    }
+    for (final c in _hectaresControllers) {
+      c.dispose();
+    }
+    for (final c in _cropControllers) {
+      c.dispose();
+    }
+    for (final c in _insecticideControllers) {
+      c.dispose();
+    }
+    for (final c in _fungicideControllers) {
+      c.dispose();
+    }
+    for (final c in _herbicideControllers) {
+      c.dispose();
+    }
+    for (final c in _nutritionControllers) {
+      c.dispose();
+    }
+    for (final c in _dealerSourceControllers) {
+      c.dispose();
+    }
+    for (final c in _facebookLinkControllers) {
+      c.dispose();
+    }
+
+    super.dispose();
+  }
+
+  void _addAttendeeRow() {
+    if (!_isEditMode) return;
+    setState(() {
+      _attendeeNames.add('');
+      _nameControllers.add(TextEditingController());
+      _signatureControllers.add(
+        SignatureController(
+          penStrokeWidth: 3,
+          penColor: Colors.black,
+          exportBackgroundColor: Colors.white,
+        ),
+      );
+
+      _addressControllers.add(TextEditingController());
+      _telephoneControllers.add(TextEditingController());
+      _hectaresControllers.add(TextEditingController());
+      _cropControllers.add(TextEditingController());
+      _insecticideControllers.add(TextEditingController());
+      _fungicideControllers.add(TextEditingController());
+      _herbicideControllers.add(TextEditingController());
+      _nutritionControllers.add(TextEditingController());
+      _dealerSourceControllers.add(TextEditingController());
+      _facebookLinkControllers.add(TextEditingController());
+
+      // Also create empty row map so _attendees length stays in sync
+      _attendees.add({});
+    });
+  }
+
+  Future>> _exportAllSignatures() async {
+    final List> result = [];
+
+    for (int i = 0; i < _nameControllers.length; i++) {
+      final String name = _nameControllers[i].text.trim();
+      final SignatureController sc = _signatureControllers[i];
+
+      final List> serializedPoints = [];
+      if (!sc.isEmpty) {
+        final List pts = sc.points;
+        for (final p in pts) {
+          if (p == null) continue;
+          final dynamic dp = p;
+          final Offset off = dp.offset as Offset;
+          serializedPoints.add({
+            'x': off.dx,
+            'y': off.dy,
+            'pressure': dp.pressure ?? 1.0,
+            'type': dp.type.toString(),
+          });
+        }
+      }
+
+      result.add({
+        'name': name,
+        'points': serializedPoints,
+      });
+    }
+
+    return result;
+  }
+
+  Future _updateSignatures() async {
+    if (!_isEditMode) return;
+
+    try {
+      // Build attendeeNames from the editable controllers
+      final List updatedNames = _nameControllers
+          .map((c) => c.text.trim())
+          .where((name) => name.isNotEmpty)
+          .toList();
+
+      // Build updated attendees rows from controllers
+      final List> updatedAttendees = [];
+      final int rows = _maxAttendeeRows();
+      for (int i = 0; i < rows; i++) {
+        final String name =
+            i < _nameControllers.length ? _nameControllers[i].text.trim() : '';
+        final String address =
+            i < _addressControllers.length ? _addressControllers[i].text.trim() : '';
+        final String tel =
+            i < _telephoneControllers.length ? _telephoneControllers[i].text.trim() : '';
+        final String hectares =
+            i < _hectaresControllers.length ? _hectaresControllers[i].text.trim() : '';
+        final String crop =
+            i < _cropControllers.length ? _cropControllers[i].text.trim() : '';
+        final String insecticide = i < _insecticideControllers.length
+            ? _insecticideControllers[i].text.trim()
+            : '';
+        final String fungicide = i < _fungicideControllers.length
+            ? _fungicideControllers[i].text.trim()
+            : '';
+        final String herbicide = i < _herbicideControllers.length
+            ? _herbicideControllers[i].text.trim()
+            : '';
+        final String nutrition = i < _nutritionControllers.length
+            ? _nutritionControllers[i].text.trim()
+            : '';
+        final String dealerSource = i < _dealerSourceControllers.length
+            ? _dealerSourceControllers[i].text.trim()
+            : '';
+        final String facebookLink = i < _facebookLinkControllers.length
+            ? _facebookLinkControllers[i].text.trim()
+            : '';
+
+        // Skip completely empty rows
+        final bool isEmptyRow = name.isEmpty &&
+            address.isEmpty &&
+            tel.isEmpty &&
+            hectares.isEmpty &&
+            crop.isEmpty &&
+            insecticide.isEmpty &&
+            fungicide.isEmpty &&
+            herbicide.isEmpty &&
+            nutrition.isEmpty &&
+            dealerSource.isEmpty &&
+            facebookLink.isEmpty;
+
+        if (isEmptyRow) continue;
+
+        updatedAttendees.add({
+          'name': name,
+          'address': address,
+          'telephone': tel,
+          'hectares': hectares,
+          'crop': crop,
+          'insecticide': insecticide,
+          'fungicide': fungicide,
+          'herbicide': herbicide,
+          'nutrition': nutrition,
+          'dealerSource': dealerSource,
+          'facebookLink': facebookLink,
+        });
+      }
+
+      final signatures = await _exportAllSignatures();
+
+      // Parse dealers and focus products from comma-separated text fields
+      final List updatedDealers = _dealersController.text
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+
+      final List updatedFocusProducts = _focusProductsController.text
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+
+      final docRef = FirebaseFirestore.instance
+          .collection('flowDB')
+          .doc('users')
+          .collection(widget.userKey)
+          .doc('attendance_forms')
+          .collection('attendance_forms')
+          .doc(widget.docId);
+
+      await docRef.update({
+        'eventName': _eventNameController.text.trim(),
+        'cropFocus': _cropFocusController.text.trim(),
+        'cropStatus': _cropStatusController.text.trim(),
+        'date': _dateController.text.trim(),
+        'location': _locationController.text.trim(),
+        'remarks': _remarksController.text.trim(),
+        'dealers': updatedDealers,
+        'focusProducts': updatedFocusProducts,
+        'attendeeNames': updatedNames,
+        'attendeeSignatures': signatures,
+        'attendees': updatedAttendees,
+      });
+
+      setState(() {
+        widget.formData['eventName'] = _eventNameController.text.trim();
+        widget.formData['cropFocus'] = _cropFocusController.text.trim();
+        widget.formData['cropStatus'] = _cropStatusController.text.trim();
+        widget.formData['date'] = _dateController.text.trim();
+        widget.formData['location'] = _locationController.text.trim();
+        widget.formData['remarks'] = _remarksController.text.trim();
+        widget.formData['dealers'] = updatedDealers;
+        widget.formData['focusProducts'] = updatedFocusProducts;
+        widget.formData['attendeeNames'] = updatedNames;
+        widget.formData['attendeeSignatures'] = signatures;
+        widget.formData['attendees'] = updatedAttendees;
+        _attendees = updatedAttendees;
+        _dealers = updatedDealers;
+        _focusProducts = updatedFocusProducts;
+        _isEditMode = false;
+      });
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(children: const [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 10),
+              Text('Form updated successfully.'),
+            ]),
+            backgroundColor: const Color(0xFF059669),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)
+            ),
+          ),
+        );
+      } 
+    } catch (e) {
+      if (context.mounted) {
+        print('Error updating form: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(children: const [
+              Icon(Icons.error_outline, color: Colors.white),
+              SizedBox(width: 10),
+              Text('Error updating form. Please try again.')
+            ]),
+            backgroundColor: const Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)
+            )
+          ),
+        );
+      }
+    }
+  }
+
+  void _clearSignatureAt(int index) {
+    if (!_isEditMode) return;
+    setState(() {
+      _signatureControllers[index].clear();
+    });
+  }
+
+  void _toggleEditMode() {
+    setState(() {
+      _isEditMode = !_isEditMode;
+    });
+  }
+
+  int _maxAttendeeRows() {
+    return _attendees.length > _nameControllers.length
+        ? _attendees.length
+        : _nameControllers.length;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = widget.formData;
+    final String createdBy = data['createdBy'] ?? '';
+
+    return Scaffold(
+      backgroundColor: _surface,
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: CustomScrollView(
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              expandedHeight: 120,
+              backgroundColor: _purple,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),                
+                onPressed: () => Navigator.pop(context)
+              ),
+              actions: [
+                _isEditMode
+                  ? TextButton.icon(
+                      onPressed: _toggleEditMode,
+                      label: const Text('Cancel', style: TextStyle(color: Colors.white70, fontSize: 13))
+                    )
+                  : TextButton.icon(
+                      onPressed: _toggleEditMode,
+                      label: const Text('Edit', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600))
+                    ),
+                const SizedBox(width: 0),
+              ],
+              flexibleSpace: FlexibleSpaceBar(
+                background: Container(
+                  decoration: const BoxDecoration(gradient: _headerGradient),
+                  child: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Row(
+                            children: [
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Attendance Form',
+                                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                                    ),
+                                    Text(
+                                      data['eventName']?.toString().isNotEmpty == true
+                                        ? data['eventName'].toString()
+                                        : 'Event Details',
+                                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Content
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  // Basic Information
+                  _SectionLabel(
+                    label: 'Basic Information'
+                  ),
+                  const SizedBox(height: 10),
+                  _FormCard(
+                    child: Column(
+                      children: [
+                        _FormField(
+                          label: 'Event Name',
+                          controller: _eventNameController,
+                          isEdit: _isEditMode
+                        ),
+                        _FormField(
+                          label: 'Date',
+                          controller: _dateController,
+                          isEdit: _isEditMode
+                        ),
+                        _FormField(
+                          label: 'Location',
+                          controller: _locationController,
+                          isEdit: _isEditMode
+                        ),
+                        _FormField(
+                          label: 'Focus Products',
+                          controller: _focusProductsController,
+                          isEdit: _isEditMode
+                        ),
+                        if (createdBy.isNotEmpty)
+                          _StaticField(label: 'Created By', value: createdBy)
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Crop & Dealer Information
+                  _SectionLabel(
+                    label: 'Crop & Dealer Information'
+                  ),
+                  const SizedBox(height: 10),
+                  _FormCard(
+                    child: Column(
+                      children: [
+                        _FormField(
+                          label: 'Crop Focus',
+                          controller: _cropFocusController,
+                          isEdit: _isEditMode
+                        ),
+                        _FormField(
+                          label: 'Crop Status',
+                          controller: _cropStatusController,
+                          isEdit: _isEditMode
+                        ),
+                        _FormField(
+                          label: 'Name of Dealers',
+                          controller: _dealersController,
+                          isEdit: _isEditMode
+                        ),
+                        _FormField(
+                          label: 'Remarks',
+                          controller: _remarksController,
+                          isEdit: _isEditMode,
+                          maxLines: 3,
+                          isLast: true
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Attendees
+                  Row(
+                    children: [
+                      _SectionLabel(
+                        label: 'Attendees'
+                      ),
+                      const Spacer(),
+                      if (_isEditMode)
+                        GestureDetector(
+                          onTap: _addAttendeeRow,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(gradient: const LinearGradient(
+                              colors: [_purple, _purpleLight]), 
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _purpleLight.withValues(alpha: 0.35),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3)
+                                )
+                              ],
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.add, color: Colors.white, size: 15),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Add Attendee', 
+                                  style: TextStyle(
+                                    color: Colors.white, 
+                                    fontSize: 12, 
+                                    fontWeight: FontWeight.w700
+                                  )
+                                )
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Attendee Rows
+                  ...List.generate(_maxAttendeeRows(), (index) {
+                    final rowData = index < _attendees.length
+                      ? _attendees[index]
+                      : {};
+                    
+                    final name = index < _nameControllers.length
+                      ? _nameControllers[index].text
+                      : (rowData['name']?.toString() ?? '');
+                    final address = index < _addressControllers.length
+                      ? _addressControllers[index].text
+                      : (rowData['address']?.toString() ?? '');
+                    final telephone = index < _telephoneControllers.length
+                      ? _telephoneControllers[index].text
+                      : (rowData['telephone']?.toString() ?? '');
+                    final hectares = index < _hectaresControllers.length
+                      ? _hectaresControllers[index].text
+                      : (rowData['hectares']?.toString() ?? '');
+                    final crop = index < _cropControllers.length
+                      ? _cropControllers[index].text
+                      : (rowData['crop']?.toString() ?? '');
+                    
+                    final allEmpty = index >= _attendees.length &&
+                      [name, address, telephone, hectares, crop].every((field) => field.trim().isEmpty);
+                    
+                    if (allEmpty)
+                      return const SizedBox.shrink();
+                    
+                    final sigController = index < _signatureControllers.length
+                      ? _signatureControllers[index]
+                      : null;
+                    
+                    return _AttendeeCard(
+                      index: index,
+                      isEditMode: _isEditMode,
+                      nameController: index < _nameControllers.length
+                        ? _nameControllers[index]
+                        : TextEditingController(),
+                      addressController: index < _addressControllers.length
+                        ? _addressControllers[index]
+                        : TextEditingController(),
+                      telephoneController: index < _telephoneControllers.length
+                        ? _telephoneControllers[index]
+                        : TextEditingController(),
+                      hectaresController: index < _hectaresControllers.length
+                        ? _hectaresControllers[index]
+                        : TextEditingController(),
+                      cropController: index < _cropControllers.length
+                        ? _cropControllers[index]
+                        : TextEditingController(),
+                      insecticideController: index < _insecticideControllers.length
+                        ? _insecticideControllers[index]
+                        : TextEditingController(),
+                      fungicideController: index < _fungicideControllers.length
+                        ? _fungicideControllers[index]
+                        : TextEditingController(),
+                      herbicideController: index < _herbicideControllers.length
+                        ? _herbicideControllers[index]
+                        : TextEditingController(),
+                      nutritionController: index < _nutritionControllers.length
+                        ? _nutritionControllers[index]
+                        : TextEditingController(),
+                      dealerController: index < _dealerSourceControllers.length
+                        ? _dealerSourceControllers[index]
+                        : TextEditingController(),
+                      facebookLinkController: index < _facebookLinkControllers.length
+                        ? _facebookLinkControllers[index]
+                        : TextEditingController(),
+                      signatureController: sigController,
+                      onClearSignature: () => _clearSignatureAt(index),
+                    );
+                  }),
+                ]),
+              ),
+            ),
+          ],
+        ),
+      ),
+
+      // Update Button        
+      floatingActionButtonLocation:
+          FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: _isEditMode
+          ? Container(
+            margin: const EdgeInsets.symmetric(horizontal: 24),
+            width: double.infinity,
+            height: 52,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF4C1D95), _purpleLight],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: _purple.withValues(alpha: 0.45),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6)
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: _updateSignatures,
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Update Form',
+                      style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.4
+                      )
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+          : null,
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String label;
+
+  const _SectionLabel({
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 10),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: _purple,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
+  }
+}
+
+class _FormCard extends StatelessWidget {
+  final Widget child;
+  const _FormCard({
+    required this.child
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 4)
+          ),
+        ],
+      ),
+      child: child
+    );
+  }
+}
+
+class _FormField extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final bool isEdit;
+  final int maxLines;
+  final bool isLast;
+
+  const _FormField({
+    required this.label,
+    required this.controller,
+    required this.isEdit,
+    this.maxLines = 1,
+    this.isLast = false
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade500,
+                        letterSpacing: 0.4
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    isEdit
+                        ? TextField(
+                            controller: controller,
+                            maxLines: maxLines,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFF1A1A2E),
+                              fontWeight: FontWeight.w500
+                            ),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: _purple.withValues(alpha: 0.3))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: _purple.withValues(alpha: 0.3))),
+                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: _purple, width: 1.5)),
+                              filled: true,
+                              fillColor: _purple.withValues(alpha: 0.04)
+                            ),
+                          )
+                        : Text(
+                            controller.text.isNotEmpty
+                                ? controller.text
+                                : '-',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFF1A1A2E),
+                              fontWeight: FontWeight.w500
+                            ),
+                          )
+                  ],
+                ),
+              )
+            ],
+          ),
+        ),
+
+        if (!isLast)
+          Divider(
+            height: 1,
+            indent: 16,
+            color: Colors.grey.shade100,
+          ),
+      ],
+    );
+  }
+}
+
+class _StaticField extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _StaticField({
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Divider(
+          height: 1,
+          indent: 16,
+          color: Colors.grey.shade100
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              // const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade500,
+                        letterSpacing: 0.4
+                      )),
+                    const SizedBox(height: 4),
+                    Text(
+                      value.isNotEmpty ? value : '-',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF1A1A2E),
+                        fontWeight: FontWeight.w500
+                      )),
+                  ],
+                ),
+              )
+            ],
+          ),
+        ),        
+      ],
+    );
+  }
+}
+
+class _AttendeeCard extends StatefulWidget {
+  final int index;
+  final bool isEditMode;
+  final TextEditingController nameController;
+  final TextEditingController addressController;
+  final TextEditingController telephoneController;
+  final TextEditingController hectaresController;
+  final TextEditingController cropController;
+  final TextEditingController insecticideController;
+  final TextEditingController fungicideController;
+  final TextEditingController herbicideController;
+  final TextEditingController nutritionController;
+  final TextEditingController dealerController;
+  final TextEditingController facebookLinkController;
+  final SignatureController? signatureController;
+  final VoidCallback onClearSignature;
+
+  const _AttendeeCard({
+    required this.index,
+    required this.isEditMode,
+    required this.nameController,
+    required this.addressController,
+    required this.telephoneController,
+    required this.hectaresController,
+    required this.cropController,
+    required this.insecticideController,
+    required this.fungicideController,
+    required this.herbicideController,
+    required this.nutritionController,
+    required this.dealerController,
+    required this.facebookLinkController,
+    required this.signatureController,
+    required this.onClearSignature,    
+  });
+
+  @override
+  State<_AttendeeCard> createState() => _AttendeeCardState();
+}
+
+class _AttendeeCardState extends State<_AttendeeCard> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 4)
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _isExpanded = !_isExpanded),
+            borderRadius: BorderRadius.vertical(
+              top: const Radius.circular(20),
+              bottom: _isExpanded 
+                  ? Radius.zero 
+                  : const Radius.circular(20)
+            ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    _purple.withValues(alpha: 0.08),
+                    _purpleLight.withValues(alpha: 0.04)
+                  ],
+                ),
+                borderRadius: BorderRadius.vertical(
+                  top: const Radius.circular(20),
+                  bottom: _isExpanded 
+                    ? Radius.zero 
+                    : const Radius.circular(20)
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: const BoxDecoration(
+                      gradient: _headerGradient,
+                      shape: BoxShape.circle
+                    ),
+                    child: Center(
+                      child: Text(
+                        '${widget.index+1}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13
+                        ),
+                      )
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      widget.nameController.text.isNotEmpty
+                          ? widget.nameController.text
+                          : '${widget.index+1}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: _purple
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _isExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    color: _purple,
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
+          ),
+                  
+          if (_isExpanded)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
+                children: [
+                  _AttendeeFieldRow(
+                    label: 'Full Name',
+                    controller: widget.nameController,
+                    isEdit: widget.isEditMode
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _AttendeeFieldRow(
+                          label: 'Telephone / CP No.',
+                          controller: widget.telephoneController,
+                          isEdit: widget.isEditMode
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _AttendeeFieldRow(
+                          label: 'Hectares',
+                          controller: widget.hectaresController,
+                          isEdit: widget.isEditMode
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _AttendeeFieldRow(
+                    label: 'Address',
+                    controller: widget.addressController,
+                    isEdit: widget.isEditMode,
+                    maxLines: 2
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _AttendeeFieldRow(
+                          label: 'Crop',
+                          controller: widget.cropController,
+                          isEdit: widget.isEditMode
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _AttendeeFieldRow(
+                          label: 'Insecticide',
+                          controller: widget.insecticideController,
+                          isEdit: widget.isEditMode
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _AttendeeFieldRow(
+                          label: 'Fungicide',
+                          controller: widget.fungicideController,
+                          isEdit: widget.isEditMode
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _AttendeeFieldRow(
+                          label: 'Herbicide',
+                          controller: widget.herbicideController,
+                          isEdit: widget.isEditMode
+                        )
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _AttendeeFieldRow(
+                          label: 'Crop Nutrition / Foliar',
+                          controller: widget.nutritionController,
+                          isEdit: widget.isEditMode
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _AttendeeFieldRow(
+                          label: 'Dealer Name (Source)',
+                          controller: widget.dealerController,
+                          isEdit: widget.isEditMode
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _AttendeeFieldRow(
+                    label: 'Facebook Link',
+                    controller: widget.facebookLinkController,
+                    isEdit: widget.isEditMode
+                  ),
+                  const SizedBox(height: 14),
+
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'SIGNATURE',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade500,
+                        letterSpacing: 1.2
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: widget.isEditMode
+                            ? _purple.withValues(alpha: 0.5)
+                            : Colors.grey.shade200,
+                        width: widget.isEditMode ? 1.5 : 1
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.white,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: widget.signatureController == null
+                          ? const SizedBox(height: 80)
+                          : IgnorePointer(
+                            ignoring: !widget.isEditMode,
+                            child: Signature(
+                              controller: widget.signatureController!,
+                              width: double.infinity,
+                              height: 80,
+                              backgroundColor: Colors.white,
+                            ),
+                          ),
+                    ),
+                  ),
+                  if (widget.isEditMode) ...[
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: widget.onClearSignature,
+                        label: const Text(
+                          'Clear Signature',
+                          style: TextStyle(
+                            color: Color(0xFFDC2626),
+                            fontSize: 12
+                          ),
+                        ),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttendeeFieldRow extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final bool isEdit;
+  final int maxLines;
+
+  const _AttendeeFieldRow({
+    required this.label,
+    required this.controller,
+    required this.isEdit,
+    this.maxLines = 1
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade500,
+                letterSpacing: 0.3
+              ),
+            )
+          ],
+        ),
+        const SizedBox(height: 4),
+        isEdit
+            ? TextField(
+                controller: controller,
+                maxLines: maxLines,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF1A1A2E),
+                  fontWeight: FontWeight.w500
+                ),
+                decoration: InputDecoration(
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8), 
+                    borderSide: BorderSide(color: _purple.withValues(alpha: 0.3)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: _purple.withValues(alpha: 0.3)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: _purple, width: 1.5),
+                  ),
+                  filled: true,
+                  fillColor: _purple.withValues(alpha: 0.04),
+                ),
+              )
+            : Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Text(
+                  controller.text.isNotEmpty 
+                      ? controller.text 
+                      : '—',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF1A1A2E),
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: maxLines,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+      ],
+    );
+  }
+}
+
+// ======================
+// Transactions Page
+// ======================
+
+class AttendanceFormTransactionsPage extends StatefulWidget {
+  @override
+  State createState() =>
+      _AttendanceFormTransactionsPageState();
+}
+
+class _AttendanceFormTransactionsPageState
+    extends State {
+  String userKey = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEmailKey();
+  }
+
+  Future _loadEmailKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userEmail = prefs.getString('userEmail') ?? '';
+    setState(() {
+      userKey =
+          userEmail.replaceAll(RegExp(r'[.#\$\\\[\]/]'), '_');
+    });
+  }
+
+  Future _navigateToAddForm(BuildContext context) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => AttendanceFormPage()),
+    );
+    if (result == true) setState(() {});
+  }
+
+  void _openDetail(
+      BuildContext context, Map formData, String docId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AttendanceFormReadonlyPage(
+          formData: formData,
+          docId: docId,
+          userKey: userKey,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _surface,
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(60),
+        child: AppBar(
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          automaticallyImplyLeading: true,
+          flexibleSpace: Container(
+            decoration: const BoxDecoration(
+              gradient: _headerGradient,
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+            ),
+          ),
+          shape: const RoundedRectangleBorder(
+              borderRadius:
+                  BorderRadius.vertical(bottom: Radius.circular(24))),
+          title: const Text('Attendance Forms',
+              style: TextStyle(fontWeight: FontWeight.w700)),
+          actions: [
+            IconButton(
+              icon: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child:
+                    const Icon(Icons.add, color: Colors.white, size: 20),
+              ),
+              onPressed: () => _navigateToAddForm(context),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ),
+      ),
+      body: userKey.isEmpty
+          ? const Center(child: CircularProgressIndicator(color: _purple))
+          : StreamBuilder(
+              stream: FirebaseFirestore.instance
+                  .collection('flowDB')
+                  .doc('users')
+                  .collection(userKey)
+                  .doc('attendance_forms')
+                  .collection('attendance_forms')
+                  .orderBy('timestamp', descending: true)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(
+                      child: CircularProgressIndicator(color: _purple));
+                }
+                final docs = snapshot.data!.docs;
+                if (docs.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: _purple.withValues(alpha: 0.07),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text('No attendance forms yet',
+                            style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 6),
+                        Text('Tap + to create a new form',
+                            style: TextStyle(
+                                color: Colors.grey.shade400, fontSize: 13)),
+                      ],
+                    ),
+                  );
+                }
+
+                return GridView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: docs.length,
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 0.95,
+                  ),
+                  itemBuilder: (context, idx) {
+                    final doc = docs[idx];
+                    final data = doc.data() as Map;
+                    final eventName = data['eventName']?.toString() ?? '';
+                    final date = data['date']?.toString() ?? '—';
+                    final location = data['location']?.toString() ?? '';
+                    final txNum = docs.length - idx;
+
+                    return Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () => _openDetail(context, data, doc.id),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Color(0xFF4C1D95),
+                                Color(0xFF7C3AED),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _purple.withValues(alpha: 0.3),
+                                blurRadius: 12,
+                                offset: const Offset(0, 5),
+                              ),
+                            ],
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            Colors.white.withOpacity(0.15),
+                                        borderRadius:
+                                            BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            Colors.white.withOpacity(0.15),
+                                        borderRadius:
+                                            BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        '#$txNum',
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Spacer(),
+                                Text(
+                                  eventName.isNotEmpty
+                                      ? eventName
+                                      : 'Unnamed Event',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                    height: 1.3,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                if (location.isNotEmpty) ...[
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          location,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                              color: Colors.white60,
+                                              fontSize: 11),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                ],
+                                Row(
+                                  children: [
+                                    Text(
+                                      date,
+                                      style: const TextStyle(
+                                          color: Colors.white60,
+                                          fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+    );
+  }
+}

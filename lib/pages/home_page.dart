@@ -5,8 +5,13 @@ import 'package:flutter/material.dart';
 import '../menu/e_forms_menu/forms_page.dart';
 import '../menu/itinerary_menu/itinerary_page.dart';
 import '../menu/doctor_menu/doctor_page.dart';
+import '../webview/webview_in_field_page.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:marquee/marquee.dart';
+import '../webview/webview_abr_form_page.dart';
+import '../webview/webview_scp_form_page.dart';
+import '../webview/webview_incidental_coverage_form_page.dart';
+import '../webview/webview_sales_order_form_page.dart';
 import 'package:signature/signature.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -31,7 +36,6 @@ import '../menu/e_forms_menu/abr_form_page.dart';
 import '../pages/messages_page.dart';
 import '../pages/notif_page.dart';
 import '../menu/profile_view_page.dart';
-import '../webview/webview.dart';
 import 'package:flutter/services.dart';
 
 import '../menu/doctor_menu/call_detail_page.dart';
@@ -58,8 +62,24 @@ Map<String, Map<String, bool>> doctorChecklistStates = {};
 Map<int, bool> checkedStates = {};
 
 Future<List<Map<String, dynamic>>> getTodaySamplesFlat(
-    String emailKey, String userName) async {
-  final doctorsSnap = await FirebaseFirestore.instance
+  String emailKey,
+  String userName,
+) async {
+  if (emailKey.isEmpty) return [];
+
+  final DateTime now = DateTime.now();
+  final String todayKey =
+      '${now.year.toString().padLeft(4, '0')}-'
+      '${now.month.toString().padLeft(2, '0')}-'
+      '${now.day.toString().padLeft(2, '0')}'; // yyyy-MM-dd
+  final String monthId =
+      '${now.year.toString().padLeft(4, '0')}-'
+      '${now.month.toString().padLeft(2, '0')}'; // yyyy-MM
+
+  final firestore = FirebaseFirestore.instance;
+
+  // 1. Load all doctors for this user
+  final doctorsSnap = await firestore
       .collection('flowDB')
       .doc('users')
       .collection(emailKey)
@@ -67,35 +87,69 @@ Future<List<Map<String, dynamic>>> getTodaySamplesFlat(
       .collection('doctors')
       .get();
 
-  List<Map<String, dynamic>> out = [];
-  final todayStr = "${DateTime.now().year.toString().padLeft(4, '0')}-"
-      "${DateTime.now().month.toString().padLeft(2, '0')}-"
-      "${DateTime.now().day.toString().padLeft(2, '0')}";
+  if (doctorsSnap.docs.isEmpty) return [];
 
-  for (var doc in doctorsSnap.docs) {
-    final docData = doc.data();
-    final doctorName =
+  final List<Map<String, dynamic>> result = [];
+
+  for (final doc in doctorsSnap.docs) {
+    final docData = doc.data() as Map<String, dynamic>;
+    final String doctorName =
         "${docData['lastName'] ?? ''}, ${docData['firstName'] ?? ''}".trim();
 
-    final visitSnap = await doc.reference
+    // 2. Go into scheduledVisits/months/months/{yyyy-MM}/dates/{yyyy-MM-dd}
+    final dateDocRef = doc.reference
         .collection('scheduledVisits')
-        .where('scheduledDate', isEqualTo: todayStr)
-        .get();
+        .doc('months')
+        .collection('months')
+        .doc(monthId)
+        .collection('dates')
+        .doc(todayKey);
 
-    for (var visitDoc in visitSnap.docs) {
-      final visitData = visitDoc.data();
-      final sampleMap =
-          Map<String, dynamic>.from(visitData['sampleAllocations'] ?? {});
-      sampleMap.forEach((sample, qty) {
-        out.add({
-          'doctorName': doctorName,
-          'sample': sample,
-          'qty': qty,
-        });
+    final dateDoc = await dateDocRef.get();
+
+    if (!dateDoc.exists) continue;
+
+    final dateData = dateDoc.data() as Map<String, dynamic>;
+
+    // Only consider if this doc is actually scheduled for today
+    final scheduledDate = dateData['scheduledDate']?.toString() ?? '';
+    if (scheduledDate != todayKey) continue;
+
+    // 3. Read sampleAllocations map: e.g. { Maxilizer: 1, ... }
+    if (!dateData.containsKey('sampleAllocations')) continue;
+
+    final Map<String, dynamic> allocMap =
+        Map<String, dynamic>.from(dateData['sampleAllocations']);
+
+    allocMap.forEach((sampleName, qtyRaw) {
+      final int qty = qtyRaw is int
+          ? qtyRaw
+          : int.tryParse(qtyRaw.toString()) ?? 0;
+
+      if (qty <= 0) return;
+
+      result.add({
+        'sample': sampleName,          // e.g. "Maxilizer"
+        'qty': qty,                    // e.g. 1
+        'doctorName': doctorName,      // match Scheduled Doctors section
+        'doctorId': doc.id,
+        'scheduledDate': todayKey,
       });
-    }
+    });
   }
-  return out;
+
+  // Optional: sort by sample then doctor name
+  result.sort((a, b) {
+    final sa = (a['sample'] ?? '').toString();
+    final sb = (b['sample'] ?? '').toString();
+    final da = (a['doctorName'] ?? '').toString();
+    final db = (b['doctorName'] ?? '').toString();
+    final c1 = sa.compareTo(sb);
+    if (c1 != 0) return c1;
+    return da.compareTo(db);
+  });
+
+  return result;
 }
 
 // CALL PERFORMANCE STATS
@@ -1512,12 +1566,22 @@ SingleChildScrollView(
   }
 
   Future<List<Map<String, dynamic>>> getAllScheduledVisitsForToday(
-      List<QueryDocumentSnapshot> doctorDocs,
-      DateTime selectedDay) async {
+    List<QueryDocumentSnapshot> doctorDocs,
+    DateTime selectedDay,
+  ) async {
     if (emailKey.isEmpty) return [];
+
     final List<Map<String, dynamic>> allVisits = [];
+
     final targetDateKey =
-        '${selectedDay.year.toString().padLeft(4, '0')}-${selectedDay.month.toString().padLeft(2, '0')}-${selectedDay.day.toString().padLeft(2, '0')}';
+        '${selectedDay.year.toString().padLeft(4, '0')}-'
+        '${selectedDay.month.toString().padLeft(2, '0')}-'
+        '${selectedDay.day.toString().padLeft(2, '0')}';
+
+    // derive the month doc id, e.g. "2026-03"
+    final monthId =
+        '${selectedDay.year.toString().padLeft(4, '0')}-'
+        '${selectedDay.month.toString().padLeft(2, '0')}';
 
     for (var doc in doctorDocs) {
       final docData = doc.data() as Map<String, dynamic>;
@@ -1525,11 +1589,19 @@ SingleChildScrollView(
       final doctorName =
           "${docData['lastName'] ?? ''}, ${docData['firstName'] ?? ''}";
 
-      var scheduledVisitsSnap =
-          await doc.reference.collection('scheduledVisits').get();
-      for (var v in scheduledVisitsSnap.docs) {
-        final visitData = v.data();
+      // ⬇️ navigate into scheduledVisits/months/months/{yyyy-MM}/dates
+      final monthDocRef = doc.reference
+          .collection('scheduledVisits')
+          .doc('months')
+          .collection('months')
+          .doc(monthId);
+
+      final datesSnap = await monthDocRef.collection('dates').get();
+
+      for (var v in datesSnap.docs) {
+        final visitData = v.data() as Map<String, dynamic>;
         final visitDateString = visitData['scheduledDate'] ?? '';
+
         if (visitDateString == targetDateKey) {
           allVisits.add({
             'doctorName': doctorName,
@@ -1544,8 +1616,10 @@ SingleChildScrollView(
         }
       }
     }
+
     allVisits.sort((a, b) =>
         (a['scheduledTime'] ?? '').compareTo(b['scheduledTime'] ?? ''));
+
     return allVisits;
   }
 
@@ -2856,11 +2930,12 @@ void _openCreateEFormDialog() {
                           Navigator.of(ctx).pop();
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (context) => ScpFormPage(),
+                              builder: (context) => const ScpFormWebviewPage(),
                             ),
                           );
                         },
                       ),
+
 
                       const SizedBox(height: 12),
 
@@ -2875,11 +2950,12 @@ void _openCreateEFormDialog() {
                           Navigator.of(ctx).pop();
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (context) => const AbrFormPage(),
+                              builder: (context) => const AbrFormWebviewPage(),
                             ),
                           );
                         },
                       ),
+
 
                       const SizedBox(height: 12),
 
@@ -2887,18 +2963,18 @@ void _openCreateEFormDialog() {
                       _buildEFormTypeTile(
                         icon: Icons.school_outlined,
                         title: 'In-Field Coaching Form',
-                        subtitle:
-                            'Document coaching sessions and farmer field visits',
+                        subtitle: 'Document coaching sessions and farmer field visits',
                         color: Colors.blue.shade700,
                         onTap: () {
-                          Navigator.of(ctx).pop(); // Close bottom sheet if open
+                          Navigator.of(ctx).pop();
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (context) => InFieldCoachingFormPage(),
+                              builder: (context) => const WebviewInFieldPage(),
                             ),
                           );
                         },
                       ),
+
 
                       const SizedBox(height: 12),
 
@@ -2906,19 +2982,18 @@ void _openCreateEFormDialog() {
                       _buildEFormTypeTile(
                         icon: Icons.event_available_outlined,
                         title: 'Incidental Coverage Form',
-                        subtitle:
-                            'Record incidental activities and field coverages',
+                        subtitle: 'Record incidental activities and field coverages',
                         color: Colors.teal.shade700,
                         onTap: () {
                           Navigator.of(ctx).pop();
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (context) =>
-                                  IncidentalCoverageFormPage(),
+                              builder: (context) => const IncidentalCoverageFormWebviewPage(),
                             ),
                           );
                         },
                       ),
+
 
                       const SizedBox(height: 12),
 
@@ -2926,14 +3001,13 @@ void _openCreateEFormDialog() {
                       _buildEFormTypeTile(
                         icon: Icons.shopping_cart_outlined,
                         title: 'Sales Order Form',
-                        subtitle:
-                            'Create and track sales orders for your customers',
+                        subtitle: 'Create and track sales orders for your customers',
                         color: Colors.red.shade700,
                         onTap: () {
                           Navigator.of(ctx).pop();
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (context) => SalesOrderFormPage(),
+                              builder: (context) => const WebviewSalesOrderFormPage(),
                             ),
                           );
                         },
@@ -2941,22 +3015,6 @@ void _openCreateEFormDialog() {
 
                       const SizedBox(height: 12),
 
-                      // Webview Form
-                      _buildEFormTypeTile(
-                        icon: Icons.web_asset_outlined,
-                        title: 'Webview Form',
-                        subtitle:
-                            'Open legacy web-based electronic forms in a webview',
-                        color: Colors.indigo.shade700,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => WebviewFormPage(),
-                            ),
-                          );
-                        },
-                      ),
                     ],
                   ),
                 ),
@@ -3726,8 +3784,8 @@ void _openCreateEFormDialog() {
                                 end: Alignment.bottomCenter,
                               ),
                               borderRadius: const BorderRadius.only(
-                                bottomLeft: Radius.circular(10.0),
-                                bottomRight: Radius.circular(10.0),
+                                bottomLeft: Radius.circular(50.0),
+                                bottomRight: Radius.circular(50.0),
                               ),
                             ),
                             child: Card(
@@ -4104,29 +4162,26 @@ void _openCreateEFormDialog() {
                         SizedBox(height: 12),
 
                         Row(
-                          mainAxisAlignment:
-                              MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Dashboard',
-                              style: TextStyle(
-                                fontFamily: 'Lato',
-                                fontSize: 14,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ],
-                        ),
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    Text(
+      'Dashboard',
+      style: TextStyle(
+        fontFamily: 'Lato',
+        fontSize: 14,
+        color: Colors.black,
+      ),
+    ),
+  ],
+),
                         SizedBox(height: 4),
                         Row(
-                          mainAxisAlignment:
-                              MainAxisAlignment.center,
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
                               todayStr,
                               style: TextStyle(
-                                fontWeight:
-                                    FontWeight.bold,
+                                fontWeight: FontWeight.bold,
                                 fontSize: 28,
                                 color: Colors.black,
                               ),
@@ -4135,14 +4190,12 @@ void _openCreateEFormDialog() {
                         ),
                         SizedBox(height: 4),
                         Row(
-                          mainAxisAlignment:
-                              MainAxisAlignment.center,
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
                               "Scheduled Doctors for Today",
                               style: TextStyle(
-                                fontWeight:
-                                    FontWeight.bold,
+                                fontWeight: FontWeight.bold,
                                 fontSize: 20,
                                 color: Color(0xFFf7ad01),
                               ),
@@ -4150,12 +4203,11 @@ void _openCreateEFormDialog() {
                           ],
                         ),
                         SizedBox(height: 8),
+
                         Padding(
-                          padding: EdgeInsets.only(
-                              left: 20, right: 0),
+                          padding: EdgeInsets.only(left: 20, right: 0),
                           child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               FutureBuilder<QuerySnapshot>(
                                 future: FirebaseFirestore.instance
@@ -4220,15 +4272,19 @@ void _openCreateEFormDialog() {
                                   }
 
                                   final doctorDocs = doctorSnapshot.data!.docs;
+
+                                  // NEW: use getAllScheduledVisitsForToday for every doctor
                                   return FutureBuilder<List<Map<String, dynamic>>>(
-                                    future: getAllScheduledVisitsForToday(doctorDocs, DateTime.now())
-                                        .timeout(
-                                          Duration(seconds: 10),
-                                          onTimeout: () {
-                                            print('Timeout loading scheduled visits');
-                                            return <Map<String, dynamic>>[];
-                                          },
-                                        ),
+                                    future: getAllScheduledVisitsForToday(
+                                      doctorDocs,
+                                      DateTime.now(),
+                                    ).timeout(
+                                      Duration(seconds: 10),
+                                      onTimeout: () {
+                                        print('Timeout loading scheduled visits');
+                                        return <Map<String, dynamic>>[];
+                                      },
+                                    ),
                                     builder: (context, visitsSnapshot) {
                                       if (visitsSnapshot.hasError) {
                                         print('Error loading visits: ${visitsSnapshot.error}');
@@ -4256,21 +4312,26 @@ void _openCreateEFormDialog() {
                                         );
                                       }
 
-                                      if (visitsSnapshot.connectionState == ConnectionState.waiting) {
+                                      if (visitsSnapshot.connectionState ==
+                                              ConnectionState.waiting &&
+                                          !visitsSnapshot.hasData) {
                                         return Center(child: CircularProgressIndicator());
                                       }
 
-                                      if (!visitsSnapshot.hasData || visitsSnapshot.data!.isEmpty) {
+                                      if (!visitsSnapshot.hasData ||
+                                          visitsSnapshot.data!.isEmpty) {
                                         return Center(
                                           child: Text(
                                             _isOffline
                                                 ? "Offline: showing cached schedule (none cached for today)."
                                                 : "No scheduled visits for today.",
+                                            textAlign: TextAlign.center,
                                           ),
                                         );
                                       }
 
                                       final visitsForDay = visitsSnapshot.data!;
+
                                       return SizedBox(
                                         height: 160,
                                         child: ListView.builder(
@@ -4278,15 +4339,28 @@ void _openCreateEFormDialog() {
                                           itemCount: visitsForDay.length,
                                           itemBuilder: (context, idx) {
                                             final visit = visitsForDay[idx];
-                                            final visitData = visit['visitData'];
-                                            final scheduledTime = visit['scheduledTime'] ?? '';
-                                            final bool isSubmitted = visitData['submitted'] == true;
-                                            final bool isSurprise = visitData['surprise'] == true;
+                                            final visitData =
+                                                visit['visitData'] as Map<String, dynamic>;
+                                            final scheduledTime =
+                                                visit['scheduledTime'] ?? '';
+                                            final bool isSubmitted =
+                                                visitData['submitted'] == true;
+                                            final bool isSurprise =
+                                                visitData['surprise'] == true;
 
                                             Color cardBorderColor = Colors.grey.shade300;
-                                            if (isSubmitted) cardBorderColor = Colors.green.shade400;
+                                            if (isSubmitted) {
+                                              cardBorderColor = Colors.green.shade400;
+                                            }
                                             Color cardColor = Colors.white;
-                                            if (isSurprise) cardColor = Colors.yellow.shade100;
+                                            if (isSurprise) {
+                                              cardColor = Colors.yellow.shade100;
+                                            }
+
+                                            final String doctorName =
+                                                visit['doctorName'] ?? '-';
+                                            final String hospital =
+                                                visit['hospital'] ?? '';
 
                                             return SizedBox(
                                               width: 150,
@@ -4321,67 +4395,73 @@ void _openCreateEFormDialog() {
                                                             context,
                                                             MaterialPageRoute(
                                                               builder: (context) => CallDetailPage(
-                                                                doctor: visit['doctor'],
+                                                                doctor:
+                                                                    visit['doctor'] as Map<String, dynamic>,
                                                                 scheduledVisitId: visit['visitId'],
                                                               ),
                                                             ),
                                                           );
                                                         },
                                                         child: Padding(
-                                                          padding: const EdgeInsets.fromLTRB(12, 16, 12, 10),
+                                                          padding: const EdgeInsets.fromLTRB(
+                                                              12, 16, 12, 10),
                                                           child: Column(
-                                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                                            mainAxisAlignment: MainAxisAlignment.start,
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment.start,
+                                                            mainAxisSize: MainAxisSize.min,
                                                             children: [
                                                               SizedBox(height: 18),
-                                                              // DOCTOR NAME
                                                               SizedBox(
                                                                 height: 20,
                                                                 child: SingleChildScrollView(
-                                                                  scrollDirection: Axis.horizontal,
+                                                                  scrollDirection:
+                                                                      Axis.horizontal,
                                                                   child: Text(
-                                                                    visit['doctorName'] ?? '-',
+                                                                    doctorName,
                                                                     maxLines: 1,
-                                                                    overflow: TextOverflow.visible,
+                                                                    overflow:
+                                                                        TextOverflow.visible,
                                                                     softWrap: false,
                                                                     style: TextStyle(
-                                                                      fontWeight: FontWeight.bold,
+                                                                      fontWeight:
+                                                                          FontWeight.bold,
                                                                       fontSize: 14,
                                                                     ),
                                                                   ),
                                                                 ),
                                                               ),
                                                               SizedBox(height: 4),
-                                                              // SCHEDULED TIME
                                                               SizedBox(
                                                                 height: 16,
                                                                 child: Text(
                                                                   scheduledTime,
                                                                   maxLines: 1,
-                                                                  overflow: TextOverflow.ellipsis,
+                                                                  overflow:
+                                                                      TextOverflow.ellipsis,
                                                                   style: TextStyle(
                                                                     fontSize: 12,
-                                                                    color: Colors.grey.shade800,
+                                                                    color:
+                                                                        Colors.grey.shade800,
                                                                   ),
                                                                 ),
                                                               ),
-                                                              if (visit['hospital'] != null && visit['hospital'] != '')
-                                                                ...[
-                                                                  SizedBox(height: 4),
-                                                                  // HOSPITAL NAME
-                                                                  SizedBox(
-                                                                    height: 32,
-                                                                    child: Text(
-                                                                      "${visit['hospital']}",
-                                                                      maxLines: 2,
-                                                                      overflow: TextOverflow.ellipsis,
-                                                                      style: TextStyle(
-                                                                        fontSize: 12,
-                                                                        color: Colors.grey.shade700,
-                                                                      ),
+                                                              if (hospital.isNotEmpty) ...[
+                                                                SizedBox(height: 4),
+                                                                SizedBox(
+                                                                  height: 32,
+                                                                  child: Text(
+                                                                    hospital,
+                                                                    maxLines: 2,
+                                                                    overflow:
+                                                                        TextOverflow.ellipsis,
+                                                                    style: TextStyle(
+                                                                      fontSize: 12,
+                                                                      color:
+                                                                          Colors.grey.shade700,
                                                                     ),
                                                                   ),
-                                                                ],
+                                                                ),
+                                                              ],
                                                             ],
                                                           ),
                                                         ),
@@ -4393,7 +4473,8 @@ void _openCreateEFormDialog() {
                                                       child: Container(
                                                         decoration: BoxDecoration(
                                                           color: Colors.white,
-                                                          borderRadius: BorderRadius.circular(14),
+                                                          borderRadius:
+                                                              BorderRadius.circular(14),
                                                           boxShadow: [
                                                             BoxShadow(
                                                               color: Colors.black12,
@@ -4417,7 +4498,8 @@ void _openCreateEFormDialog() {
                                                         child: Container(
                                                           decoration: BoxDecoration(
                                                             color: Colors.white,
-                                                            borderRadius: BorderRadius.circular(14),
+                                                            borderRadius:
+                                                                BorderRadius.circular(14),
                                                             boxShadow: [
                                                               BoxShadow(
                                                                 color: Colors.black12,
@@ -4445,11 +4527,13 @@ void _openCreateEFormDialog() {
                                   );
                                 },
                               ),
+
+
                               SizedBox(height: 12),
                               Padding(
                                 padding: EdgeInsets.only(left: 20),
                                 child: Text(
-                                  "ProMats to Bring",
+                                  "Samples to Bring",
                                   style: TextStyle(
                                     fontFamily: 'Lato',
                                     fontSize: 24,
@@ -4459,22 +4543,17 @@ void _openCreateEFormDialog() {
                                 ),
                               ),
                               Padding(
-                                padding: EdgeInsets.only(
-                                    left: 20,
-                                    top: 12,
-                                    right: 0,
-                                    bottom: 8),
+                                padding: EdgeInsets.only(left: 20, top: 12, right: 0, bottom: 8),
                                 child: ConstrainedBox(
                                   constraints: BoxConstraints(maxWidth: 420),
                                   child: FutureBuilder<List<Map<String, dynamic>>>(
-                                    future: getTodaySamplesFlat(emailKey, userName)
-                                        .timeout(
-                                          Duration(seconds: 10),
-                                          onTimeout: () {
-                                            print('Timeout loading samples');
-                                            return <Map<String, dynamic>>[];
-                                          },
-                                        ),
+                                    future: getTodaySamplesFlat(emailKey, userName).timeout(
+                                      Duration(seconds: 10),
+                                      onTimeout: () {
+                                        print('Timeout loading samples');
+                                        return <Map<String, dynamic>>[];
+                                      },
+                                    ),
                                     builder: (context, snapshot) {
                                       if (snapshot.hasError) {
                                         print('Error loading samples: ${snapshot.error}');
@@ -4500,7 +4579,8 @@ void _openCreateEFormDialog() {
                                         );
                                       }
 
-                                      if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+                                      if (snapshot.connectionState == ConnectionState.waiting &&
+                                          !snapshot.hasData) {
                                         return Center(child: CircularProgressIndicator());
                                       }
 
@@ -4529,16 +4609,13 @@ void _openCreateEFormDialog() {
                                           return SingleChildScrollView(
                                             scrollDirection: Axis.horizontal,
                                             child: Row(
-                                              children: samplesList
-                                                  .asMap()
-                                                  .entries
-                                                  .map((entry) {
+                                              children: samplesList.asMap().entries.map((entry) {
                                                 int idx = entry.key;
                                                 var item = entry.value;
 
                                                 final bool isChecked = checkedStates[idx] ?? false;
                                                 final String promoName = item['sample'] ?? '';
-                                                final String qtyString = "(${item['qty'] ?? 0})";
+                                                final int qty = item['qty'] ?? 0;
                                                 final String doctorName = item['doctorName'] ?? '';
 
                                                 return Padding(
@@ -4551,35 +4628,104 @@ void _openCreateEFormDialog() {
                                                     child: AnimatedContainer(
                                                       duration: const Duration(milliseconds: 250),
                                                       curve: Curves.easeInOut,
-                                                      height: _isHeaderCollapsed ? 0 : null,
-                                                      child: Expanded(
-                                                        child: Column(
-                                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                                          mainAxisSize: MainAxisSize.min,
-                                                          children: [
-                                                            Text(
-                                                              _isLoading ? 'Loading...' : userName,
-                                                              style: const TextStyle(
-                                                                fontSize: 24,
-                                                                fontWeight: FontWeight.bold,
-                                                                color: Colors.white70,
-                                                              ),
-                                                              overflow: TextOverflow.ellipsis,
-                                                            ),
-                                                            const SizedBox(height: 6),
-                                                            Text(
-                                                              _isLoading ? 'Loading...' : userEmail,
-                                                              style: const TextStyle(
-                                                                fontSize: 16,
-                                                                color: Colors.white70,
-                                                              ),
-                                                              overflow: TextOverflow.ellipsis,
-                                                            ),
-                                                          ],
+                                                      width: 150,
+                                                      height: 190,
+                                                      padding: const EdgeInsets.fromLTRB(10, 32, 10, 12),
+                                                      decoration: BoxDecoration(
+                                                        color: isChecked
+                                                            ? Colors.green.shade50
+                                                            : Colors.white,
+                                                        borderRadius: BorderRadius.circular(18),
+                                                        border: Border.all(
+                                                          color: isChecked
+                                                              ? Colors.green
+                                                              : Colors.grey.shade300,
+                                                          width: isChecked ? 2 : 1,
                                                         ),
+                                                        boxShadow: [
+                                                          BoxShadow(
+                                                            color: Colors.black.withOpacity(0.08),
+                                                            blurRadius: 8,
+                                                            offset: Offset(0, 4),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      child: Stack(
+                                                        clipBehavior: Clip.none,
+                                                        children: [
+                                                          // main card content
+                                                          Column(
+                                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                                            mainAxisSize: MainAxisSize.max,
+                                                            children: [
+                                                              // extra spacer to push content lower
+                                                              SizedBox(height: 38),
+                                                              // Promo material (now above doctor name)
+                                                              Text(
+                                                                promoName,
+                                                                maxLines: 2,
+                                                                overflow: TextOverflow.ellipsis,
+                                                                style: TextStyle(
+                                                                  fontSize: 13,
+                                                                  color: Colors.black,
+                                                                ),
+                                                              ),
+                                                              SizedBox(height: 10),
+                                                              // Doctor name LOWER
+                                                              Text(
+                                                                doctorName,
+                                                                maxLines: 1,
+                                                                overflow: TextOverflow.ellipsis,
+                                                                style: TextStyle(
+                                                                  fontWeight: FontWeight.bold,
+                                                                  fontSize: 13,
+                                                                  color: Colors.black87,
+                                                                ),
+                                                              ),
+                                                              SizedBox(height: 10),
+                                                              // Quantity
+                                                              Text(
+                                                                'Qty: $qty',
+                                                                style: TextStyle(
+                                                                  fontSize: 12,
+                                                                  fontWeight: FontWeight.w600,
+                                                                  color: Colors.grey.shade800,
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+
+                                                          // top-center icon badge
+                                                          Positioned(
+                                                            top: -18,
+                                                            left: 0,
+                                                            right: 0,
+                                                            child: Center(
+                                                              child: Container(
+                                                                width: 45,
+                                                                height: 45,
+                                                                decoration: BoxDecoration(
+                                                                  color: Colors.orange.shade50,
+                                                                  shape: BoxShape.circle,
+                                                                  boxShadow: [
+                                                                    BoxShadow(
+                                                                      color: Colors.black.withOpacity(0.1),
+                                                                      blurRadius: 4,
+                                                                      offset: Offset(0, 2),
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                                child: Icon(
+                                                                  Icons.inventory_2_rounded,
+                                                                  size: 38,
+                                                                  color: Colors.orange.shade700,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
                                                       ),
                                                     ),
-
                                                   ),
                                                 );
                                               }).toList(),
@@ -4591,6 +4737,7 @@ void _openCreateEFormDialog() {
                                   ),
                                 ),
                               ),
+
                               SizedBox(height: 24),
                               Padding(
                                 padding: EdgeInsets.only(left: 20),
@@ -5297,6 +5444,9 @@ void _openCreateEFormDialog() {
                             ],
                           ),
                         ),
+
+                        // MARK MARK MARK
+                      
                       ],
                     ),
                   ),
