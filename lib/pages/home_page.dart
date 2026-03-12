@@ -8,6 +8,7 @@ import '../menu/doctor_menu/doctor_page.dart';
 import '../webview/webview_in_field_page.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:marquee/marquee.dart';
+import '../webview/webview_attendance_form_page.dart';
 import '../webview/webview_abr_form_page.dart';
 import '../webview/webview_scp_form_page.dart';
 import '../webview/webview_incidental_coverage_form_page.dart';
@@ -2912,7 +2913,7 @@ void _openCreateEFormDialog() {
                           Navigator.of(ctx).pop();
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (context) => AttendanceFormPage(),
+                              builder: (context) => const AttendanceFormWebviewPage(),
                             ),
                           );
                         },
@@ -4528,8 +4529,8 @@ void _openCreateEFormDialog() {
                                 },
                               ),
 
-
                               SizedBox(height: 12),
+
                               Padding(
                                 padding: EdgeInsets.only(left: 20),
                                 child: Text(

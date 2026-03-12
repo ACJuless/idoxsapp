@@ -9,6 +9,24 @@ import 'package:signature/signature.dart';
 
 import 'scp_form_page.dart';
 
+/// Small extension to convert a BoxDecoration into an InputDecoration
+/// with a matching background color and rounded corners.
+extension _BoxToInputDecoration on BoxDecoration {
+  InputDecoration toInputDecoration() {
+    return InputDecoration(
+      filled: true,
+      fillColor: (color ?? Colors.transparent),
+      contentPadding: const EdgeInsets.all(10),
+      border: OutlineInputBorder(
+        borderRadius: borderRadius is BorderRadius
+            ? (borderRadius as BorderRadius)
+            : BorderRadius.circular(8),
+        borderSide: BorderSide.none,
+      ),
+    );
+  }
+}
+
 /// Detail page for a single SCP form.
 /// Shows all fields, and supports toggling between read-only and edit mode.
 class ScpFormReadonlyPage extends StatefulWidget {
@@ -53,11 +71,14 @@ class _ScpFormReadonlyPageState extends State<ScpFormReadonlyPage> {
 
   String _createdBy = '';
 
+  // Local expand/collapse state for advisory and products in view/edit mode
+  final Map<int, bool> _advExpanded = {};
+  final Map<int, bool> _prodExpanded = {};
+
   @override
   void initState() {
     super.initState();
 
-    // Initialize data from incoming formData
     final formData = widget.formData;
 
     _farmerNameController =
@@ -94,7 +115,6 @@ class _ScpFormReadonlyPageState extends State<ScpFormReadonlyPage> {
         advisoryDetailsRaw.map((e) => Map<String, dynamic>.from(e)).toList();
     _products = productsRaw.map((e) => Map<String, dynamic>.from(e)).toList();
 
-    // Initialize farmer signature controller
     _farmerSignatureController = SignatureController(
       penStrokeWidth: 2,
       penColor: Colors.black,
@@ -105,14 +125,6 @@ class _ScpFormReadonlyPageState extends State<ScpFormReadonlyPage> {
   }
 
   /// Load signature points from Firestore data into the SignatureController.
-  /// Form now stores them under 'farmerSignaturePoints' as:
-  /// {
-  ///   "name": "...",
-  ///   "points": [
-  ///     {"x": ..., "y": ..., "pressure": ..., "type": "PointType.move"},
-  ///     ...
-  ///   ]
-  /// }
   void _loadFarmerSignatureFromData(Map<String, dynamic> data) {
     final dynamic raw = data['farmerSignaturePoints'];
 
@@ -128,20 +140,17 @@ class _ScpFormReadonlyPageState extends State<ScpFormReadonlyPage> {
             final double? y = (p['y'] as num?)?.toDouble();
             if (x == null || y == null) continue;
 
-            // FIRST switch (inside raw is Map<String, dynamic> branch)
             final String typeStr = (p['type'] as String?) ?? 'PointType.tap';
             PointType type;
             switch (typeStr) {
               case 'PointType.move':
                 type = PointType.move;
                 break;
-              // 'up' and 'down' fall back to tap for compatibility
               case 'PointType.up':
               case 'PointType.down':
               default:
                 type = PointType.tap;
             }
-
 
             final double pressure =
                 (p['pressure'] as num?)?.toDouble() ?? 1.0;
@@ -154,7 +163,6 @@ class _ScpFormReadonlyPageState extends State<ScpFormReadonlyPage> {
         }
       }
     } else if (raw is List) {
-      // Backward compatibility: if earlier versions stored a plain List of point maps
       final List pointsRaw = raw;
       final List<Point> pts = [];
       for (final p in pointsRaw) {
@@ -163,20 +171,17 @@ class _ScpFormReadonlyPageState extends State<ScpFormReadonlyPage> {
           final double? y = (p['y'] as num?)?.toDouble();
           if (x == null || y == null) continue;
 
-          // SECOND switch (inside raw is List branch)
           final String typeStr = (p['type'] as String?) ?? 'PointType.tap';
           PointType type;
           switch (typeStr) {
             case 'PointType.move':
               type = PointType.move;
               break;
-            // 'up' and 'down' fall back to tap for compatibility
             case 'PointType.up':
             case 'PointType.down':
             default:
               type = PointType.tap;
           }
-
 
           final double pressure =
               (p['pressure'] as num?)?.toDouble() ?? 1.0;
@@ -188,12 +193,10 @@ class _ScpFormReadonlyPageState extends State<ScpFormReadonlyPage> {
         _farmerSignatureController.points = pts;
       }
     } else if (raw is String && raw.isNotEmpty) {
-      // Very old case: PNG base64 string — cannot reconstruct points, so ignore for drawing
       try {
         final Uint8List bytes = base64Decode(raw);
-        // Here you could display this bytes as Image if you still want backward support,
-        // but we keep the Signature widget for current versions using points.
-        // For simplicity we ignore this in the points-based pad.
+        // You could show this PNG if needed; ignored here.
+        bytes;
       } catch (_) {
         // ignore invalid base64 string
       }
@@ -218,11 +221,7 @@ class _ScpFormReadonlyPageState extends State<ScpFormReadonlyPage> {
     super.dispose();
   }
 
-  /// Export current signature points to save back to Firestore as:
-  /// {
-  ///   "name": "...",
-  ///   "points": [ {x,y,pressure,type}, ... ]
-  /// }
+  /// Export current signature points to save back to Firestore.
   Future<Map<String, dynamic>> _exportFarmerSignaturePoints() async {
     final List<Map<String, dynamic>> serializedPoints = [];
     if (!_farmerSignatureController.isEmpty) {
@@ -248,7 +247,6 @@ class _ScpFormReadonlyPageState extends State<ScpFormReadonlyPage> {
 
   Future<void> _saveChanges() async {
     try {
-      // Build updated map
       final Map<String, dynamic> updatedData = {
         'farmerName': _farmerNameController.text.trim(),
         'farmAddress': _farmAddressController.text.trim(),
@@ -267,7 +265,6 @@ class _ScpFormReadonlyPageState extends State<ScpFormReadonlyPage> {
         'products': _products,
       };
 
-      // Export signature points for saving
       final farmerSignaturePoints = await _exportFarmerSignaturePoints();
       updatedData['farmerSignaturePoints'] = farmerSignaturePoints;
 
@@ -298,516 +295,1006 @@ class _ScpFormReadonlyPageState extends State<ScpFormReadonlyPage> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('SCP Form Detail'),
-        backgroundColor: const Color(0xFF5958b2),
-        actions: [
-          IconButton(
-            icon: Icon(_isEditMode ? Icons.close : Icons.edit),
-            tooltip: _isEditMode ? 'Cancel edit' : 'Edit SCP Form',
-            onPressed: () {
-              setState(() {
-                _isEditMode = !_isEditMode;
-              });
-            },
+  // Helpers for section headers (matching HTML style roughly)
+  Widget _sectionLabel(String text, {bool first = false}) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(8, first ? 6 : 20, 8, 8),
+      child: Text(
+        text.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF5958B2),
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+
+  Widget _formCard(Widget child) {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+      ),
+      margin: EdgeInsets.zero,
+      child: child,
+    );
+  }
+
+  // View-mode row (vrow)
+  Widget _vRow(String label, String value) {
+    final trimmed = value.trim();
+    final isEmpty = trimmed.isEmpty;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Color(0xFFF0EBF9), width: 1),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF2B2B2B),
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            isEmpty ? 'No data' : trimmed,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w400,
+              color: isEmpty ? const Color(0xFF9CA3AF) : Colors.black,
+            ),
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Basic details card
-            Card(
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
+    );
+  }
+
+  // Edit-mode row (erow) — simple text field
+  Widget _eRow({
+    required String label,
+    required TextEditingController controller,
+    TextInputType keyboardType = TextInputType.text,
+    bool requiredField = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Color(0xFFF0EBF9), width: 1),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          RichText(
+            text: TextSpan(
+              text: label.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF2B2B2B),
+                letterSpacing: 0.5,
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(18.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Sample Crop Prescription Details',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF5958b2),
+              children: requiredField
+                  ? const [
+                      TextSpan(
+                        text: ' *',
+                        style: TextStyle(
+                          color: Color(0xFFDC2626),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ]
+                  : const [],
+            ),
+          ),
+          const SizedBox(height: 4),
+          TextField(
+            controller: controller,
+            keyboardType: keyboardType,
+            decoration: BoxDecoration(
+              color: const Color.fromRGBO(107, 33, 200, 0.04),
+              borderRadius: BorderRadius.circular(9),
+              border: Border.all(
+                color: const Color.fromRGBO(107, 33, 200, 0.25),
+                width: 1.5,
+              ),
+            ).toInputDecoration(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Detail view row inside section-card
+  Widget _detailVRow(String label, String value) {
+    final trimmed = value.trim();
+    final isEmpty = trimmed.isEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF2B2B2B),
+            letterSpacing: 0.4,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF9F7FD),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE9E3F5)),
+          ),
+          child: Text(
+            isEmpty ? 'No data' : trimmed,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              color: isEmpty ? const Color(0xFF9CA3AF) : Colors.black,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Detail edit row (input)
+  Widget _detailERow({
+    required String label,
+    required TextEditingController controller,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF2B2B2B),
+            letterSpacing: 0.4,
+          ),
+        ),
+        const SizedBox(height: 3),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          decoration: BoxDecoration(
+            color: const Color.fromRGBO(107, 33, 200, 0.03),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: const Color.fromRGBO(107, 33, 200, 0.22),
+              width: 1.5,
+            ),
+          ).toInputDecoration(),
+        ),
+      ],
+    );
+  }
+
+  // Advisory section card (view/edit)
+  Widget _advisoryCard(int index) {
+    final adv = _advisoryDetails[index];
+    final keyConcern = (adv['keyConcern'] ?? '').toString();
+    final recommendation =
+        (adv['productRecommendation'] ?? adv['recommendation'] ?? '').toString();
+    final bool isOpen = _advExpanded[index] ?? false;
+
+    final keyConcernController =
+        TextEditingController(text: keyConcern); // for edit
+    final recommendationController =
+        TextEditingController(text: recommendation); // for edit
+
+    String headerLabel;
+    if (keyConcern.isEmpty) {
+      headerLabel = 'Advisory Detail ${index + 1}';
+    } else {
+      headerLabel = keyConcern.length > 40
+          ? '${keyConcern.substring(0, 40)}…'
+          : keyConcern;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(
+            color: Color.fromRGBO(0, 0, 0, 0.06),
+            blurRadius: 14,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () {
+              setState(() {
+                _advExpanded[index] = !isOpen;
+              });
+            },
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              decoration: const BoxDecoration(
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(18),
+                ),
+                gradient: LinearGradient(
+                  colors: [
+                    Color.fromRGBO(107, 33, 200, 0.07),
+                    Color.fromRGBO(156, 64, 255, 0.03),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF4A2371), Color(0xFF5958B2)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '${index + 1}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
                       ),
                     ),
-                    const SizedBox(height: 18),
-                    _buildField(
-                      label: 'Farmer Name',
-                      controller: _farmerNameController,
-                      readOnly: !_isEditMode,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      headerLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: Color(0xFF5958B2),
+                      ),
                     ),
-                    _buildField(
-                      label: 'Farm Address',
-                      controller: _farmAddressController,
-                      readOnly: !_isEditMode,
-                      hideIfEmpty: true,
+                  ),
+                  AnimatedRotation(
+                    turns: isOpen ? 0.5 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 20,
+                      color: Color(0xFF5958B2),
                     ),
-                    _buildField(
-                      label: 'Cellphone Number',
-                      controller: _cellphoneNumberController,
-                      readOnly: !_isEditMode,
-                      hideIfEmpty: true,
-                    ),
-                    _buildField(
-                      label: 'Date of Event',
-                      controller: _dateOfEventController,
-                      readOnly: !_isEditMode,
-                    ),
-                    _buildField(
-                      label: 'Crops Planted',
-                      controller: _cropsPlantedController,
-                      readOnly: !_isEditMode,
-                    ),
-                    _buildField(
-                      label: 'Type of Event',
-                      controller: _typeOfEventController,
-                      readOnly: !_isEditMode,
-                      hideIfEmpty: true,
-                    ),
-                    _buildField(
-                      label: 'Venue of Event',
-                      controller: _venueOfEventController,
-                      readOnly: !_isEditMode,
-                      hideIfEmpty: true,
-                    ),
-                    if (_createdBy.isNotEmpty)
-                      _readonlyField('Created By', _createdBy),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-
-            const SizedBox(height: 16),
-
-            // Advisory Details card
-            if (_advisoryDetails.isNotEmpty)
-              Card(
-                elevation: 3,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: const BoxDecoration(
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(18),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(18.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_isEditMode)
+                    _detailERow(
+                      label: 'Key Concerns',
+                      controller: keyConcernController,
+                    )
+                  else
+                    _detailVRow('Key Concerns', keyConcern),
+                  const SizedBox(height: 8),
+                  if (_isEditMode)
+                    _detailERow(
+                      label: 'Product Recommendation',
+                      controller: recommendationController,
+                    )
+                  else
+                    _detailVRow('Product Recommendation', recommendation),
+                ],
+              ),
+            ),
+            crossFadeState:
+                isOpen ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 200),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Product section card (view/edit)
+  Widget _productCard(int index) {
+    final prod = _products[index];
+    final productName = (prod['productName'] ?? '').toString();
+    final quantity = (prod['quantity'] ?? '').toString();
+    final packaging = (prod['packaging'] ?? '').toString();
+    final bool isOpen = _prodExpanded[index] ?? false;
+
+    final productNameController =
+        TextEditingController(text: productName); // edit
+    final quantityController = TextEditingController(text: quantity); // edit
+    final packagingController = TextEditingController(text: packaging); // edit
+
+    final headerLabel =
+        productName.isEmpty ? 'Product ${index + 1}' : productName;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(
+            color: Color.fromRGBO(0, 0, 0, 0.06),
+            blurRadius: 14,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () {
+              setState(() {
+                _prodExpanded[index] = !isOpen;
+              });
+            },
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              decoration: const BoxDecoration(
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(18),
+                ),
+                gradient: LinearGradient(
+                  colors: [
+                    Color.fromRGBO(107, 33, 200, 0.07),
+                    Color.fromRGBO(156, 64, 255, 0.03),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF4A2371), Color(0xFF5958B2)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '${index + 1}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      headerLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: Color(0xFF5958B2),
+                      ),
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: isOpen ? 0.5 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 20,
+                      color: Color(0xFF5958B2),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: const BoxDecoration(
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(18),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_isEditMode)
+                    _detailERow(
+                      label: 'Product Name',
+                      controller: productNameController,
+                    )
+                  else
+                    _detailVRow('Product Name', productName),
+                  const SizedBox(height: 8),
+                  Row(
                     children: [
-                      const Text(
+                      Expanded(
+                        child: _isEditMode
+                            ? _detailERow(
+                                label: 'Quantity',
+                                controller: quantityController,
+                                keyboardType: TextInputType.number,
+                              )
+                            : _detailVRow('Quantity', quantity),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _isEditMode
+                            ? _detailERow(
+                                label: 'Packaging',
+                                controller: packagingController,
+                              )
+                            : _detailVRow('Packaging', packaging),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            crossFadeState:
+                isOpen ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 200),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String appTitle =
+        _farmerNameController.text.trim().isEmpty ? 'Crop Prescription' : _farmerNameController.text.trim();
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF9F5FF),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(72),
+        child: AppBar(
+          elevation: 6,
+          automaticallyImplyLeading: false,
+          backgroundColor: Colors.transparent,
+          flexibleSpace: Container(
+            decoration: const BoxDecoration(
+              borderRadius: BorderRadius.vertical(
+                bottom: Radius.circular(22),
+              ),
+              gradient: LinearGradient(
+                colors: [Color(0xFF4A2371), Color(0xFF4A2371), Color(0xFF5958B2)],
+                stops: [0, 0.55, 1],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Color.fromRGBO(76, 29, 149, 0.3),
+                  blurRadius: 28,
+                  offset: Offset(0, 6),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+            child: SafeArea(
+              bottom: false,
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: _isEditMode
+                        ? null
+                        : () {
+                            Navigator.of(context).pop();
+                          },
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                    color: Colors.white,
+                    disabledColor: Colors.white.withOpacity(0.3),
+                    padding: const EdgeInsets.all(0),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Sample Crop Prescription',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Color.fromRGBO(255, 255, 255, 0.7),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          appTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _isEditMode = !_isEditMode;
+                      });
+                    },
+                    style: TextButton.styleFrom(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      backgroundColor:
+                          const Color.fromRGBO(255, 255, 255, 0.22),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                    child: Text(
+                      _isEditMode ? 'Cancel' : 'Edit',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight:
+                            _isEditMode ? FontWeight.w600 : FontWeight.w700,
+                        color: _isEditMode
+                            ? const Color.fromRGBO(255, 255, 255, 0.65)
+                            : Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // General information
+                _sectionLabel('General Information', first: true),
+                _formCard(
+                  Column(
+                    children: [
+                      _isEditMode
+                          ? _eRow(
+                              label: 'Name of Farmer',
+                              controller: _farmerNameController,
+                              requiredField: true,
+                            )
+                          : _vRow(
+                              'Farmer Name', _farmerNameController.text),
+                      _isEditMode
+                          ? _eRow(
+                              label: 'Date of Event',
+                              controller: _dateOfEventController,
+                              requiredField: true,
+                            )
+                          : _vRow(
+                              'Date of Event', _dateOfEventController.text),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _isEditMode
+                                ? _eRow(
+                                    label: 'Farm Address',
+                                    controller: _farmAddressController,
+                                    requiredField: true,
+                                  )
+                                : _vRow('Farm Address',
+                                    _farmAddressController.text),
+                          ),
+                          Expanded(
+                            child: _isEditMode
+                                ? _eRow(
+                                    label: 'Type of Event',
+                                    controller: _typeOfEventController,
+                                    requiredField: true,
+                                  )
+                                : _vRow('Type of Event',
+                                    _typeOfEventController.text),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _isEditMode
+                                ? _eRow(
+                                    label: 'Cellphone Number',
+                                    controller: _cellphoneNumberController,
+                                    keyboardType: TextInputType.phone,
+                                    requiredField: true,
+                                  )
+                                : _vRow('Cellphone Number',
+                                    _cellphoneNumberController.text),
+                          ),
+                          Expanded(
+                            child: _isEditMode
+                                ? _eRow(
+                                    label: 'Venue of Event',
+                                    controller: _venueOfEventController,
+                                    requiredField: true,
+                                  )
+                                : _vRow('Venue of Event',
+                                    _venueOfEventController.text),
+                          ),
+                        ],
+                      ),
+                      _isEditMode
+                          ? _eRow(
+                              label: 'Crops Planted',
+                              controller: _cropsPlantedController,
+                              requiredField: true,
+                            )
+                          : _vRow(
+                              'Crops Planted', _cropsPlantedController.text),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Advisory details
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(left: 8.0),
+                      child: Text(
                         'Advisory Details',
                         style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF5958b2),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Column(
-                        children:
-                            _advisoryDetails.asMap().entries.map((entry) {
-                          final int idx = entry.key + 1;
-                          final Map<String, dynamic> item = entry.value;
-
-                          final String keyConcern =
-                              (item['keyConcern'] ?? '').toString();
-                          final String recommendation =
-                              (item['productRecommendation'] ?? '').toString();
-
-                          // Controllers for this row in edit mode
-                          final keyConcernController =
-                              TextEditingController(text: keyConcern);
-                          final recommendationController =
-                              TextEditingController(text: recommendation);
-
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Row $idx',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                if (_isEditMode)
-                                  _buildDynamicField(
-                                    label: 'Key Concern',
-                                    controller: keyConcernController,
-                                    onChanged: (val) {
-                                      _advisoryDetails[entry.key]
-                                          ['keyConcern'] = val;
-                                    },
-                                  )
-                                else if (keyConcern.isNotEmpty)
-                                  _readonlyField(
-                                      'Key Concern', keyConcern),
-                                if (_isEditMode)
-                                  _buildDynamicField(
-                                    label: 'Product Recommendation',
-                                    controller: recommendationController,
-                                    onChanged: (val) {
-                                      _advisoryDetails[entry.key]
-                                              ['productRecommendation'] =
-                                          val;
-                                    },
-                                  )
-                                else if (recommendation.isNotEmpty)
-                                  _readonlyField(
-                                    'Product Recommendation',
-                                    recommendation,
-                                  ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-            const SizedBox(height: 16),
-
-            // Crop Advisor card
-            if (_cropAdvisorNameController.text.isNotEmpty ||
-                _cropAdvisorContactController.text.isNotEmpty ||
-                _isEditMode)
-              Card(
-                elevation: 3,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(18.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Crop Advisor Details',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF5958b2),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      _buildField(
-                        label: 'Name of Crop Advisor',
-                        controller: _cropAdvisorNameController,
-                        readOnly: !_isEditMode,
-                        hideIfEmpty: !_isEditMode,
-                      ),
-                      _buildField(
-                        label: 'Crop Advisor Contact Number',
-                        controller: _cropAdvisorContactController,
-                        readOnly: !_isEditMode,
-                        hideIfEmpty: !_isEditMode,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-            const SizedBox(height: 16),
-
-            // Products card
-            if (_products.isNotEmpty)
-              Card(
-                elevation: 3,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(18.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Indofil Crop Solutions and Technologies',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF5958b2),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Column(
-                        children: _products.asMap().entries.map((entry) {
-                          final int idx = entry.key + 1;
-                          final Map<String, dynamic> item = entry.value;
-
-                          final String productName =
-                              (item['productName'] ?? '').toString();
-                          final String quantity =
-                              (item['quantity'] ?? '').toString();
-                          final String packaging =
-                              (item['packaging'] ?? '').toString();
-
-                          // Controllers for this row when editing
-                          final productNameController =
-                              TextEditingController(text: productName);
-                          final quantityController =
-                              TextEditingController(text: quantity);
-                          final packagingController =
-                              TextEditingController(text: packaging);
-
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Product $idx',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                if (_isEditMode)
-                                  _buildDynamicField(
-                                    label: 'Product Name',
-                                    controller: productNameController,
-                                    onChanged: (val) {
-                                      _products[entry.key]['productName'] = val;
-                                    },
-                                  )
-                                else if (productName.isNotEmpty)
-                                  _readonlyField(
-                                      'Product Name', productName),
-                                if (_isEditMode)
-                                  _buildDynamicField(
-                                    label: 'Quantity',
-                                    controller: quantityController,
-                                    onChanged: (val) {
-                                      _products[entry.key]['quantity'] = val;
-                                    },
-                                  )
-                                else if (quantity.isNotEmpty)
-                                  _readonlyField('Quantity', quantity),
-                                if (_isEditMode)
-                                  _buildDynamicField(
-                                    label: 'Packaging',
-                                    controller: packagingController,
-                                    onChanged: (val) {
-                                      _products[entry.key]['packaging'] = val;
-                                    },
-                                  )
-                                else if (packaging.isNotEmpty)
-                                  _readonlyField('Packaging', packaging),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-            const SizedBox(height: 16),
-
-            // Farmer signature + footer card
-            Card(
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(18.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildField(
-                      label: 'Name of Farmer (Signature Section)',
-                      controller: _farmerNameSecondController,
-                      readOnly: !_isEditMode,
-                      hideIfEmpty: !_isEditMode,
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Signature of Farmer',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      width: 160,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: IgnorePointer(
-                          ignoring: !_isEditMode,
-                          child: Signature(
-                            controller: _farmerSignatureController,
-                            width: double.infinity,
-                            height: 80,
-                            backgroundColor: Colors.white,
-                          ),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF5958B2),
+                          letterSpacing: 0.4,
                         ),
                       ),
                     ),
                     if (_isEditMode)
-                      TextButton(
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 4),
+                          backgroundColor: const Color(0xFF4A2371),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          elevation: 2,
+                        ),
                         onPressed: () {
-                          _farmerSignatureController.clear();
+                          setState(() {
+                            _advisoryDetails.add({
+                              'keyConcern': '',
+                              'productRecommendation': '',
+                            });
+                          });
                         },
-                        child: const Text(
-                          'Clear Signature',
-                          style: TextStyle(fontSize: 12),
+                        icon: const Icon(Icons.add, size: 14),
+                        label: const Text(
+                          'Add Advisory',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
-                    const SizedBox(height: 12),
-                    _buildField(
-                      label: 'Date Needed',
-                      controller: _dateNeededController,
-                      readOnly: !_isEditMode,
-                      hideIfEmpty: !_isEditMode,
-                    ),
-                    _buildField(
-                      label: 'Preferred Dealer',
-                      controller: _preferredDealerController,
-                      readOnly: !_isEditMode,
-                      hideIfEmpty: !_isEditMode,
-                    ),
                   ],
                 ),
-              ),
+                const SizedBox(height: 4),
+                if (_advisoryDetails.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8.0),
+                    child: Text(
+                      'No advisory details recorded.',
+                      style: TextStyle(
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 14,
+                      ),
+                    ),
+                  )
+                else
+                  Column(
+                    children: List.generate(
+                      _advisoryDetails.length,
+                      (index) => _advisoryCard(index),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+
+                // Crop advisor info
+                _sectionLabel('Crop Advisor Information'),
+                _formCard(
+                  Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _isEditMode
+                                ? _eRow(
+                                    label: 'Name of Crop Advisor',
+                                    controller: _cropAdvisorNameController,
+                                    requiredField: true,
+                                  )
+                                : _vRow('Name of Crop Advisor',
+                                    _cropAdvisorNameController.text),
+                          ),
+                          Expanded(
+                            child: _isEditMode
+                                ? _eRow(
+                                    label: 'Crop Advisor Contact Number',
+                                    controller: _cropAdvisorContactController,
+                                    keyboardType: TextInputType.phone,
+                                    requiredField: true,
+                                  )
+                                : _vRow(
+                                    'Crop Advisor Contact Number',
+                                    _cropAdvisorContactController.text),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Products
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(left: 8.0),
+                      child: Text(
+                        'Indofil Crop Solutions & Technologies',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF5958B2),
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ),
+                    if (_isEditMode)
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 4),
+                          backgroundColor: const Color(0xFF4A2371),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          elevation: 2,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _products.add({
+                              'productName': '',
+                              'quantity': '',
+                              'packaging': '',
+                            });
+                          });
+                        },
+                        icon: const Icon(Icons.add, size: 14),
+                        label: const Text(
+                          'Add Product',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                if (_products.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8.0),
+                    child: Text(
+                      'No products recorded.',
+                      style: TextStyle(
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 14,
+                      ),
+                    ),
+                  )
+                else
+                  Column(
+                    children: List.generate(
+                      _products.length,
+                      (index) => _productCard(index),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+
+                // Farmer acknowledgment
+                _sectionLabel('Farmer Acknowledgment'),
+                _formCard(
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Column(
+                      children: [
+                        _isEditMode
+                            ? _eRow(
+                                label: 'Name of Farmer (Signature Section)',
+                                controller: _farmerNameSecondController,
+                                requiredField: true,
+                              )
+                            : _vRow('Name of Farmer',
+                                _farmerNameSecondController.text),
+                        _isEditMode
+                            ? _eRow(
+                                label: 'Date Needed',
+                                controller: _dateNeededController,
+                                requiredField: true,
+                              )
+                            : _vRow(
+                                'Date Needed', _dateNeededController.text),
+                        _isEditMode
+                            ? _eRow(
+                                label: 'Preferred Dealer',
+                                controller: _preferredDealerController,
+                                requiredField: true,
+                              )
+                            : _vRow('Preferred Dealer',
+                                _preferredDealerController.text),
+                        // Signature
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              RichText(
+                                text: const TextSpan(
+                                  text: 'Signature of Farmer',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF2B2B2B),
+                                    letterSpacing: 0.5,
+                                  ),
+                                  children: [
+                                    TextSpan(
+                                      text: ' *',
+                                      style: TextStyle(
+                                        color: Color(0xFFDC2626),
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Container(
+                                width: double.infinity,
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(11),
+                                  border: Border.all(
+                                    color: const Color(0xFFE9E3F5),
+                                  ),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(11),
+                                  child: IgnorePointer(
+                                    ignoring: !_isEditMode,
+                                    child: Signature(
+                                      controller: _farmerSignatureController,
+                                      width: double.infinity,
+                                      height: 100,
+                                      backgroundColor: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (_isEditMode)
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    onPressed: () {
+                                      _farmerSignatureController.clear();
+                                    },
+                                    child: const Text(
+                                      'Clear Signature',
+                                      style: TextStyle(
+                                        color: Color(0xFFDC2626),
+                                        fontSize: 12.5,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 72),
+              ],
             ),
-          ],
+          ),
         ),
       ),
       floatingActionButton: _isEditMode
-          ? FloatingActionButton.extended(
-              onPressed: _saveChanges,
-              icon: const Icon(Icons.check, color: Colors.white),
-              label: const Text(
-                'Update',
-                style: TextStyle(color: Colors.white),
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 8.0),
+              child: FloatingActionButton.extended(
+                onPressed: _saveChanges,
+                icon: const Icon(Icons.check, color: Colors.white),
+                label: const Text(
+                  'Update Form',
+                  style: TextStyle(color: Colors.white),
+                ),
+                backgroundColor: const Color(0xFF4A2371),
               ),
-              backgroundColor: const Color(0xFF5958b2),
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-    );
-  }
-
-  /// Reusable builder that shows either a read-only colored container
-  /// or an editable TextField, depending on [readOnly] and [_isEditMode].
-  Widget _buildField({
-    required String label,
-    required TextEditingController controller,
-    required bool readOnly,
-    bool hideIfEmpty = false,
-  }) {
-    if (hideIfEmpty && controller.text.trim().isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    if (readOnly) {
-      return _readonlyField(label, controller.text);
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          TextField(
-            controller: controller,
-            decoration: BoxDecoration(
-              color: Colors.cyan.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ).toInputDecoration(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// For dynamic per-row fields where we pass a controller and onChanged.
-  Widget _buildDynamicField({
-    required String label,
-    required TextEditingController controller,
-    required ValueChanged<String> onChanged,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          TextField(
-            controller: controller,
-            onChanged: onChanged,
-            decoration: BoxDecoration(
-              color: Colors.cyan.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ).toInputDecoration(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Original read-only field (unchanged)
-  Widget _readonlyField(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            margin: const EdgeInsets.only(top: 4),
-            decoration: BoxDecoration(
-              color: Colors.cyan.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 16),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Small extension to convert a BoxDecoration into an InputDecoration
-/// with a matching background color and rounded corners.
-extension _BoxToInputDecoration on BoxDecoration {
-  InputDecoration toInputDecoration() {
-    return InputDecoration(
-      filled: true,
-      fillColor: (color ?? Colors.transparent),
-      contentPadding: const EdgeInsets.all(10),
-      border: OutlineInputBorder(
-        borderRadius: borderRadius is BorderRadius
-            ? (borderRadius as BorderRadius)
-            : BorderRadius.circular(8),
-        borderSide: BorderSide.none,
-      ),
     );
   }
 }
@@ -833,7 +1320,6 @@ class _ScpFormTransactionsPageState extends State<ScpFormTransactionsPage> {
     final prefs = await SharedPreferences.getInstance();
     final userEmail = prefs.getString('userEmail') ?? '';
     setState(() {
-      // same pattern as your attendance page: sanitize email for Firestore ids
       userKey = userEmail.replaceAll(RegExp(r'[.#\$\\\[\]/]'), '_');
     });
   }
@@ -961,7 +1447,6 @@ class _ScpFormTransactionsPageState extends State<ScpFormTransactionsPage> {
                       final String cropsPlanted =
                           data['cropsPlanted'] ?? '';
 
-                      // Descending transaction number (first cell = highest)
                       final transactionNumber = docs.length - idx;
                       final transactionLabel = 'SCP #$transactionNumber';
 
@@ -1016,7 +1501,8 @@ class _ScpFormTransactionsPageState extends State<ScpFormTransactionsPage> {
                                             style: const TextStyle(
                                               color: Colors.white,
                                               fontSize: 12,
-                                              fontWeight: FontWeight.w600,
+                                              fontWeight:
+                                                  FontWeight.w600,
                                             ),
                                           ),
                                         ),
@@ -1035,7 +1521,8 @@ class _ScpFormTransactionsPageState extends State<ScpFormTransactionsPage> {
                                             overflow:
                                                 TextOverflow.ellipsis,
                                             style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
+                                              fontWeight:
+                                                  FontWeight.bold,
                                               fontSize: 18,
                                               color: Colors.white,
                                             ),
@@ -1045,8 +1532,8 @@ class _ScpFormTransactionsPageState extends State<ScpFormTransactionsPage> {
                                             Text(
                                               'Crop: $cropsPlanted',
                                               maxLines: 1,
-                                              overflow:
-                                                  TextOverflow.ellipsis,
+                                              overflow: TextOverflow
+                                                  .ellipsis,
                                               style: const TextStyle(
                                                 color: Colors.white70,
                                                 fontSize: 12,

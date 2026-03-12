@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:archive/archive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -16,9 +19,9 @@ class _WebviewInFieldPageState extends State<WebviewInFieldPage> {
   late final WebViewController _controller;
   bool _isLoading = true;
 
-  /// Direct Firebase Storage URL for the In-Field Coaching HTML page.
-  static const String _htmlUrl =
-      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fin_field_coaching_form_page.html?alt=media&token=941cd80c-2dd0-4fc7-910c-5c6775d45083';
+  /// Direct Firebase Storage URL for the In-Field Coaching ZIP file.
+  static const String _zipUrl =
+      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fin_field_coaching_form_page.zip?alt=media&token=6008a747-70e8-48fb-9938-c1d752c6fda7';
 
   @override
   void initState() {
@@ -83,13 +86,13 @@ class _WebviewInFieldPageState extends State<WebviewInFieldPage> {
         ),
       );
 
-    _loadRemoteHtml();
+    _loadZipAndExtractHtml();
   }
 
   Future<String> _getSanitizedUserEmail() async {
     final prefs = await SharedPreferences.getInstance();
     final userEmail = prefs.getString('userEmail') ?? '';
-    return userEmail.replaceAll(RegExp(r'[.#\$\\\[\]/]'), '_');
+    return userEmail.replaceAll(RegExp(r'[.#\\$\\[\\]/]'), '_');
   }
 
   Future<void> _saveInFieldFormToFirestore(Map<String, dynamic> data) async {
@@ -136,20 +139,54 @@ class _WebviewInFieldPageState extends State<WebviewInFieldPage> {
     }
   }
 
-  Future<void> _loadRemoteHtml() async {
+  Future<void> _loadZipAndExtractHtml() async {
     try {
-      debugPrint('Loading In-Field HTML from: $_htmlUrl');
-      await _controller.loadRequest(Uri.parse(_htmlUrl));
-      debugPrint('Remote In-Field HTML requested in WebView');
+      debugPrint('Downloading In-Field ZIP from: $_zipUrl');
+      setState(() {
+        _isLoading = true;
+      });
+
+      // Download ZIP file
+      final response = await http.get(Uri.parse(_zipUrl));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download ZIP: ${response.statusCode}');
+      }
+
+      // Decode ZIP bytes
+      final bytes = response.bodyBytes;
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      // Find the HTML file in the ZIP
+      String? htmlContent;
+      for (final file in archive) {
+        if (file is ArchiveFile &&
+            file.name == 'in_field_coaching_form_page.html') {
+          htmlContent = utf8.decode(file.content as List<int>);
+          debugPrint('Found HTML file in ZIP: ${file.name}');
+          break;
+        }
+      }
+
+      if (htmlContent == null) {
+        throw Exception('HTML file "in_field_coaching_form_page.html" not found in ZIP');
+      }
+
+      // Load HTML content into WebView
+      await _controller.loadHtmlString(htmlContent);
+      debugPrint('In-Field HTML loaded from ZIP into WebView');
+
+      setState(() {
+        _isLoading = false;
+      });
     } catch (e) {
-      debugPrint('Error loading In-Field remote HTML: $e');
+      debugPrint('Error loading In-Field ZIP/HTML: $e');
       if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error loading form: $e'),
+          content: Text('Error loading form from ZIP: $e'),
         ),
       );
     }
@@ -168,7 +205,7 @@ class _WebviewInFieldPageState extends State<WebviewInFieldPage> {
               setState(() {
                 _isLoading = true;
               });
-              await _loadRemoteHtml();
+              await _loadZipAndExtractHtml();
             },
           ),
         ],

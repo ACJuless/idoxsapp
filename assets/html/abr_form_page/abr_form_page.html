@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Activity Budget Request Form</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      background-color: #f5f5f5;
+      margin: 0;
+      padding: 16px;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 24px;
+      text-align: center;
+      color: #5e1398;
+      margin: 8px 0 4px;
+    }
+
+    h2 {
+      font-size: 20px;
+      text-align: center;
+      margin: 8px 0 16px;
+      font-weight: 700;
+    }
+
+    .card {
+      background-color: #ffffff;
+      border-radius: 18px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+      padding: 18px 18px 24px;
+      margin-bottom: 16px;
+    }
+
+    label {
+      font-size: 13px;
+      display: block;
+      margin-bottom: 4px;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    .input,
+    .textarea,
+    .select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #c2dfe8;
+      background-color: #ffffff;
+      font-size: 14px;
+      outline: none;
+      text-align: center;
+    }
+
+    .textarea {
+      min-height: 70px;
+      resize: vertical;
+    }
+
+    .field {
+      margin-bottom: 10px;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .col {
+      flex: 1 1 260px;
+    }
+
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 12px 0 6px;
+      text-align: center;
+    }
+
+    .table-wrapper {
+      margin-top: 8px;
+      overflow-x: auto;
+    }
+
+    .pf-header-row,
+    .pf-data-row {
+      display: flex;
+    }
+
+    .pf-cell-header {
+      min-width: 220px;
+      padding: 8px 6px;
+      margin-right: 4px;
+      background-color: #b2ebf2;
+      border-radius: 6px;
+      border: 1px solid #80deea;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .pf-cell {
+      min-width: 220px;
+      margin-right: 4px;
+    }
+
+    .pf-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid #bdbdbd;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .pf-input:focus {
+      border-color: #616161;
+    }
+
+    .chip-bar {
+      padding: 10px;
+      background-color: #e0f7fa;
+      border-radius: 8px;
+      border: 1px solid #b2ebf2;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chip-add-btn {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      border: none;
+      background-color: #2e7d32;
+      color: #fff;
+      font-size: 18px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .chip-title {
+      font-size: 18px;
+      font-weight: 600;
+      text-align: center;
+      flex: 1;
+    }
+
+    .footer-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 20px;
+    }
+
+    .btn {
+      min-width: 140px;
+      padding: 10px 16px;
+      border-radius: 12px;
+      border: none;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .btn-reset {
+      background-color: #e0e0e0;
+      color: #000;
+    }
+
+    .btn-submit {
+      background-color: #5e1398;
+      color: #fff;
+    }
+
+    .snackbar {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      background-color: #323232;
+      color: #ffffff;
+      padding: 10px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease-in-out, transform 0.25s ease-in-out;
+      z-index: 1000;
+    }
+
+    .snackbar.show {
+      opacity: 0.96;
+      transform: translateX(-50%) translateY(-4px);
+      pointer-events: auto;
+    }
+
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 20px;
+      }
+      h2 {
+        font-size: 18px;
+      }
+      .section-title {
+        font-size: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Activity Budget Request Form</h1>
+    <div class="card">
+      <h2>Create Budget Request</h2>
+
+      <form id="abrForm" onsubmit="return false;">
+        <!-- Agronomist + Area -->
+        <div class="row">
+          <div class="col field">
+            <label>Agronomist</label>
+            <input id="agronomist" class="input" type="text" />
+          </div>
+          <div class="col field">
+            <label>Area</label>
+            <input id="area" class="input" type="text" />
+          </div>
+        </div>
+
+        <!-- Crop Focus + Activity Type -->
+        <div class="row">
+          <div class="col field">
+            <label>Crop Focus</label>
+            <input id="cropFocus" class="input" type="text" />
+          </div>
+          <div class="col field">
+            <label>Activity Type</label>
+            <input id="activityType" class="input" type="text" />
+          </div>
+        </div>
+
+        <!-- Planned / Actual Activity Location -->
+        <div class="row">
+          <div class="col field">
+            <label>Planned Activity Location (Brgy, Municipality, Province)</label>
+            <select id="plannedLocation" class="select">
+              <option value="">Select location</option>
+              <option value="Brgy. San Antonio, Quezon City, Metro Manila">
+                Brgy. San Antonio, Quezon City, Metro Manila
+              </option>
+              <option value="Brgy. Commonwealth, Quezon City, Metro Manila">
+                Brgy. Commonwealth, Quezon City, Metro Manila
+              </option>
+              <option value="Brgy. Batasan Hills, Quezon City, Metro Manila">
+                Brgy. Batasan Hills, Quezon City, Metro Manila
+              </option>
+              <option value="Brgy. Payatas, Quezon City, Metro Manila">
+                Brgy. Payatas, Quezon City, Metro Manila
+              </option>
+              <option value="Brgy. Fairview, Quezon City, Metro Manila">
+                Brgy. Fairview, Quezon City, Metro Manila
+              </option>
+            </select>
+          </div>
+
+          <div class="col field">
+            <label>Actual Activity Location (Brgy, Municipality, Province)</label>
+            <select id="actualLocation" class="select">
+              <option value="">Select location</option>
+              <option value="Brgy. San Antonio, Quezon City, Metro Manila">
+                Brgy. San Antonio, Quezon City, Metro Manila
+              </option>
+              <option value="Brgy. Commonwealth, Quezon City, Metro Manila">
+                Brgy. Commonwealth, Quezon City, Metro Manila
+              </option>
+              <option value="Brgy. Batasan Hills, Quezon City, Metro Manila">
+                Brgy. Batasan Hills, Quezon City, Metro Manila
+              </option>
+              <option value="Brgy. Payatas, Quezon City, Metro Manila">
+                Brgy. Payatas, Quezon City, Metro Manila
+              </option>
+              <option value="Brgy. Fairview, Quezon City, Metro Manila">
+                Brgy. Fairview, Quezon City, Metro Manila
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Planned / Actual Activity Date -->
+        <div class="row">
+          <div class="col field">
+            <label>Planned Activity Date</label>
+            <input
+              id="plannedDate"
+              class="input"
+              type="date"
+              style="text-align:left; padding-right:0;"
+            />
+          </div>
+          <div class="col field">
+            <label>Actual Activity Date</label>
+            <input
+              id="actualDate"
+              class="input"
+              type="date"
+              style="text-align:left; padding-right:0;"
+            />
+          </div>
+        </div>
+
+        <!-- Target / Actual Attendees -->
+        <div class="row">
+          <div class="col field">
+            <label>Target Number of Attendees</label>
+            <input
+              id="targetAttendees"
+              class="input"
+              type="number"
+              inputmode="numeric"
+            />
+          </div>
+          <div class="col field">
+            <label>Actual Number of Attendees</label>
+            <input
+              id="actualAttendees"
+              class="input"
+              type="number"
+              inputmode="numeric"
+            />
+          </div>
+        </div>
+
+        <!-- Budget per Attendee -->
+        <div class="field">
+          <label>Budget per Attendee</label>
+          <input
+            id="budgetPerAttendee"
+            class="input currency"
+            type="text"
+            inputmode="decimal"
+          />
+        </div>
+
+        <!-- Standard Budget Requirement -->
+        <div class="field">
+          <label>Standard Budget Requirement</label>
+          <input
+            id="standardBudgetRequirement"
+            class="input currency"
+            type="text"
+            inputmode="decimal"
+          />
+        </div>
+
+        <!-- Additional Budget Request -->
+        <div class="field">
+          <label>Additional Budget Request</label>
+          <input
+            id="additionalBudgetRequest"
+            class="input currency"
+            type="text"
+            inputmode="decimal"
+          />
+        </div>
+
+        <!-- Justification for Additional Budget -->
+        <div class="field">
+          <label>Justification for Additional Budget</label>
+          <textarea
+            id="justificationAdditionalBudget"
+            class="textarea"
+          ></textarea>
+        </div>
+
+        <!-- Total Budget Requested + Actual Budget Spent -->
+        <div class="row">
+          <div class="col field">
+            <label>Total Budget Requested</label>
+            <input
+              id="totalBudgetRequested"
+              class="input currency"
+              type="text"
+              inputmode="decimal"
+            />
+          </div>
+          <div class="col field">
+            <label>Actual Budget Spent</label>
+            <input
+              id="actualBudgetSpent"
+              class="input currency"
+              type="text"
+              inputmode="decimal"
+            />
+          </div>
+        </div>
+
+        <!-- Product Focus header + add button -->
+        <div class="chip-bar" style="margin-top: 12px;">
+          <button
+            type="button"
+            class="chip-add-btn"
+            onclick="addProductFocusRow()"
+          >
+            +
+          </button>
+          <div class="chip-title">Product Focus</div>
+        </div>
+
+        <!-- Product Focus table -->
+        <div class="table-wrapper">
+          <div class="pf-header-row" style="margin-top: 6px;">
+            <div class="pf-cell-header">Product Focus (1,2,3,etc.)</div>
+            <div class="pf-cell-header">
+              Target Moveout Volume (in packs or bottles)
+            </div>
+            <div class="pf-cell-header">
+              Actual Moveout Volume (in packs or bottles)
+            </div>
+            <div class="pf-cell-header">Target Moveout Value PF</div>
+            <div class="pf-cell-header">Actual Moveout Value PF</div>
+          </div>
+          <div id="pfRowsContainer"></div>
+        </div>
+
+        <!-- Total Target/Actual Moveout Value -->
+        <div class="row" style="margin-top: 16px;">
+          <div class="col field">
+            <label>Total Target Moveout Value</label>
+            <input
+              id="totalTargetMoveoutValue"
+              class="input currency"
+              type="text"
+              inputmode="decimal"
+            />
+          </div>
+          <div class="col field">
+            <label>Total Actual Moveout Value</label>
+            <input
+              id="totalActualMoveoutValue"
+              class="input currency"
+              type="text"
+              inputmode="decimal"
+            />
+          </div>
+        </div>
+
+        <!-- Remarks Activity Output -->
+        <div class="field">
+          <label>Remarks on Activity Output</label>
+          <textarea
+            id="remarksActivityOutput"
+            class="textarea"
+          ></textarea>
+        </div>
+
+        <!-- Other Products Sold / Value -->
+        <div class="row">
+          <div class="col field">
+            <label>Other Products Sold or Booked</label>
+            <textarea
+              id="otherProductsSoldBooked"
+              class="textarea"
+            ></textarea>
+          </div>
+          <div class="col field">
+            <label>Value of other Products Sold or Booked</label>
+            <input
+              id="valueOtherProductsSoldBooked"
+              class="input currency"
+              type="text"
+              inputmode="decimal"
+            />
+          </div>
+        </div>
+
+        <!-- Products delivered to Dealers / Value -->
+        <div class="row">
+          <div class="col field">
+            <label>Products delivered to Dealers</label>
+            <textarea
+              id="productsDeliveredDealers"
+              class="textarea"
+            ></textarea>
+          </div>
+          <div class="col field">
+            <label>Value of products delivered to Dealers</label>
+            <input
+              id="valueProductsDeliveredDealers"
+              class="input currency"
+              type="text"
+              inputmode="decimal"
+            />
+          </div>
+        </div>
+
+        <!-- Buttons -->
+        <div class="footer-buttons">
+          <button type="button" class="btn btn-reset" onclick="resetForm()">
+            Reset
+          </button>
+          <button type="button" class="btn btn-submit" onclick="submitForm()">
+            Submit
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="snackbar" class="snackbar"></div>
+
+  <script>
+    // ---------- Snackbar ----------
+    function showSnackbar(message) {
+      const bar = document.getElementById("snackbar");
+      bar.textContent = message;
+      bar.classList.add("show");
+      setTimeout(() => bar.classList.remove("show"), 2500);
+    }
+
+    // ---------- Currency formatting ----------
+    function stripPesoAndDots(value) {
+      let v = value.trim();
+      if (!v) return "";
+      if (v.startsWith("P")) {
+        v = v.substring(1).trim();
+      }
+      return v;
+    }
+
+    function onCurrencyFocus(e) {
+      const input = e.target;
+      input.value = stripPesoAndDots(input.value);
+    }
+
+    function onCurrencyBlur(e) {
+      const input = e.target;
+      let raw = stripPesoAndDots(input.value);
+      if (!raw) {
+        input.value = "";
+        return;
+      }
+      if (!raw.includes(".")) {
+        raw = raw + ".00";
+      }
+      input.value = "P" + raw;
+    }
+
+    function attachCurrencyHandlers() {
+      const currencyInputs = document.querySelectorAll(".currency");
+      currencyInputs.forEach((el) => {
+        el.removeEventListener("focus", onCurrencyFocus);
+        el.removeEventListener("blur", onCurrencyBlur);
+        el.addEventListener("focus", onCurrencyFocus);
+        el.addEventListener("blur", onCurrencyBlur);
+      });
+    }
+
+    // ---------- Product Focus dynamic rows ----------
+    const productFocusRows = [];
+
+    function addProductFocusRow() {
+      const idx = productFocusRows.length;
+      const row = {
+        productFocusId: "pf_productFocus_" + idx,
+        targetVolId: "pf_targetVol_" + idx,
+        actualVolId: "pf_actualVol_" + idx,
+        targetValId: "pf_targetVal_" + idx,
+        actualValId: "pf_actualVal_" + idx,
+      };
+      productFocusRows.push(row);
+
+      const container = document.getElementById("pfRowsContainer");
+
+      const rowDiv = document.createElement("div");
+      rowDiv.className = "pf-data-row";
+      rowDiv.style.marginTop = "6px";
+
+      const cell1 = document.createElement("div");
+      cell1.className = "pf-cell";
+      const input1 = document.createElement("input");
+      input1.type = "text";
+      input1.id = row.productFocusId;
+      input1.className = "pf-input";
+      cell1.appendChild(input1);
+
+      const cell2 = document.createElement("div");
+      cell2.className = "pf-cell";
+      const input2 = document.createElement("input");
+      input2.type = "number";
+      input2.inputMode = "numeric";
+      input2.id = row.targetVolId;
+      input2.className = "pf-input";
+      cell2.appendChild(input2);
+
+      const cell3 = document.createElement("div");
+      cell3.className = "pf-cell";
+      const input3 = document.createElement("input");
+      input3.type = "number";
+      input3.inputMode = "numeric";
+      input3.id = row.actualVolId;
+      input3.className = "pf-input";
+      cell3.appendChild(input3);
+
+      const cell4 = document.createElement("div");
+      cell4.className = "pf-cell";
+      const input4 = document.createElement("input");
+      input4.type = "text";
+      input4.id = row.targetValId;
+      input4.className = "pf-input currency";
+      cell4.appendChild(input4);
+
+      const cell5 = document.createElement("div");
+      cell5.className = "pf-cell";
+      const input5 = document.createElement("input");
+      input5.type = "text";
+      input5.id = row.actualValId;
+      input5.className = "pf-input currency";
+      cell5.appendChild(input5);
+
+      rowDiv.appendChild(cell1);
+      rowDiv.appendChild(cell2);
+      rowDiv.appendChild(cell3);
+      rowDiv.appendChild(cell4);
+      rowDiv.appendChild(cell5);
+
+      container.appendChild(rowDiv);
+
+      attachCurrencyHandlers();
+    }
+
+    // ---------- Submit / Reset ----------
+    function collectCurrency(id) {
+      const el = document.getElementById(id);
+      if (!el) return "";
+      return el.value.trim();
+    }
+
+    function submitForm() {
+      // Build Product Focus rows
+      const productFocusData = [];
+      productFocusRows.forEach((row) => {
+        const pf = document.getElementById(row.productFocusId).value.trim();
+        const targetVol = document.getElementById(row.targetVolId).value.trim();
+        const actualVol = document.getElementById(row.actualVolId).value.trim();
+        const targetVal = document.getElementById(row.targetValId).value.trim();
+        const actualVal = document.getElementById(row.actualValId).value.trim();
+
+        if (!pf && !targetVol && !actualVol && !targetVal && !actualVal) {
+          return;
+        }
+
+        productFocusData.push({
+          productFocus: pf,
+          targetMoveoutVolume: targetVol,
+          actualMoveoutVolume: actualVol,
+          targetMoveoutValuePf: targetVal,
+          actualMoveoutValuePf: actualVal,
+        });
+      });
+
+      const payload = {
+        agronomist: document.getElementById("agronomist").value.trim(),
+        area: document.getElementById("area").value.trim(),
+        cropFocus: document.getElementById("cropFocus").value.trim(),
+        activityType: document.getElementById("activityType").value.trim(),
+        plannedLocation: document.getElementById("plannedLocation").value.trim(),
+        actualLocation: document.getElementById("actualLocation").value.trim(),
+        plannedDate: document.getElementById("plannedDate").value.trim(),
+        actualDate: document.getElementById("actualDate").value.trim(),
+        targetAttendees: document
+          .getElementById("targetAttendees")
+          .value.trim(),
+        actualAttendees: document
+          .getElementById("actualAttendees")
+          .value.trim(),
+        budgetPerAttendee: collectCurrency("budgetPerAttendee"),
+        standardBudgetRequirement: collectCurrency(
+          "standardBudgetRequirement"
+        ),
+        additionalBudgetRequest: collectCurrency("additionalBudgetRequest"),
+        justificationAdditionalBudget: document
+          .getElementById("justificationAdditionalBudget")
+          .value.trim(),
+        totalBudgetRequested: collectCurrency("totalBudgetRequested"),
+        actualBudgetSpent: collectCurrency("actualBudgetSpent"),
+        productFocusRows: productFocusData,
+        totalTargetMoveoutValue: collectCurrency("totalTargetMoveoutValue"),
+        totalActualMoveoutValue: collectCurrency("totalActualMoveoutValue"),
+        remarksActivityOutput: document
+          .getElementById("remarksActivityOutput")
+          .value.trim(),
+        otherProductsSoldBooked: document
+          .getElementById("otherProductsSoldBooked")
+          .value.trim(),
+        valueOtherProductsSoldBooked: collectCurrency(
+          "valueOtherProductsSoldBooked"
+        ),
+        productsDeliveredDealers: document
+          .getElementById("productsDeliveredDealers")
+          .value.trim(),
+        valueProductsDeliveredDealers: collectCurrency(
+          "valueProductsDeliveredDealers"
+        ),
+        createdBy: "",
+        timestamp: new Date().toISOString(),
+      };
+
+      try {
+        if (window.ABRBridge && typeof window.ABRBridge.postMessage === "function") {
+          window.ABRBridge.postMessage(JSON.stringify(payload));
+          showSnackbar("Activity Budget Request Form submitted.");
+        } else if (typeof ABRBridge !== "undefined" && ABRBridge.postMessage) {
+          ABRBridge.postMessage(JSON.stringify(payload));
+          showSnackbar("Activity Budget Request Form submitted.");
+        } else {
+          console.warn("ABRBridge is not available.");
+          showSnackbar("Unable to send form to app. Please try again.");
+        }
+      } catch (e) {
+        console.error("Error sending ABR payload to Flutter:", e);
+        showSnackbar("Error sending form. Please try again.");
+      }
+
+      // Optionally:
+      // resetForm();
+    }
+
+    function resetForm() {
+      document.getElementById("abrForm").reset();
+      productFocusRows.length = 0;
+      document.getElementById("pfRowsContainer").innerHTML = "";
+      addProductFocusRow();
+      attachCurrencyHandlers();
+      showSnackbar("Form cleared");
+    }
+
+    // ---------- Init ----------
+    window.addEventListener("DOMContentLoaded", () => {
+      addProductFocusRow();
+      attachCurrencyHandlers();
+
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      const today = `${yyyy}-${mm}-${dd}`;
+      document.getElementById("plannedDate").value = today;
+      document.getElementById("actualDate").value = today;
+    });
+  </script>
+</body>
+</html>

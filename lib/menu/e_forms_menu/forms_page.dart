@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 
 import 'attendance_form_transactions_page.dart';
 import 'scp_form_transactions_page.dart';
@@ -17,11 +21,30 @@ class FormsPage extends StatefulWidget {
 }
 
 class _FormsPageState extends State<FormsPage> {
-  // 0 = Attendance, 1 = SCP, 2 = ABR, 3 = In-Field Coaching, 4 = Incidental Coverage, 5 = Sales Order, 6 = WebView Form
+  // 0 = Attendance, 1 = SCP, 2 = ABR, 3 = In-Field Coaching, 4 = Incidental Coverage, 5 = Sales Order
   int _selectedIndex = -1;
 
-  // userKey for Firestore path (shared by Attendance, SCP, ABR, etc.)
+  // userKey for Firestore path (shared by all forms)
   String _userKey = '';
+
+  /// Direct Firebase Storage URLs for the ZIP E-Forms.
+  static const String _attendanceZipUrl =
+      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fattendance_form_page.zip?alt=media&token=532871f5-2390-402f-b92d-55b2dec6678a';
+
+  static const String _scpZipUrl =
+      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fscp_form_page.zip?alt=media&token=0b06e88b-3d7c-4b09-afb1-2c5143459a2f';
+
+  static const String _abrZipUrl =
+      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fabr_form_page.zip?alt=media&token=33bc30fc-ef29-4689-a5bf-5f2e9cd9b8fe';
+
+  static const String _inFieldZipUrl =
+      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fin_field_coaching_form_page.zip?alt=media&token=6008a747-70e8-48fb-9938-c1d752c6fda7';
+
+  static const String _incidentalZipUrl =
+      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fincidental_coverage_form_page.zip?alt=media&token=19525e5f-8c10-4927-beeb-5e15e3aca52c';
+
+  static const String _salesOrderZipUrl =
+      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fsales_order_form_page.zip?alt=media&token=38447df2-d34f-4377-84a7-0a9227aca89e';
 
   @override
   void initState() {
@@ -33,7 +56,6 @@ class _FormsPageState extends State<FormsPage> {
     final prefs = await SharedPreferences.getInstance();
     final userEmail = prefs.getString('userEmail') ?? '';
     setState(() {
-      // IMPORTANT: keep this exactly the same pattern as when you WRITE to Firestore
       _userKey = userEmail.replaceAll(RegExp(r'[.#\$\\\[\]/]'), '_');
     });
   }
@@ -69,8 +91,7 @@ class _FormsPageState extends State<FormsPage> {
               ],
             ),
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
               alignment: Alignment.center,
               child: Text(
                 title,
@@ -96,7 +117,8 @@ class _FormsPageState extends State<FormsPage> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final double cardWidth = (MediaQuery.of(context).size.width - 48) / 2;
+    final double cardWidth =
+        (MediaQuery.of(context).size.width - 48) / 2;
     final double cardHeight = 170.0;
 
     return StreamBuilder<QuerySnapshot>(
@@ -109,7 +131,8 @@ class _FormsPageState extends State<FormsPage> {
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting ||
+        if (snapshot.connectionState ==
+                ConnectionState.waiting ||
             !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -126,10 +149,12 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 8, vertical: 12),
           child: GridView.builder(
             itemCount: docs.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate:
+                SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
@@ -137,13 +162,15 @@ class _FormsPageState extends State<FormsPage> {
             ),
             itemBuilder: (context, idx) {
               final doc = docs[idx];
-              final data = doc.data() as Map<String, dynamic>;
-              final String eventName = data["eventName"] ?? "";
+              final data =
+                  doc.data() as Map<String, dynamic>;
+              final String eventName =
+                  data["eventName"] ?? "";
               final String date = data["date"] ?? "-";
 
-              // Descending transaction number (first cell = highest)
               final transactionNumber = docs.length - idx;
-              final transactionLabel = "Event #$transactionNumber";
+              final transactionLabel =
+                  "Event #$transactionNumber";
 
               return SizedBox(
                 width: cardWidth,
@@ -151,7 +178,8 @@ class _FormsPageState extends State<FormsPage> {
                 child: Card(
                   elevation: 3,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius:
+                        BorderRadius.circular(14),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
@@ -159,7 +187,8 @@ class _FormsPageState extends State<FormsPage> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => AttendanceFormReadonlyPage(
+                          builder: (context) =>
+                              AttendanceFormReadonlyPage(
                             formData: data,
                             docId: doc.id,
                             userKey: _userKey,
@@ -168,7 +197,8 @@ class _FormsPageState extends State<FormsPage> {
                       );
                     },
                     child: Container(
-                      decoration: const BoxDecoration(
+                      decoration:
+                          const BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
@@ -179,12 +209,15 @@ class _FormsPageState extends State<FormsPage> {
                         ),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(8.0),
+                        padding:
+                            const EdgeInsets.all(8.0),
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
                           children: [
                             Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.center,
                               children: [
                                 const Icon(
                                   Icons.event_note,
@@ -196,11 +229,13 @@ class _FormsPageState extends State<FormsPage> {
                                   child: Text(
                                     transactionLabel,
                                     maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                    overflow:
+                                        TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 12,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight:
+                                          FontWeight.w600,
                                     ),
                                   ),
                                 ),
@@ -208,17 +243,22 @@ class _FormsPageState extends State<FormsPage> {
                             ),
                             Expanded(
                               child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.center,
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     eventName.isNotEmpty
                                         ? eventName
                                         : "Unnamed Event",
                                     maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                    overflow:
+                                        TextOverflow.ellipsis,
+                                    style:
+                                        const TextStyle(
+                                      fontWeight:
+                                          FontWeight.bold,
                                       fontSize: 18,
                                       color: Colors.white,
                                     ),
@@ -227,8 +267,10 @@ class _FormsPageState extends State<FormsPage> {
                                   Text(
                                     "Date: $date",
                                     maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    overflow:
+                                        TextOverflow.ellipsis,
+                                    style:
+                                        const TextStyle(
                                       color: Colors.white70,
                                       fontSize: 12,
                                     ),
@@ -255,10 +297,12 @@ class _FormsPageState extends State<FormsPage> {
   // =========================
   Widget _buildScpHistorySection(BuildContext context) {
     if (_userKey.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+          child: CircularProgressIndicator());
     }
 
-    final double cardWidth = (MediaQuery.of(context).size.width - 48) / 2;
+    final double cardWidth =
+        (MediaQuery.of(context).size.width - 48) / 2;
     final double cardHeight = 170.0;
 
     return StreamBuilder<QuerySnapshot>(
@@ -271,9 +315,11 @@ class _FormsPageState extends State<FormsPage> {
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting ||
+        if (snapshot.connectionState ==
+                ConnectionState.waiting ||
             !snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+              child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data!.docs;
@@ -288,10 +334,12 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 8, vertical: 12),
           child: GridView.builder(
             itemCount: docs.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate:
+                SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
@@ -299,16 +347,20 @@ class _FormsPageState extends State<FormsPage> {
             ),
             itemBuilder: (context, idx) {
               final doc = docs[idx];
-              final data = doc.data() as Map<String, dynamic>;
+              final data =
+                  doc.data() as Map<String, dynamic>;
 
               final String farmerName =
-                  data['farmerName'] ?? 'Unnamed Farmer';
-              final String dateOfEvent = data['dateOfEvent'] ?? '-';
-              final String cropsPlanted = data['cropsPlanted'] ?? '';
+                  data['farmerName'] ??
+                      'Unnamed Farmer';
+              final String dateOfEvent =
+                  data['dateOfEvent'] ?? '-';
+              final String cropsPlanted =
+                  data['cropsPlanted'] ?? '';
 
-              // Descending transaction number (first cell = highest)
               final transactionNumber = docs.length - idx;
-              final transactionLabel = 'SCP #$transactionNumber';
+              final transactionLabel =
+                  'SCP #$transactionNumber';
 
               return SizedBox(
                 width: cardWidth,
@@ -316,7 +368,8 @@ class _FormsPageState extends State<FormsPage> {
                 child: Card(
                   elevation: 3,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius:
+                        BorderRadius.circular(14),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
@@ -324,7 +377,8 @@ class _FormsPageState extends State<FormsPage> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => ScpFormReadonlyPage(
+                          builder: (context) =>
+                              ScpFormReadonlyPage(
                             formData: data,
                             docId: doc.id,
                             userKey: _userKey,
@@ -333,7 +387,8 @@ class _FormsPageState extends State<FormsPage> {
                       );
                     },
                     child: Container(
-                      decoration: const BoxDecoration(
+                      decoration:
+                          const BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
@@ -344,7 +399,8 @@ class _FormsPageState extends State<FormsPage> {
                         ),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(8.0),
+                        padding:
+                            const EdgeInsets.all(8.0),
                         child: Column(
                           crossAxisAlignment:
                               CrossAxisAlignment.start,
@@ -354,7 +410,8 @@ class _FormsPageState extends State<FormsPage> {
                                   CrossAxisAlignment.center,
                               children: [
                                 const Icon(
-                                  Icons.description_outlined,
+                                  Icons
+                                      .description_outlined,
                                   color: Colors.white,
                                   size: 30,
                                 ),
@@ -387,21 +444,27 @@ class _FormsPageState extends State<FormsPage> {
                                     maxLines: 2,
                                     overflow:
                                         TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                    style:
+                                        const TextStyle(
+                                      fontWeight:
+                                          FontWeight.bold,
                                       fontSize: 18,
                                       color: Colors.white,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
-                                  if (cropsPlanted.isNotEmpty)
+                                  if (cropsPlanted
+                                      .isNotEmpty)
                                     Text(
                                       'Crop: $cropsPlanted',
                                       maxLines: 1,
                                       overflow:
-                                          TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white70,
+                                          TextOverflow
+                                              .ellipsis,
+                                      style:
+                                          const TextStyle(
+                                        color:
+                                            Colors.white70,
                                         fontSize: 12,
                                       ),
                                     ),
@@ -410,7 +473,8 @@ class _FormsPageState extends State<FormsPage> {
                                     maxLines: 1,
                                     overflow:
                                         TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style:
+                                        const TextStyle(
                                       color: Colors.white70,
                                       fontSize: 12,
                                     ),
@@ -432,13 +496,16 @@ class _FormsPageState extends State<FormsPage> {
     );
   }
 
-  // Helper to mirror _formatTimestamp from AbrFormTransactionsPage
-  String _formatAbrTimestamp(dynamic ts, String fallback) {
+  String _formatAbrTimestamp(
+      dynamic ts, String fallback) {
     if (ts is Timestamp) {
       final dt = ts.toDate();
-      final y = dt.year.toString().padLeft(4, '0');
-      final m = dt.month.toString().padLeft(2, '0');
-      final d = dt.day.toString().padLeft(2, '0');
+      final y =
+          dt.year.toString().padLeft(4, '0');
+      final m =
+          dt.month.toString().padLeft(2, '0');
+      final d =
+          dt.day.toString().padLeft(2, '0');
       return '$y-$m-$d';
     }
     return fallback;
@@ -447,12 +514,15 @@ class _FormsPageState extends State<FormsPage> {
   // =========================
   // ABR HISTORY BODY
   // =========================
-  Widget _buildAbrHistorySection(BuildContext context) {
+  Widget _buildAbrHistorySection(
+      BuildContext context) {
     if (_userKey.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+          child: CircularProgressIndicator());
     }
 
-    final double cardWidth = (MediaQuery.of(context).size.width - 48) / 2;
+    final double cardWidth =
+        (MediaQuery.of(context).size.width - 48) / 2;
     final double cardHeight = 170.0;
 
     return StreamBuilder<QuerySnapshot>(
@@ -465,9 +535,11 @@ class _FormsPageState extends State<FormsPage> {
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting ||
+        if (snapshot.connectionState ==
+                ConnectionState.waiting ||
             !snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+              child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data!.docs;
@@ -482,10 +554,12 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 8, vertical: 12),
           child: GridView.builder(
             itemCount: docs.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate:
+                SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
@@ -493,29 +567,43 @@ class _FormsPageState extends State<FormsPage> {
             ),
             itemBuilder: (context, idx) {
               final doc = docs[idx];
-              final data = doc.data() as Map<String, dynamic>;
+              final data =
+                  doc.data() as Map<String, dynamic>;
 
               final String activityName =
-                  (data['agronomist'] as String?) ?? 'No agronomist';
+                  (data['agronomist']
+                          as String?) ??
+                      'No agronomist';
 
-              final dynamic ts = data['timestamp'];
+              final dynamic ts =
+                  data['timestamp'];
               final String plannedDate =
-                  (data['plannedDate'] as String?) ??
-                      (data['plannedActivityDate'] as String?) ??
+                  (data['plannedDate']
+                          as String?) ??
+                      (data['plannedActivityDate']
+                              as String?) ??
                       '';
-              final String date = _formatAbrTimestamp(
+              final String date =
+                  _formatAbrTimestamp(
                 ts,
-                plannedDate.isEmpty ? '-' : plannedDate,
+                plannedDate.isEmpty
+                    ? '-'
+                    : plannedDate,
               );
 
               final String location =
-                  (data['plannedLocation'] as String?) ??
-                      (data['plannedActivityLocation'] as String?) ??
-                      (data['location'] as String?) ??
+                  (data['plannedLocation']
+                          as String?) ??
+                      (data['plannedActivityLocation']
+                              as String?) ??
+                      (data['location']
+                              as String?) ??
                       '';
 
-              final transactionNumber = docs.length - idx;
-              final transactionLabel = 'ABR #$transactionNumber';
+              final transactionNumber =
+                  docs.length - idx;
+              final transactionLabel =
+                  'ABR #$transactionNumber';
 
               return SizedBox(
                 width: cardWidth,
@@ -523,7 +611,8 @@ class _FormsPageState extends State<FormsPage> {
                 child: Card(
                   elevation: 3,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius:
+                        BorderRadius.circular(14),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
@@ -531,7 +620,8 @@ class _FormsPageState extends State<FormsPage> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => AbrFormReadonlyPage(
+                          builder: (context) =>
+                              AbrFormReadonlyPage(
                             formData: data,
                             docId: doc.id,
                             userKey: _userKey,
@@ -540,7 +630,8 @@ class _FormsPageState extends State<FormsPage> {
                       );
                     },
                     child: Container(
-                      decoration: const BoxDecoration(
+                      decoration:
+                          const BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
@@ -551,7 +642,8 @@ class _FormsPageState extends State<FormsPage> {
                         ),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(8.0),
+                        padding:
+                            const EdgeInsets.all(8.0),
                         child: Column(
                           crossAxisAlignment:
                               CrossAxisAlignment.start,
@@ -561,7 +653,8 @@ class _FormsPageState extends State<FormsPage> {
                                   CrossAxisAlignment.center,
                               children: [
                                 const Icon(
-                                  Icons.request_page_outlined,
+                                  Icons
+                                      .request_page_outlined,
                                   color: Colors.white,
                                   size: 30,
                                 ),
@@ -594,21 +687,27 @@ class _FormsPageState extends State<FormsPage> {
                                     maxLines: 2,
                                     overflow:
                                         TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                    style:
+                                        const TextStyle(
+                                      fontWeight:
+                                          FontWeight.bold,
                                       fontSize: 18,
                                       color: Colors.white,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
-                                  if (location.isNotEmpty)
+                                  if (location
+                                      .isNotEmpty)
                                     Text(
                                       'Location: $location',
                                       maxLines: 1,
                                       overflow:
-                                          TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white70,
+                                          TextOverflow
+                                              .ellipsis,
+                                      style:
+                                          const TextStyle(
+                                        color:
+                                            Colors.white70,
                                         fontSize: 12,
                                       ),
                                     ),
@@ -617,7 +716,8 @@ class _FormsPageState extends State<FormsPage> {
                                     maxLines: 1,
                                     overflow:
                                         TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style:
+                                        const TextStyle(
                                       color: Colors.white70,
                                       fontSize: 12,
                                     ),
@@ -642,12 +742,15 @@ class _FormsPageState extends State<FormsPage> {
   // ================================
   // IN-FIELD COACHING HISTORY BODY
   // ================================
-  Widget _buildInFieldCoachingHistorySection(BuildContext context) {
+  Widget _buildInFieldCoachingHistorySection(
+      BuildContext context) {
     if (_userKey.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+          child: CircularProgressIndicator());
     }
 
-    final double cardWidth = (MediaQuery.of(context).size.width - 48) / 2;
+    final double cardWidth =
+        (MediaQuery.of(context).size.width - 48) / 2;
     final double cardHeight = 170.0;
 
     return StreamBuilder<QuerySnapshot>(
@@ -660,9 +763,11 @@ class _FormsPageState extends State<FormsPage> {
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting ||
+        if (snapshot.connectionState ==
+                ConnectionState.waiting ||
             !snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+              child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data!.docs;
@@ -679,29 +784,36 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 8, vertical: 12),
           child: GridView.builder(
             itemCount: docs.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate:
+                SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
               childAspectRatio: cardWidth / cardHeight,
             ),
             itemBuilder: (context, idx) {
-              final QueryDocumentSnapshot doc = docs[idx];
+              final QueryDocumentSnapshot doc =
+                  docs[idx];
               final Map<String, dynamic> dat =
                   doc.data() as Map<String, dynamic>;
 
-              final String evaluator = dat['evaluator'] ?? '';
-              final String position = dat['position'] ?? '';
+              final String evaluator =
+                  dat['evaluator'] ?? '';
+              final String position =
+                  dat['position'] ?? '';
               final String date = dat['date'] ?? '';
 
-              final String title = '$evaluator - $position';
+              final String title =
+                  '$evaluator - $position';
 
-              // Descending transaction number (first cell = highest)
-              final transactionNumber = docs.length - idx;
-              final transactionLabel = 'Coaching #$transactionNumber';
+              final transactionNumber =
+                  docs.length - idx;
+              final transactionLabel =
+                  'Coaching #$transactionNumber';
 
               return SizedBox(
                 width: cardWidth,
@@ -709,7 +821,8 @@ class _FormsPageState extends State<FormsPage> {
                 child: Card(
                   elevation: 3,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius:
+                        BorderRadius.circular(14),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
@@ -720,14 +833,13 @@ class _FormsPageState extends State<FormsPage> {
                           builder: (_) =>
                               InFieldCoachingFormReadonlyPage(
                             formData: dat,
-                            // if your readonly page later needs docId/userKey,
-                            // you can add them here to match other sections
                           ),
                         ),
                       );
                     },
                     child: Container(
-                      decoration: const BoxDecoration(
+                      decoration:
+                          const BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
@@ -738,7 +850,8 @@ class _FormsPageState extends State<FormsPage> {
                         ),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(8.0),
+                        padding:
+                            const EdgeInsets.all(8.0),
                         child: Column(
                           crossAxisAlignment:
                               CrossAxisAlignment.start,
@@ -781,8 +894,10 @@ class _FormsPageState extends State<FormsPage> {
                                     maxLines: 2,
                                     overflow:
                                         TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                    style:
+                                        const TextStyle(
+                                      fontWeight:
+                                          FontWeight.bold,
                                       fontSize: 18,
                                       color: Colors.white,
                                     ),
@@ -793,7 +908,8 @@ class _FormsPageState extends State<FormsPage> {
                                     maxLines: 1,
                                     overflow:
                                         TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style:
+                                        const TextStyle(
                                       color: Colors.white70,
                                       fontSize: 12,
                                     ),
@@ -817,14 +933,16 @@ class _FormsPageState extends State<FormsPage> {
 
   // =======================================
   // INCIDENTAL COVERAGE HISTORY BODY
-  // (inline version without AppBar)
   // =======================================
-  Widget _buildIncidentalCoverageHistorySection(BuildContext context) {
+  Widget _buildIncidentalCoverageHistorySection(
+      BuildContext context) {
     if (_userKey.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+          child: CircularProgressIndicator());
     }
 
-    final double cardWidth = (MediaQuery.of(context).size.width - 48) / 2;
+    final double cardWidth =
+        (MediaQuery.of(context).size.width - 48) / 2;
     final double cardHeight = 170.0;
 
     return StreamBuilder<QuerySnapshot>(
@@ -838,8 +956,10 @@ class _FormsPageState extends State<FormsPage> {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData ||
-            snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+            snapshot.connectionState ==
+                ConnectionState.waiting) {
+          return const Center(
+              child: CircularProgressIndicator());
         }
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {
@@ -853,10 +973,12 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 8, vertical: 12),
           child: GridView.builder(
             itemCount: docs.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate:
+                SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
@@ -864,14 +986,16 @@ class _FormsPageState extends State<FormsPage> {
             ),
             itemBuilder: (context, index) {
               final doc = docs[index];
-              final data = doc.data() as Map<String, dynamic>;
+              final data =
+                  doc.data() as Map<String, dynamic>;
               final title =
                   "${data['lastName'] ?? ''} ${data['firstName'] ?? ''}"
                       .trim();
-              final date = data['dateOfCover'] ?? "-";
+              final date =
+                  data['dateOfCover'] ?? "-";
 
-              // Descending transaction number: first cell is highest
-              final transactionNumber = docs.length - index;
+              final transactionNumber =
+                  docs.length - index;
               final transactionLabel =
                   "Transaction #$transactionNumber";
 
@@ -881,7 +1005,8 @@ class _FormsPageState extends State<FormsPage> {
                 child: Card(
                   elevation: 3,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius:
+                        BorderRadius.circular(14),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
@@ -898,7 +1023,8 @@ class _FormsPageState extends State<FormsPage> {
                       );
                     },
                     child: Container(
-                      decoration: const BoxDecoration(
+                      decoration:
+                          const BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
@@ -909,7 +1035,8 @@ class _FormsPageState extends State<FormsPage> {
                         ),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(8.0),
+                        padding:
+                            const EdgeInsets.all(8.0),
                         child: Column(
                           crossAxisAlignment:
                               CrossAxisAlignment.start,
@@ -954,8 +1081,10 @@ class _FormsPageState extends State<FormsPage> {
                                     maxLines: 2,
                                     overflow:
                                         TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                    style:
+                                        const TextStyle(
+                                      fontWeight:
+                                          FontWeight.bold,
                                       fontSize: 18,
                                       color: Colors.white,
                                     ),
@@ -966,7 +1095,8 @@ class _FormsPageState extends State<FormsPage> {
                                     maxLines: 1,
                                     overflow:
                                         TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style:
+                                        const TextStyle(
                                       color: Colors.white70,
                                       fontSize: 12,
                                     ),
@@ -989,14 +1119,17 @@ class _FormsPageState extends State<FormsPage> {
   }
 
   // =======================================
-  // SALES ORDER HISTORY BODY (inline, no AppBar)
+  // SALES ORDER HISTORY BODY
   // =======================================
-  Widget _buildSalesOrderHistorySection(BuildContext context) {
+  Widget _buildSalesOrderHistorySection(
+      BuildContext context) {
     if (_userKey.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+          child: CircularProgressIndicator());
     }
 
-    final double cardWidth = (MediaQuery.of(context).size.width - 48) / 2;
+    final double cardWidth =
+        (MediaQuery.of(context).size.width - 48) / 2;
     final double cardHeight = 170.0;
 
     return StreamBuilder<QuerySnapshot>(
@@ -1010,8 +1143,10 @@ class _FormsPageState extends State<FormsPage> {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData ||
-            snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+            snapshot.connectionState ==
+                ConnectionState.waiting) {
+          return const Center(
+              child: CircularProgressIndicator());
         }
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {
@@ -1025,24 +1160,29 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 8, vertical: 12),
           child: GridView.builder(
             itemCount: docs.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate:
+                SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
               childAspectRatio: cardWidth / cardHeight,
             ),
             itemBuilder: (context, idx) {
-              final data = docs[idx].data() as Map<String, dynamic>;
+              final data =
+                  docs[idx].data() as Map<String, dynamic>;
               final mrName = data["mrName"] ?? "";
               final soldTo = data["soldTo"] ?? "";
-              final dateOfOrder = data["dateOfOrder"] ?? "-";
+              final dateOfOrder =
+                  data["dateOfOrder"] ?? "-";
 
-              // Descending transaction number (first cell = highest)
-              final transactionNumber = docs.length - idx;
-              final transactionLabel = "Transaction #$transactionNumber";
+              final transactionNumber =
+                  docs.length - idx;
+              final transactionLabel =
+                  "Transaction #$transactionNumber";
 
               return SizedBox(
                 width: cardWidth,
@@ -1050,7 +1190,8 @@ class _FormsPageState extends State<FormsPage> {
                 child: Card(
                   elevation: 3,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius:
+                        BorderRadius.circular(14),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
@@ -1067,7 +1208,8 @@ class _FormsPageState extends State<FormsPage> {
                       );
                     },
                     child: Container(
-                      decoration: const BoxDecoration(
+                      decoration:
+                          const BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
@@ -1078,7 +1220,8 @@ class _FormsPageState extends State<FormsPage> {
                         ),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(8.0),
+                        padding:
+                            const EdgeInsets.all(8.0),
                         child: Column(
                           crossAxisAlignment:
                               CrossAxisAlignment.start,
@@ -1123,8 +1266,10 @@ class _FormsPageState extends State<FormsPage> {
                                     maxLines: 2,
                                     overflow:
                                         TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                    style:
+                                        const TextStyle(
+                                      fontWeight:
+                                          FontWeight.bold,
                                       fontSize: 18,
                                       color: Colors.white,
                                     ),
@@ -1135,7 +1280,8 @@ class _FormsPageState extends State<FormsPage> {
                                     maxLines: 1,
                                     overflow:
                                         TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style:
+                                        const TextStyle(
                                       color: Colors.white70,
                                       fontSize: 12,
                                     ),
@@ -1146,7 +1292,8 @@ class _FormsPageState extends State<FormsPage> {
                                     maxLines: 1,
                                     overflow:
                                         TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style:
+                                        const TextStyle(
                                       color: Colors.white70,
                                       fontSize: 12,
                                     ),
@@ -1168,6 +1315,272 @@ class _FormsPageState extends State<FormsPage> {
     );
   }
 
+  // ================
+  // DOWNLOAD HELPERS
+  // ================
+  Future<Directory> _getDownloadsDirectory() async {
+    if (Platform.isAndroid) {
+      // Use the public Downloads folder on Android. [web:48][web:46]
+      final dir =
+          Directory('/storage/emulated/0/Download');
+      if (await dir.exists()) {
+        return dir;
+      }
+      // Fallback to app documents directory. [web:36]
+      return await getApplicationDocumentsDirectory();
+    } else {
+      // iOS/others: only app documents directory. [web:36]
+      return await getApplicationDocumentsDirectory();
+    }
+  }
+
+  Future<void> _downloadAttendanceZip() async {
+    try {
+      final uri = Uri.parse(_attendanceZipUrl);
+      final response = await http.get(uri);
+      if (response.statusCode != 200) {
+        throw Exception(
+            'Failed to download file (status ${response.statusCode})');
+      }
+
+      final downloadsDir =
+          await _getDownloadsDirectory();
+      final filePath =
+          '${downloadsDir.path}/attendance_form_page.zip';
+      final file = File(filePath);
+      await file.writeAsBytes(
+          response.bodyBytes); // [web:70]
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Attendance E-Form saved to: $filePath'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Error downloading Attendance E-Form: $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _downloadScpZip() async {
+    try {
+      final uri = Uri.parse(_scpZipUrl);
+      final response = await http.get(uri);
+      if (response.statusCode != 200) {
+        throw Exception(
+            'Failed to download file (status ${response.statusCode})');
+      }
+
+      final downloadsDir =
+          await _getDownloadsDirectory();
+      final filePath =
+          '${downloadsDir.path}/scp_form_page.zip';
+      final file = File(filePath);
+      await file.writeAsBytes(
+          response.bodyBytes); // [web:70]
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('SCP E-Form saved to: $filePath'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Error downloading SCP E-Form: $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _downloadAbrZip() async {
+    try {
+      final uri = Uri.parse(_abrZipUrl);
+      final response = await http.get(uri);
+      if (response.statusCode != 200) {
+        throw Exception(
+            'Failed to download file (status ${response.statusCode})');
+      }
+
+      final downloadsDir =
+          await _getDownloadsDirectory();
+      final filePath =
+          '${downloadsDir.path}/abr_form_page.zip';
+      final file = File(filePath);
+      await file.writeAsBytes(
+          response.bodyBytes); // [web:70]
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('ABR E-Form saved to: $filePath'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Error downloading ABR E-Form: $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _downloadInFieldZip() async {
+    try {
+      final uri = Uri.parse(_inFieldZipUrl);
+      final response = await http.get(uri);
+      if (response.statusCode != 200) {
+        throw Exception(
+            'Failed to download file (status ${response.statusCode})');
+      }
+
+      final downloadsDir =
+          await _getDownloadsDirectory();
+      final filePath =
+          '${downloadsDir.path}/in_field_coaching_form_page.zip';
+      final file = File(filePath);
+      await file.writeAsBytes(
+          response.bodyBytes); // [web:70]
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'In-Field Coaching E-Form saved to: $filePath'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Error downloading In-Field Coaching E-Form: $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _downloadIncidentalZip() async {
+    try {
+      final uri = Uri.parse(_incidentalZipUrl);
+      final response = await http.get(uri);
+      if (response.statusCode != 200) {
+        throw Exception(
+            'Failed to download file (status ${response.statusCode})');
+      }
+
+      final downloadsDir =
+          await _getDownloadsDirectory();
+      final filePath =
+          '${downloadsDir.path}/incidental_coverage_form_page.zip';
+      final file = File(filePath);
+      await file.writeAsBytes(
+          response.bodyBytes); // [web:70]
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Incidental Coverage E-Form saved to: $filePath'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Error downloading Incidental Coverage E-Form: $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _downloadSalesOrderZip() async {
+    try {
+      final uri = Uri.parse(_salesOrderZipUrl);
+      final response = await http.get(uri);
+      if (response.statusCode != 200) {
+        throw Exception(
+            'Failed to download file (status ${response.statusCode})');
+      }
+
+      final downloadsDir =
+          await _getDownloadsDirectory();
+      final filePath =
+          '${downloadsDir.path}/sales_order_form_page.zip';
+      final file = File(filePath);
+      await file.writeAsBytes(
+          response.bodyBytes); // [web:70]
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Sales Order E-Form saved to: $filePath'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Error downloading Sales Order E-Form: $e'),
+        ),
+      );
+    }
+  }
+
+  void _onDownloadPressed(String formType) {
+    if (formType == 'attendance') {
+      _downloadAttendanceZip();
+      return;
+    }
+    if (formType == 'scp') {
+      _downloadScpZip();
+      return;
+    }
+    if (formType == 'abr') {
+      _downloadAbrZip();
+      return;
+    }
+    if (formType == 'coaching') {
+      _downloadInFieldZip();
+      return;
+    }
+    if (formType == 'inc_cov') {
+      _downloadIncidentalZip();
+      return;
+    }
+    if (formType == 'sales_order') {
+      _downloadSalesOrderZip();
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+            'Download for $formType not yet implemented.'),
+      ),
+    );
+  }
+
+  // ============
+  // MAIN BUILD
+  // ============
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1201,10 +1614,12 @@ class _FormsPageState extends State<FormsPage> {
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        padding:
+            const EdgeInsets.symmetric(vertical: 16),
         children: [
           const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+            padding:
+                EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               'E-Forms',
               style: TextStyle(
@@ -1215,7 +1630,8 @@ class _FormsPageState extends State<FormsPage> {
           ),
           const SizedBox(height: 6),
           const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+            padding:
+                EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               'Manage and view your form submissions',
               style: TextStyle(
@@ -1229,31 +1645,38 @@ class _FormsPageState extends State<FormsPage> {
 
           Padding(
             padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 6),
             child: SizedBox(
               height: 80,
               child: ListView(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                padding:
+                    const EdgeInsets.symmetric(
+                        horizontal: 8),
                 children: [
                   _buildSelectableFormChip(
                     title: 'Attendance Form',
                     index: 0,
                   ),
                   _buildSelectableFormChip(
-                    title: 'Sample Crop Prescription',
+                    title:
+                        'Sample Crop Prescription',
                     index: 1,
                   ),
                   _buildSelectableFormChip(
-                    title: 'Activity Budget Request',
+                    title:
+                        'Activity Budget Request',
                     index: 2,
                   ),
                   _buildSelectableFormChip(
-                    title: 'In-Field Coaching Form',
+                    title:
+                        'In-Field Coaching Form',
                     index: 3,
                   ),
                   _buildSelectableFormChip(
-                    title: 'Incidental Coverage Form',
+                    title:
+                        'Incidental Coverage Form',
                     index: 4,
                   ),
                   _buildSelectableFormChip(
@@ -1268,113 +1691,273 @@ class _FormsPageState extends State<FormsPage> {
           const SizedBox(height: 24),
 
           if (_selectedIndex == 0) ...[
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Attendance Form History',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(
+                      horizontal: 16),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Attendance Form History',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight:
+                            FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () =>
+                        _onDownloadPressed(
+                            'attendance'),
+                    icon: const Icon(
+                        Icons.download),
+                    label: const Text(
+                        'Download E-Form'),
+                    style: TextButton.styleFrom(
+                      foregroundColor:
+                          const Color(0xFF4e2f80),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: MediaQuery.of(context).size.height * 0.9,
-              child: _buildAttendanceHistorySection(context),
+              height:
+                  MediaQuery.of(context)
+                          .size
+                          .height *
+                      0.9,
+              child: _buildAttendanceHistorySection(
+                  context),
             ),
           ],
 
           if (_selectedIndex == 1) ...[
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Sample Crop Prescription History',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(
+                      horizontal: 16),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Sample Crop Prescription History',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight:
+                            FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () =>
+                        _onDownloadPressed('scp'),
+                    icon: const Icon(
+                        Icons.download),
+                    label: const Text(
+                        'Download E-Form'),
+                    style: TextButton.styleFrom(
+                      foregroundColor:
+                          const Color(0xFF4e2f80),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: MediaQuery.of(context).size.height * 0.9,
-              child: _buildScpHistorySection(context),
+              height:
+                  MediaQuery.of(context)
+                          .size
+                          .height *
+                      0.9,
+              child: _buildScpHistorySection(
+                  context),
             ),
           ],
 
           if (_selectedIndex == 2) ...[
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Activity Budget Request History',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(
+                      horizontal: 16),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Activity Budget Request History',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight:
+                            FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () =>
+                        _onDownloadPressed('abr'),
+                    icon: const Icon(
+                        Icons.download),
+                    label: const Text(
+                        'Download E-Form'),
+                    style: TextButton.styleFrom(
+                      foregroundColor:
+                          const Color(0xFF4e2f80),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: MediaQuery.of(context).size.height * 0.9,
-              child: _buildAbrHistorySection(context),
+              height:
+                  MediaQuery.of(context)
+                          .size
+                          .height *
+                      0.9,
+              child: _buildAbrHistorySection(
+                  context),
             ),
           ],
 
           if (_selectedIndex == 3) ...[
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'In-Field Coaching Form History',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(
+                      horizontal: 16),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'In-Field Coaching Form History',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight:
+                            FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () =>
+                        _onDownloadPressed(
+                            'coaching'),
+                    icon: const Icon(
+                        Icons.download),
+                    label: const Text(
+                        'Download E-Form'),
+                    style: TextButton.styleFrom(
+                      foregroundColor:
+                          const Color(0xFF4e2f80),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: MediaQuery.of(context).size.height * 0.9,
-              // Use history section so the main app bar remains.
-              child: _buildInFieldCoachingHistorySection(context),
+              height:
+                  MediaQuery.of(context)
+                          .size
+                          .height *
+                      0.9,
+              child:
+                  _buildInFieldCoachingHistorySection(
+                      context),
             ),
           ],
 
           if (_selectedIndex == 4) ...[
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Incidental Coverage Form History',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(
+                      horizontal: 16),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Incidental Coverage Form History',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight:
+                            FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () =>
+                        _onDownloadPressed(
+                            'inc_cov'),
+                    icon: const Icon(
+                        Icons.download),
+                    label: const Text(
+                        'Download E-Form'),
+                    style: TextButton.styleFrom(
+                      foregroundColor:
+                          const Color(0xFF4e2f80),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: MediaQuery.of(context).size.height * 0.9,
-              // Inline history (no AppBar) similar to others
-              child: _buildIncidentalCoverageHistorySection(context),
+              height:
+                  MediaQuery.of(context)
+                          .size
+                          .height *
+                      0.9,
+              child:
+                  _buildIncidentalCoverageHistorySection(
+                      context),
             ),
           ],
 
           if (_selectedIndex == 5) ...[
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Sales Order Form History',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(
+                      horizontal: 16),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Sales Order Form History',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight:
+                            FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () =>
+                        _onDownloadPressed(
+                            'sales_order'),
+                    icon: const Icon(
+                        Icons.download),
+                    label: const Text(
+                        'Download E-Form'),
+                    style: TextButton.styleFrom(
+                      foregroundColor:
+                          const Color(0xFF4e2f80),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: MediaQuery.of(context).size.height * 0.9,
-              // Inline history (no AppBar) for Sales Order
-              child: _buildSalesOrderHistorySection(context),
+              height:
+                  MediaQuery.of(context)
+                          .size
+                          .height *
+                      0.9,
+              child:
+                  _buildSalesOrderHistorySection(
+                      context),
             ),
           ],
         ],

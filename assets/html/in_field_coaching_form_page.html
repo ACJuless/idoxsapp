@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>In-Field Coaching Form</title>
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --pd: #4A2371;
+        --p: #5958B2;
+        --surface: #F9F5FF;
+        --card: #FFFFFF;
+        --text: #000000;
+        --muted: #2B2B2B;
+        --border: #E9E3F5;
+        --green: #059669;
+        --red: #DC2626;
+        --grad: linear-gradient(135deg, #4A2371 0%, #4A2371 55%, #5958B2 100%);
+        --max-w: 760px;
+      }
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html { height: 100%; }
+      body {
+        font-family: 'Figtree', sans-serif;
+        background: var(--surface);
+        color: var(--text);
+        min-height: 100%;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* APP BAR */
+      .appbar {
+        background: var(--grad);
+        border-radius: 0 0 22px 22px;
+        padding: 14px 18px 18px;
+        display: flex; align-items: center;
+        position: sticky; top: 0; z-index: 50;
+        box-shadow: 0 6px 28px rgba(76,29,149,.3);
+        flex-shrink: 0;
+      }
+      .appbar-inner { width:100%; display:flex; align-items:center; justify-content:space-between; }
+      .appbar-left { display:flex; align-items:center; gap:8px; min-width:0; }
+      .back-btn {
+        background: rgba(255,255,255,.18); border:none; border-radius:9px;
+        width:34px; height:34px; flex-shrink:0;
+        display:flex; align-items:center; justify-content:center;
+        cursor:pointer; color:#fff; transition:background .2s;
+      }
+      .back-btn:hover { background:rgba(255,255,255,.3); }
+      .back-btn.hidden { visibility:hidden; pointer-events:none; width:0; }
+      .appbar-titles { min-width:0; }
+      .appbar-subtitle { font-size:13px; color:rgba(255,255,255,.65); }
+      .appbar-title-main {
+        font-size:17px; font-weight:700; color:#fff;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      }
+      .edit-btn {
+        flex-shrink:0;
+        background:rgba(255,255,255,.22); border:none; border-radius:18px;
+        padding:5px 16px; cursor:pointer;
+        font-family:'Figtree',sans-serif; font-size:13px; font-weight:700; color:#fff;
+        transition:background .2s;
+      }
+      .edit-btn:hover { background:rgba(255,255,255,.35); }
+      .edit-btn.is-cancel { color:rgba(255,255,255,.65); font-weight:600; }
+
+      /* PAGE BODY */
+      .scroll-body {
+        flex:1; overflow-y:auto;
+        padding:14px 14px 32px;
+        display:flex; flex-direction:column; align-items:center;
+      }
+      .page-content { width:100%; max-width:var(--max-w); }
+
+      .sec-label {
+        font-size:14px; font-weight:700; color:var(--p);
+        letter-spacing:.4px; padding-left:8px; margin:20px 0 8px;
+        text-transform:uppercase;
+      }
+      .sec-label.first { margin-top:4px; }
+      .form-card {
+        background:var(--card); border-radius:18px;
+        box-shadow:0 3px 14px rgba(0,0,0,.06); overflow:hidden;
+      }
+
+      /* VIEW MODE */
+      .vrow {
+        padding:12px 16px; border-bottom:1px solid #F0EBF9;
+        display:flex; flex-direction:column; gap:2px;
+      }
+      .vrow:last-child { border-bottom:none; }
+      .vrow .lbl { font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; }
+      .vrow .val { font-size:16px; font-weight:400; color:var(--text); min-height:20px; }
+      .val.empty { color:#9CA3AF; }
+
+      /* EDIT MODE */
+      .erow {
+        padding:12px 16px; border-bottom:1px solid #F0EBF9;
+        display:flex; flex-direction:column; gap:4px;
+      }
+      .erow:last-child { border-bottom:none; }
+      .erow .lbl { font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; }
+      .erow input, .erow textarea, .erow select {
+        width:100%; font-family:'Figtree',sans-serif; font-size:16px; font-weight:500;
+        color:var(--text); background:rgba(107,33,200,.04);
+        border:1.5px solid rgba(107,33,200,.25); border-radius:9px;
+        padding:8px 11px; outline:none; transition:border-color .2s; resize:none;
+      }
+      .erow input::placeholder, .erow textarea::placeholder { color:#B0A8C8; font-weight:400; }
+      .erow input:focus, .erow textarea:focus, .erow select:focus { border-color:var(--p); }
+      .erow input:disabled { cursor:not-allowed; background:rgba(107,33,200,.02); opacity:1; }
+      .erow input:disabled.is-placeholder { color:#B0A8C8; font-weight:400; }
+      .erow input:disabled:not(.is-placeholder) { color:var(--text); font-weight:500; opacity:.75; }
+      .erow select {
+        appearance:none; -webkit-appearance:none;
+        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235958B2' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+        background-repeat:no-repeat; background-position:right 10px center; padding-right:34px;
+      }
+      .erow select.placeholder { color:#B0A8C8; }
+      .erow select option { color:var(--text); }
+
+      /* VALIDATION */
+      .field-error { border-color:var(--red) !important; background:rgba(220,38,38,.04) !important; }
+      .error-msg { color:var(--red); font-size:11.5px; font-weight:600; margin-top:2px; display:none; }
+      .error-msg.show { display:block; }
+      .req-star { color:var(--red); margin-left:2px; }
+
+      /* RATING VIEW ROW */
+      .rating-vrow {
+        padding:12px 16px; border-bottom:1px solid #F0EBF9;
+        display:flex; flex-direction:column; gap:7px;
+      }
+      .rating-vrow:last-child { border-bottom:none; }
+      .rating-vrow .q-text { font-size:13px; font-weight:600; color:var(--text); line-height:1.4; }
+      .rating-vrow .q-num { color:var(--p); font-weight:700; margin-right:2px; }
+      .rating-view-sel {
+        display:flex; align-items:center; gap:10px;
+        padding:9px 13px; border-radius:10px;
+      }
+      .rating-view-sel .rv-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+      .rating-view-sel .rv-label { font-size:13.5px; font-weight:700; }
+
+      .rv-0 { background:#FEE2E2; } .rv-0 .rv-dot { background:#DC2626; } .rv-0 .rv-label { color:#991B1B; }
+      .rv-1 { background:#FEF3C7; } .rv-1 .rv-dot { background:#D97706; } .rv-1 .rv-label { color:#92400E; }
+      .rv-2 { background:#DBEAFE; } .rv-2 .rv-dot { background:#2563EB; } .rv-2 .rv-label { color:#1E40AF; }
+      .rv-3 { background:#DCFCE7; } .rv-3 .rv-dot { background:#16A34A; } .rv-3 .rv-label { color:#166534; }
+      .rv-4 { background:#F3E8FF; } .rv-4 .rv-dot { background:#7C3AED; } .rv-4 .rv-label { color:#6B21A8; }
+
+      /* RATING EDIT ROW */
+      .rating-erow {
+        padding:12px 16px; border-bottom:1px solid #F0EBF9;
+        display:flex; flex-direction:column; gap:8px;
+      }
+      .rating-erow:last-child { border-bottom:none; }
+      .rating-erow .q-text { font-size:13px; font-weight:600; color:var(--text); line-height:1.4; }
+      .rating-erow .q-num { color:var(--p); font-weight:700; margin-right:2px; }
+      .rating-erow.has-error .rating-opt-list .rating-opt-item {
+        border-color: rgba(220,38,38,.35);
+      }
+      .rating-opt-list { display:flex; flex-direction:column; gap:5px; }
+      .rating-opt-item {
+        display:flex; align-items:center; gap:11px;
+        padding:9px 12px; border-radius:10px;
+        border:1.5px solid rgba(89,88,178,.14);
+        background:rgba(89,88,178,.02);
+        cursor:pointer;
+        transition:background .14s, border-color .14s;
+        user-select:none;
+      }
+      .rating-opt-item input[type=radio] { position:absolute; opacity:0; width:0; height:0; }
+      .rating-opt-item:hover { border-color:rgba(89,88,178,.32); background:rgba(89,88,178,.06); }
+
+      .r-circle {
+        width:18px; height:18px; border-radius:50%; flex-shrink:0;
+        border:2px solid rgba(89,88,178,.28);
+        display:flex; align-items:center; justify-content:center;
+        transition:background .14s, border-color .14s;
+      }
+      .r-circle svg { display:none; }
+      .r-label { font-size:13px; font-weight:500; color:var(--muted); transition:color .14s; line-height:1.3; flex:1; }
+
+      .rating-opt-item.sel-0 { background:#FEE2E2; border-color:#FCA5A5; }
+      .rating-opt-item.sel-0 .r-circle { background:#DC2626; border-color:#DC2626; }
+      .rating-opt-item.sel-0 .r-circle svg { display:block; }
+      .rating-opt-item.sel-0 .r-label { color:#991B1B; font-weight:700; }
+
+      .rating-opt-item.sel-1 { background:#FEF3C7; border-color:#FCD34D; }
+      .rating-opt-item.sel-1 .r-circle { background:#D97706; border-color:#D97706; }
+      .rating-opt-item.sel-1 .r-circle svg { display:block; }
+      .rating-opt-item.sel-1 .r-label { color:#92400E; font-weight:700; }
+
+      .rating-opt-item.sel-2 { background:#DBEAFE; border-color:#93C5FD; }
+      .rating-opt-item.sel-2 .r-circle { background:#2563EB; border-color:#2563EB; }
+      .rating-opt-item.sel-2 .r-circle svg { display:block; }
+      .rating-opt-item.sel-2 .r-label { color:#1E40AF; font-weight:700; }
+
+      .rating-opt-item.sel-3 { background:#DCFCE7; border-color:#86EFAC; }
+      .rating-opt-item.sel-3 .r-circle { background:#16A34A; border-color:#16A34A; }
+      .rating-opt-item.sel-3 .r-circle svg { display:block; }
+      .rating-opt-item.sel-3 .r-label { color:#166534; font-weight:700; }
+
+      .rating-opt-item.sel-4 { background:#F3E8FF; border-color:#C084FC; }
+      .rating-opt-item.sel-4 .r-circle { background:#7C3AED; border-color:#7C3AED; }
+      .rating-opt-item.sel-4 .r-circle svg { display:block; }
+      .rating-opt-item.sel-4 .r-label { color:#6B21A8; font-weight:700; }
+
+      /* FOOTER BUTTONS */
+      .form-footer {
+        display:none; gap:10px;
+        margin-top:24px; margin-bottom:9px;
+        width:100%; max-width:var(--max-w);
+      }
+      .form-footer.visible { display:flex; }
+      .form-btn {
+        height:52px; background:var(--grad); border:none; border-radius:15px;
+        font-family:'Figtree',sans-serif; font-size:16px; font-weight:700; color:#fff;
+        cursor:pointer; box-shadow:0 5px 18px rgba(107,33,200,.44);
+        transition:opacity .2s, transform .15s; flex:1;
+      }
+      .form-btn:hover { opacity:.9; transform:translateY(-1px); }
+      .form-btn:active { transform:translateY(0); }
+      .form-btn-reset {
+        height:52px; background:#fff; border:2px solid var(--p); border-radius:15px;
+        font-family:'Figtree',sans-serif; font-size:16px; font-weight:700; color:var(--p);
+        cursor:pointer; transition:background .2s, transform .15s; flex:1;
+      }
+      .form-btn-reset:hover { background:#F3EFFF; transform:translateY(-1px); }
+      .form-btn-reset:active { transform:translateY(0); }
+
+      /* TOAST */
+      .toast {
+        position:fixed; bottom:32px; left:50%; transform:translateX(-50%) translateY(12px);
+        background:var(--green); color:#fff; padding:10px 24px; border-radius:11px;
+        font-size:14px; font-weight:500; box-shadow:0 3px 14px rgba(0,0,0,.14);
+        opacity:0; transition:opacity .28s, transform .28s; pointer-events:none; z-index:999;
+        white-space:nowrap;
+      }
+      .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+      .toast.err { background:var(--red); }
+
+      @keyframes fadeUp {
+        from { opacity:0; transform:translateY(14px); }
+        to { opacity:1; transform:translateY(0); }
+      }
+      .fade-up { animation:fadeUp .38s ease both; }
+    </style>
+  </head>
+
+  <body>
+    <!-- APP BAR -->
+    <div class="appbar">
+      <div class="appbar-inner">
+        <div class="appbar-left">
+          <button class="back-btn" id="back-btn" onclick="history.back()" title="Back">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="appbar-titles">
+            <div class="appbar-subtitle">In-Field Coaching</div>
+            <div class="appbar-title-main" id="appbar-title">New Form</div>
+          </div>
+        </div>
+        <button class="edit-btn" id="edit-btn" onclick="toggleEdit()">Edit</button>
+      </div>
+    </div>
+
+    <!-- PAGE BODY -->
+    <div class="scroll-body fade-up">
+      <div class="page-content" id="page-body"></div>
+      <div class="form-footer" id="form-footer">
+        <div id="form-footer-inner" style="display:flex;gap:10px;width:100%;"></div>
+      </div>
+    </div>
+
+    <!-- TOAST -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+      const EVALUATOR_POSITIONS = {
+        'Antonio S. Adriano':         'District Sales Manager - Consumer',
+        'Kitchon Edwin Tevar':        'District Manager',
+        'Paningbatan Rose Ann Reyes': 'District Sales Manager',
+        'Quindao Edna Hatol':         'District Sales Manager',
+        'Victor Maria R. Chumacera':  'National Sales Manager',
+      };
+      const EVALUATORS = Object.keys(EVALUATOR_POSITIONS);
+
+      const QUESTION_TEXTS = [
+        'Key Message Delivery',
+        'Key Value Delivery',
+        'Objective Delivery',
+        'Result Delivery',
+        'Conclusion Delivery',
+        'Attractive Selling Skill',
+        'Closing Statement',
+        'Prescription Deal',
+        'Relationship Capital',
+      ];
+
+      const RATING_LABELS = ['Unsatisfactory', 'Needs Improvement', 'Satisfactory', 'Good', 'Excellent'];
+
+      const PLACEHOLDERS_IFC = {
+        'Date':                  '',
+        'Medrep Name':           'e.g., Juan Dela Cruz',
+        'Doctor Name':           'e.g., Maria Santos',
+        'Things to be Improved': 'e.g., Work on closing techniques and follow-up strategies…',
+      };
+
+      // STATE
+      const urlParams = new URLSearchParams(window.location.search);
+      const ADD_MODE = urlParams.get('mode') === 'add';
+
+      let formData     = null;
+      let editSnapshot = null;
+      let editMode     = false;
+
+      function blankForm() {
+        return {
+          evaluator:          '',
+          position:           '',
+          date:               '',
+          medrepName:         '',
+          doctorName:         '',
+          ratings:            Array(QUESTION_TEXTS.length).fill(null),
+          improvementComment: '',
+        };
+      }
+
+      function loadFormData() {
+        if (ADD_MODE) return blankForm();
+        try { const r = sessionStorage.getItem('ifcFormData'); if (r) return JSON.parse(r); } catch(e) {}
+        return blankForm();
+      }
+
+      function deepClone(o) { return JSON.parse(JSON.stringify(o)); }
+
+      // BRIDGE PAYLOAD
+      function buildPayload(f) {
+        return {
+          evaluator:          f.evaluator          || '',
+          position:           f.position           || '',
+          date:               f.date               || '',
+          medrepName:         f.medrepName         || '',
+          doctorName:         f.doctorName         || '',
+          improvementComment: f.improvementComment || '',
+          ratings:            (f.ratings || []).slice(),
+          timestamp:          new Date().toISOString(),
+        };
+      }
+
+      function sendToBridge(payload) {
+        try {
+          if (window.InFieldBridge && typeof window.InFieldBridge.postMessage === 'function') {
+            window.InFieldBridge.postMessage(JSON.stringify(payload)); return true;
+          } else if (typeof InFieldBridge !== 'undefined' && InFieldBridge.postMessage) {
+            InFieldBridge.postMessage(JSON.stringify(payload)); return true;
+          } else {
+            showToast('Unable to send form to app. Please try again.', true); return false;
+          }
+        } catch(e) {
+          showToast('Error sending form. Please try again.', true); return false;
+        }
+      }
+
+      // TOGGLE EDIT
+      function toggleEdit() {
+        if (!editMode) {
+          editSnapshot = deepClone(formData); editMode = true;
+        } else {
+          formData = deepClone(editSnapshot); editSnapshot = null; editMode = false;
+        }
+        render();
+      }
+
+      // RENDER CONTROLLER
+      function render() {
+        const footer      = document.getElementById('form-footer');
+        const footerInner = document.getElementById('form-footer-inner');
+        const editBtn     = document.getElementById('edit-btn');
+        const backBtn     = document.getElementById('back-btn');
+
+        if (ADD_MODE) {
+          document.getElementById('appbar-title').textContent = 'New Form';
+          editBtn.style.display = 'none';
+          backBtn.className     = 'back-btn';
+          footer.className      = 'form-footer visible';
+          footerInner.innerHTML = `
+            <button class="form-btn-reset" onclick="resetAddForm()">Reset</button>
+            <button class="form-btn"       onclick="submitForm()">Submit</button>`;
+          renderEditMode(formData);
+        } else {
+          const title = formData.evaluator || 'In-Field Coaching';
+          document.getElementById('appbar-title').textContent = title;
+          editBtn.style.display = '';
+          editBtn.textContent   = editMode ? 'Cancel' : 'Edit';
+          editBtn.className     = 'edit-btn' + (editMode ? ' is-cancel' : '');
+          backBtn.className     = 'back-btn' + (editMode ? ' hidden' : '');
+          footer.className      = 'form-footer' + (editMode ? ' visible' : '');
+          footerInner.innerHTML = editMode
+            ? `<button class="form-btn-reset" onclick="resetEditForm()">Reset</button>
+               <button class="form-btn" onclick="saveEdits()">Update Form</button>`
+            : '';
+          editMode ? renderEditMode(formData) : renderViewMode(formData);
+        }
+      }
+
+      // VIEW MODE
+      function renderViewMode(f) {
+        document.getElementById('page-body').innerHTML = `
+          <div class="sec-label first">Evaluator Details</div>
+          <div class="form-card">
+            ${vRow('Name of Evaluator', f.evaluator)}
+            ${vRow('Position',          f.position)}
+            ${vRow('Date',              formatDate(f.date))}
+            ${vRow('Medrep Name',       f.medrepName)}
+            ${vRow('Doctor Name',       f.doctorName)}
+          </div>
+          <div class="sec-label">Rating</div>
+          <div class="form-card">
+            ${QUESTION_TEXTS.map((q,i) => viewRatingRow(q, i, f.ratings ? f.ratings[i] : null)).join('')}
+          </div>
+          <div class="sec-label">Comments</div>
+          <div class="form-card">
+            ${vRow('Things to be Improved', f.improvementComment)}
+          </div>
+        `;
+      }
+
+      function viewRatingRow(q, i, ratingIdx) {
+        const empty = ratingIdx === null || ratingIdx === undefined;
+        const ratingContent = empty
+          ? `<span class="val empty">No data</span>`
+          : `<div class="rating-view-sel rv-${ratingIdx}">
+               <span class="rv-dot"></span>
+               <span class="rv-label">${esc(RATING_LABELS[ratingIdx])}</span>
+             </div>`;
+        return `<div class="rating-vrow">
+          <span class="q-text"><span class="q-num">${i+1}.</span> ${esc(q)}</span>
+          ${ratingContent}
+        </div>`;
+      }
+
+      function vRow(label, val) {
+        const empty = !val || !String(val).trim();
+        return `<div class="vrow">
+          <span class="lbl">${label}</span>
+          <span class="val${empty?' empty':''}">${empty ? 'No data' : esc(String(val))}</span>
+        </div>`;
+      }
+
+      // EDIT MODE
+      function renderEditMode(f) {
+        const isPlaceholder = !f.evaluator;
+        const evaluatorOpts = EVALUATORS.map(e =>
+          `<option value="${esc(e)}"${f.evaluator===e?' selected':''}>${esc(e)}</option>`
+        ).join('');
+
+        document.getElementById('page-body').innerHTML = `
+          <div class="sec-label first">Evaluator Details</div>
+          <div class="form-card">
+            <div class="erow">
+              <span class="lbl">Name of Evaluator<span class="req-star">*</span></span>
+              <select id="e-evaluator"
+                class="${isPlaceholder ? 'placeholder' : ''}"
+                onchange="onEvaluatorChange(this.value); this.classList.toggle('placeholder', this.value===''); clearErr('e-evaluator');"
+                data-required="true">
+                <option value="" disabled ${isPlaceholder ? 'selected' : ''}>Select Evaluator</option>
+                ${evaluatorOpts}
+              </select>
+              <span class="error-msg" id="e-evaluator-err">This field is required.</span>
+            </div>
+            <div class="erow">
+              <span class="lbl">Position<span class="req-star">*</span></span>
+              <input id="e-position" type="text" value="${esc(f.position || '')}"
+                placeholder="Select Position"
+                class="${f.position ? '' : 'is-placeholder'}"
+                disabled>
+            </div>
+            ${eRow('Date',        'e-date',       f.date,       'date', true)}
+            ${eRow('Medrep Name', 'e-medrepName', f.medrepName, 'text', true)}
+            ${eRow('Doctor Name', 'e-doctorName', f.doctorName, 'text', true)}
+          </div>
+
+          <div class="sec-label">Rating</div>
+          <div class="form-card">
+            ${QUESTION_TEXTS.map((q,i) => editRatingRow(q, i, f.ratings ? f.ratings[i] : null)).join('')}
+          </div>
+
+          <div class="sec-label">Comments</div>
+          <div class="form-card">
+            ${eRowTA('Things to be Improved', 'e-improvementComment', f.improvementComment, true)}
+          </div>
+        `;
+      }
+
+      const CHECK_SVG = `<svg width="8" height="8" viewBox="0 0 8 8" fill="none"><circle cx="4" cy="4" r="3" fill="white"/></svg>`;
+
+      function editRatingRow(q, i, selected) {
+        const opts = RATING_LABELS.map((lbl, rIdx) => {
+          const isSel = selected === rIdx;
+          const selCls = isSel ? ` sel-${rIdx}` : '';
+          return `<label class="rating-opt-item${selCls}" id="ropt-${i}-${rIdx}">
+            <input type="radio" name="q_${i}" value="${rIdx}" ${isSel ? 'checked' : ''}
+              onchange="setRating(${i}, ${rIdx})">
+            <span class="r-circle">${isSel ? CHECK_SVG : ''}</span>
+            <span class="r-label">${esc(lbl)}</span>
+          </label>`;
+        }).join('');
+
+        return `<div class="rating-erow" id="rating-erow-${i}">
+          <span class="q-text"><span class="q-num">${i+1}.</span> ${esc(q)}<span class="req-star">*</span></span>
+          <div class="rating-opt-list">${opts}</div>
+          <span class="error-msg" id="q${i}-err">This field is required.</span>
+        </div>`;
+      }
+
+      function eRow(label, id, val, type='text', required=false) {
+        const star = required ? '<span class="req-star">*</span>' : '';
+        const ph = PLACEHOLDERS_IFC[label] || '';
+        return `<div class="erow">
+          <span class="lbl">${label}${star}</span>
+          <input id="${id}" type="${type}" value="${esc(val||'')}" placeholder="${esc(ph)}"
+            ${required ? `data-required="true" oninput="clearErr('${id}')"` : ''}>
+          ${required ? `<span class="error-msg" id="${id}-err">This field is required.</span>` : ''}
+        </div>`;
+      }
+
+      function eRowTA(label, id, val, required=false) {
+        const star = required ? '<span class="req-star">*</span>' : '';
+        const ph = PLACEHOLDERS_IFC[label] || '';
+        return `<div class="erow">
+          <span class="lbl">${label}${star}</span>
+          <textarea id="${id}" rows="3" placeholder="${esc(ph)}"
+            ${required ? `data-required="true" oninput="clearErr('${id}')"` : ''}>${esc(val||'')}</textarea>
+          ${required ? `<span class="error-msg" id="${id}-err">This field is required.</span>` : ''}
+        </div>`;
+      }
+
+      // HANDLERS
+      function onEvaluatorChange(val) {
+        formData.evaluator = val;
+        formData.position = EVALUATOR_POSITIONS[val] || '';
+        const posEl = document.getElementById('e-position');
+        if (posEl) {
+          posEl.value = formData.position;
+          posEl.classList.toggle('is-placeholder', !formData.position);
+        }
+      }
+
+      function setRating(qIdx, rIdx) {
+        formData.ratings[qIdx] = rIdx;
+        for (let r = 0; r < RATING_LABELS.length; r++) {
+          const item = document.getElementById(`ropt-${qIdx}-${r}`);
+          if (!item) continue;
+          const circle = item.querySelector('.r-circle');
+          const isSel = (r === rIdx);
+          item.className = 'rating-opt-item' + (isSel ? ` sel-${rIdx}` : '');
+          if (circle) circle.innerHTML = isSel ? CHECK_SVG : '';
+        }
+
+        const row = document.getElementById(`rating-erow-${qIdx}`);
+        if (row) row.classList.remove('has-error');
+        const err = document.getElementById(`q${qIdx}-err`);
+        if (err) err.classList.remove('show');
+      }
+
+      // FLUSH DOM
+      function flushDOM() {
+        const f = formData;
+        const sel = document.getElementById('e-evaluator');
+        if (sel) {
+          f.evaluator = sel.value;
+          f.position = EVALUATOR_POSITIONS[f.evaluator] || '';
+        }
+        const fields = {
+          date:               'e-date',
+          medrepName:         'e-medrepName',
+          doctorName:         'e-doctorName',
+          improvementComment: 'e-improvementComment',
+        };
+        for (const [k, id] of Object.entries(fields)) {
+          const el = document.getElementById(id);
+          if (el) f[k] = el.value;
+        }
+      }
+
+      // VALIDATION
+      function validateForm() {
+        document.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
+        document.querySelectorAll('.error-msg.show').forEach(el => el.classList.remove('show'));
+        document.querySelectorAll('.rating-erow.has-error').forEach(el => el.classList.remove('has-error'));
+
+        let valid = true;
+
+        const reqIds = ['e-evaluator','e-date','e-medrepName','e-doctorName','e-improvementComment'];
+        reqIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          if (!el.value.trim()) {
+            el.classList.add('field-error');
+            const err = document.getElementById(id+'-err');
+            if (err) err.classList.add('show');
+            valid = false;
+          }
+        });
+
+        (formData.ratings || []).forEach((r, i) => {
+          if (r === null || r === undefined) {
+            const row = document.getElementById(`rating-erow-${i}`);
+            if (row) row.classList.add('has-error');
+            const err = document.getElementById(`q${i}-err`);
+            if (err) err.classList.add('show');
+            valid = false;
+          }
+        });
+
+        if (!valid) showToast('Please fill out all required fields.', true);
+        return valid;
+      }
+
+      // SUBMIT / SAVE
+      function submitForm() {
+        flushDOM();
+        if (!validateForm()) return;
+        try { sessionStorage.setItem('ifcFormData', JSON.stringify(formData)); } catch(e) {}
+        const sent = sendToBridge(buildPayload(formData));
+        if (sent) showToast('In-Field Coaching Form submitted.');
+      }
+
+      function saveEdits() {
+        flushDOM();
+        if (!validateForm()) return;
+        try { sessionStorage.setItem('ifcFormData', JSON.stringify(formData)); } catch(e) {}
+        const sent = sendToBridge(buildPayload(formData));
+        if (sent) {
+          editSnapshot = null; editMode = false;
+          showToast('Form updated successfully.');
+          render();
+        }
+      }
+
+      function resetAddForm() {
+        formData = blankForm(); render(); showToast('Form has been reset.');
+      }
+
+      function resetEditForm() {
+        if (editSnapshot) formData = deepClone(editSnapshot);
+        renderEditMode(formData);
+        showToast('Changes have been reset.');
+      }
+
+      // HELPERS
+      function clearErr(id) {
+        const el = document.getElementById(id);
+        if (el && el.value.trim()) {
+          el.classList.remove('field-error');
+          const err = document.getElementById(id+'-err');
+          if (err) err.classList.remove('show');
+        }
+      }
+
+      function formatDate(raw) {
+        if (!raw) return '';
+        const d = new Date(raw+'T00:00:00');
+        if (isNaN(d)) return raw;
+        return d.toLocaleDateString('en-US', { month:'long', day:'2-digit', year:'numeric' });
+      }
+
+      function showToast(msg, err=false) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = 'toast'+(err?' err':'');
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 3000);
+      }
+
+      function esc(s) {
+        return String(s)
+          .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+          .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+
+      // INIT
+      formData = loadFormData();
+      render();
+    </script>
+  </body>
+</html>

@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -16,9 +19,9 @@ class _ScpFormWebviewPageState extends State<ScpFormWebviewPage> {
   late final WebViewController _controller;
   bool _isLoading = true;
 
-  /// Direct Firebase Storage URL for scp_form_page.html.
-  static const String _htmlUrl =
-      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fscp_form_page.html?alt=media&token=ff748d29-ae30-4bd7-ac1e-5986ccb17843';
+  /// Direct Firebase Storage URL for the ZIP file containing scp_form_page.html.
+  static const String _zipUrl =
+      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fscp_form_page.zip?alt=media&token=0b06e88b-3d7c-4b09-afb1-2c5143459a2f';
 
   String _createdBy = '';
 
@@ -27,7 +30,7 @@ class _ScpFormWebviewPageState extends State<ScpFormWebviewPage> {
     super.initState();
     _loadCreatedByFromPrefs();
     _initWebViewController();
-    _loadRemoteHtml();
+    _loadZipAndHtml();
   }
 
   Future<void> _loadCreatedByFromPrefs() async {
@@ -106,13 +109,44 @@ class _ScpFormWebviewPageState extends State<ScpFormWebviewPage> {
       );
   }
 
-  Future<void> _loadRemoteHtml() async {
+  Future<String?> _extractHtmlFromZip(Uint8List zipBytes) async {
     try {
-      debugPrint('Loading SCP HTML from: $_htmlUrl');
-      await _controller.loadRequest(Uri.parse(_htmlUrl));
-      debugPrint('SCP HTML requested in WebView');
+      final archive = ZipDecoder().decodeBytes(zipBytes);
+      for (final file in archive) {
+        if (file.isFile && file.name == 'scp_form_page.html') {
+          return utf8.decode(file.content as List<int>);
+        }
+      }
+      return null;
     } catch (e) {
-      debugPrint('Error loading SCP remote HTML: $e');
+      debugPrint('Error extracting HTML from ZIP: $e');
+      return null;
+    }
+  }
+
+  Future<void> _loadZipAndHtml() async {
+    try {
+      debugPrint('Downloading SCP ZIP from: $_zipUrl');
+      final response = await http.get(Uri.parse(_zipUrl));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download ZIP: ${response.statusCode}');
+      }
+      final zipBytes = response.bodyBytes;
+      final htmlContent = await _extractHtmlFromZip(zipBytes);
+      if (htmlContent == null) {
+        throw Exception('scp_form_page.html not found in ZIP');
+      }
+
+      final sanitizedEmail = await _getSanitizedUserEmail();
+      final injectedHtml = htmlContent.replaceAll(
+        'const createdBy = "";',
+        'const createdBy = "$sanitizedEmail";',
+      );
+
+      await _controller.loadHtmlString(injectedHtml);
+      debugPrint('SCP HTML loaded from ZIP into WebView');
+    } catch (e) {
+      debugPrint('Error loading SCP ZIP/HTML: $e');
       if (!mounted) return;
       setState(() {
         _isLoading = false;
@@ -204,7 +238,7 @@ class _ScpFormWebviewPageState extends State<ScpFormWebviewPage> {
           setState(() {
             _isLoading = true;
           });
-          await _loadRemoteHtml();
+          await _loadZipAndHtml();
         },
         backgroundColor: const Color(0xFF5958b2),
         child: const Icon(

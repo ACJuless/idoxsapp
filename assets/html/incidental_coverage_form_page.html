@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Incidental Coverage Form</title>
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --pd: #4A2371;
+        --p: #5958B2;
+        --surface: #F9F5FF;
+        --card: #FFFFFF;
+        --text: #000000;
+        --muted: #2B2B2B;
+        --border: #E9E3F5;
+        --green: #059669;
+        --red: #DC2626;
+        --grad: linear-gradient(135deg, #4A2371 0%, #4A2371 55%, #5958B2 100%);
+        --max-w: 760px;
+      }
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html { height: 100%; }
+      body {
+        font-family: 'Figtree', sans-serif;
+        background: var(--surface);
+        color: var(--text);
+        min-height: 100%;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* APP BAR */
+      .appbar {
+        background: var(--grad);
+        border-radius: 0 0 22px 22px;
+        padding: 14px 18px 18px;
+        display: flex; align-items: center;
+        position: sticky; top: 0; z-index: 50;
+        box-shadow: 0 6px 28px rgba(76,29,149,.3);
+        flex-shrink: 0;
+      }
+      .appbar-inner { width:100%; display:flex; align-items:center; justify-content:space-between; }
+      .appbar-left { display:flex; align-items:center; gap:8px; min-width:0; }
+      .back-btn {
+        background: rgba(255,255,255,.18); border:none; border-radius:9px;
+        width:34px; height:34px; flex-shrink:0;
+        display:flex; align-items:center; justify-content:center;
+        cursor:pointer; color:#fff; transition:background .2s;
+      }
+      .back-btn:hover { background:rgba(255,255,255,.3); }
+      .back-btn.hidden { visibility:hidden; pointer-events:none; width:0; }
+      .appbar-titles { min-width:0; }
+      .appbar-subtitle { font-size:13px; color:rgba(255,255,255,.65); }
+      .appbar-title-main {
+        font-size:17px; font-weight:700; color:#fff;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      }
+      .edit-btn {
+        flex-shrink:0;
+        background:rgba(255,255,255,.22); border:none; border-radius:18px;
+        padding:5px 16px; cursor:pointer;
+        font-family:'Figtree',sans-serif; font-size:13px; font-weight:700; color:#fff;
+        transition:background .2s;
+      }
+      .edit-btn:hover { background:rgba(255,255,255,.35); }
+      .edit-btn.is-cancel { color:rgba(255,255,255,.65); font-weight:600; }
+
+      /* PAGE BODY */
+      .scroll-body {
+        flex:1; overflow-y:auto;
+        padding:14px 14px 32px;
+        display:flex; flex-direction:column; align-items:center;
+      }
+      .page-content { width:100%; max-width:var(--max-w); }
+
+      .sec-label {
+        font-size:14px; font-weight:700; color:var(--p);
+        letter-spacing:.4px; padding-left:8px; margin:20px 0 8px;
+        text-transform:uppercase;
+      }
+      .sec-label.first { margin-top:4px; }
+      .form-card {
+        background:var(--card); border-radius:18px;
+        box-shadow:0 3px 14px rgba(0,0,0,.06); overflow:hidden;
+      }
+
+      /* VIEW MODE */
+      .vrow {
+        padding:12px 16px; border-bottom:1px solid #F0EBF9;
+        display:flex; flex-direction:column; gap:2px;
+      }
+      .vrow:last-child { border-bottom:none; }
+      .vrow .lbl { font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; }
+      .vrow .val { font-size:16px; font-weight:400; color:var(--text); min-height:20px; }
+      .val.empty { color:#9CA3AF; }
+
+      /* EDIT MODE */
+      .erow {
+        padding:12px 16px; border-bottom:1px solid #F0EBF9;
+        display:flex; flex-direction:column; gap:4px;
+      }
+      .erow:last-child { border-bottom:none; }
+      .erow .lbl { font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; }
+      .erow input, .erow textarea {
+        width:100%; font-family:'Figtree',sans-serif; font-size:16px; font-weight:500;
+        color:var(--text); background:rgba(107,33,200,.04);
+        border:1.5px solid rgba(107,33,200,.25); border-radius:9px;
+        padding:8px 11px; outline:none; transition:border-color .2s; resize:none;
+      }
+      .erow input::placeholder, .erow textarea::placeholder { color:#B0A8C8; font-weight:400; }
+      .erow input:focus, .erow textarea:focus { border-color:var(--p); }
+
+      /* VALIDATION */
+      .field-error { border-color:var(--red) !important; background:rgba(220,38,38,.04) !important; }
+      .error-msg { color:var(--red); font-size:11.5px; font-weight:600; margin-top:2px; display:none; }
+      .error-msg.show { display:block; }
+      .req-star { color:var(--red); margin-left:2px; }
+
+      /* FOOTER BUTTONS */
+      .form-footer {
+        display:none; gap:10px;
+        margin-top:24px; margin-bottom:9px;
+        width:100%; max-width:var(--max-w);
+      }
+      .form-footer.visible { display:flex; }
+      .form-btn {
+        height:52px; background:var(--grad); border:none; border-radius:15px;
+        font-family:'Figtree',sans-serif; font-size:16px; font-weight:700; color:#fff;
+        cursor:pointer; box-shadow:0 5px 18px rgba(107,33,200,.44);
+        transition:opacity .2s, transform .15s; flex:1;
+      }
+      .form-btn:hover { opacity:.9; transform:translateY(-1px); }
+      .form-btn:active { transform:translateY(0); }
+      .form-btn-reset {
+        height:52px; background:#fff; border:2px solid var(--p); border-radius:15px;
+        font-family:'Figtree',sans-serif; font-size:16px; font-weight:700; color:var(--p);
+        cursor:pointer; transition:background .2s, transform .15s; flex:1;
+      }
+      .form-btn-reset:hover { background:#F3EFFF; transform:translateY(-1px); }
+      .form-btn-reset:active { transform:translateY(0); }
+
+      /* TOAST */
+      .toast {
+        position:fixed; bottom:32px; left:50%; transform:translateX(-50%) translateY(12px);
+        background:var(--green); color:#fff; padding:10px 24px; border-radius:11px;
+        font-size:14px; font-weight:500; box-shadow:0 3px 14px rgba(0,0,0,.14);
+        opacity:0; transition:opacity .28s, transform .28s; pointer-events:none; z-index:999;
+        white-space:nowrap;
+      }
+      .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+      .toast.err { background:var(--red); }
+
+      @keyframes fadeUp {
+        from { opacity:0; transform:translateY(14px); }
+        to { opacity:1; transform:translateY(0); }
+      }
+      .fade-up { animation:fadeUp .38s ease both; }
+    </style>
+  </head>
+
+  <body>
+    <!-- APP BAR -->
+    <div class="appbar">
+      <div class="appbar-inner">
+        <div class="appbar-left">
+          <button class="back-btn" id="back-btn" onclick="history.back()" title="Back">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="appbar-titles">
+            <div class="appbar-subtitle">Incidental Coverage</div>
+            <div class="appbar-title-main" id="appbar-title">New Form</div>
+          </div>
+        </div>
+        <button class="edit-btn" id="edit-btn" onclick="toggleEdit()">Edit</button>
+      </div>
+    </div>
+
+    <!-- PAGE BODY -->
+    <div class="scroll-body fade-up">
+      <div class="page-content" id="page-body"></div>
+      <div class="form-footer" id="form-footer">
+        <div id="form-footer-inner" style="display:flex;gap:10px;width:100%;"></div>
+      </div>
+    </div>
+
+    <!-- TOAST -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+      // PLACEHOLDERS
+      const PH = {
+        lastName:             'e.g., Reyes',
+        firstName:            'e.g., Maria',
+        middleName:           'e.g., Santos',
+        specialty:            'e.g., Cardiologist',
+        hospitalPharmacyName: 'e.g., St. Luke\'s Medical Center, BGC',
+        dateOfCover:          '',
+        preCallNotes:         'e.g., Discuss Amlodipine 10mg samples and latest clinical data for hypertension management…',
+        postCallNotes:        'e.g., Dr. Reyes requested product brochures; open to prescribing for newly diagnosed patients…',
+      };
+
+      // STATE
+      const urlParams = new URLSearchParams(window.location.search);
+      const ADD_MODE  = urlParams.get('mode') === 'add';
+
+      let formData     = null;
+      let editSnapshot = null;
+      let editMode     = false;
+
+      // DATA
+      function blankForm() {
+        return {
+          lastName:             '',
+          firstName:            '',
+          middleName:           '',
+          specialty:            '',
+          hospitalPharmacyName: '',
+          dateOfCover:          '',
+          preCallNotes:         '',
+          postCallNotes:        '',
+        };
+      }
+
+      function loadFormData() {
+        if (ADD_MODE) return blankForm();
+        try { const r = sessionStorage.getItem('incFormData'); if (r) return JSON.parse(r); } catch(e) {}
+        return blankForm();
+      }
+
+      function deepClone(o) { return JSON.parse(JSON.stringify(o)); }
+
+      function updateAppbarTitle() {
+        const last   = (document.getElementById('e-lastName')   || {}).value || '';
+        const first  = (document.getElementById('e-firstName')  || {}).value || '';
+        const middle = (document.getElementById('e-middleName') || {}).value || '';
+
+        let title = '';
+        if (last.trim() || first.trim() || middle.trim()) {
+          title = [first.trim(), middle.trim(), last.trim()]
+            .filter(Boolean).join(' ');
+        }
+
+        const fallback = ADD_MODE ? 'New Form' : 'Incidental Coverage';
+        document.getElementById('appbar-title').textContent = title || fallback;
+      }
+
+      function buildDisplayTitle(f) {
+        const last   = (f.lastName   || '').trim();
+        const first  = (f.firstName  || '').trim();
+        const middle = (f.middleName || '').trim();
+        return [first, middle, last].filter(Boolean).join(' ');
+      }
+
+      // BRIDGE PAYLOAD
+      function buildPayload(f) {
+        return {
+          lastName:             f.lastName             || '',
+          firstName:            f.firstName            || '',
+          middleName:           f.middleName           || '',
+          specialty:            f.specialty            || '',
+          hospitalPharmacyName: f.hospitalPharmacyName || '',
+          dateOfCover:          f.dateOfCover          || '',
+          preCallNotes:         f.preCallNotes         || '',
+          postCallNotes:        f.postCallNotes        || '',
+          timestamp:            new Date().toISOString(),
+        };
+      }
+
+      function sendToBridge(payload) {
+        try {
+          if (window.IncidentalBridge && typeof window.IncidentalBridge.postMessage === 'function') {
+            window.IncidentalBridge.postMessage(JSON.stringify(payload));
+            return true;
+          } else if (typeof IncidentalBridge !== 'undefined' && IncidentalBridge.postMessage) {
+            IncidentalBridge.postMessage(JSON.stringify(payload));
+            return true;
+          } else {
+            console.warn('IncidentalBridge is not available.');
+            showToast('Unable to send form to app. Please try again.', true);
+            return false;
+          }
+        } catch(e) {
+          console.error('Error sending incidental payload to Flutter:', e);
+          showToast('Error sending form. Please try again.', true);
+          return false;
+        }
+      }
+
+      // TOGGLE EDIT
+      function toggleEdit() {
+        if (!editMode) {
+          editSnapshot = deepClone(formData);
+          editMode = true;
+        } else {
+          formData = deepClone(editSnapshot);
+          editSnapshot = null;
+          editMode = false;
+        }
+        render();
+      }
+
+      // RENDER CONTROLLER
+      function render() {
+        const footer      = document.getElementById('form-footer');
+        const footerInner = document.getElementById('form-footer-inner');
+        const editBtn     = document.getElementById('edit-btn');
+        const backBtn     = document.getElementById('back-btn');
+
+        if (ADD_MODE) {
+          document.getElementById('appbar-title').textContent = 'New Form';
+          editBtn.style.display = 'none';
+          backBtn.className     = 'back-btn';
+          footer.className      = 'form-footer visible';
+          footerInner.innerHTML = `
+            <button class="form-btn-reset" onclick="resetAddForm()">Reset</button>
+            <button class="form-btn"       onclick="submitForm()">Submit</button>`;
+          renderEditMode(formData);
+        } else {
+          const title = buildDisplayTitle(formData);
+          document.getElementById('appbar-title').textContent = title || 'Incidental Coverage';
+          editBtn.style.display = '';
+          editBtn.textContent   = editMode ? 'Cancel' : 'Edit';
+          editBtn.className     = 'edit-btn' + (editMode ? ' is-cancel' : '');
+          backBtn.className     = 'back-btn' + (editMode ? ' hidden' : '');
+          footer.className      = 'form-footer' + (editMode ? ' visible' : '');
+          footerInner.innerHTML = editMode
+            ? `<button class="form-btn-reset" onclick="resetEditForm()">Reset</button>
+               <button class="form-btn"       onclick="saveEdits()">Update Form</button>`
+            : '';
+          editMode ? renderEditMode(formData) : renderViewMode(formData);
+        }
+      }
+
+      // VIEW MODE
+      function renderViewMode(f) {
+        document.getElementById('page-body').innerHTML = `
+          <div class="sec-label first">Personal Information</div>
+          <div class="form-card">
+            ${vRow('Last Name',   f.lastName)}
+            ${vRow('First Name',  f.firstName)}
+            ${vRow('Middle Name', f.middleName)}
+            ${vRow('Specialty',   f.specialty)}
+          </div>
+          <div class="sec-label">Coverage Details</div>
+          <div class="form-card">
+            ${vRow('Hospital / Pharmacy Name', f.hospitalPharmacyName)}
+            ${vRow('Date of Cover',            formatDate(f.dateOfCover))}
+          </div>
+          <div class="sec-label">Call Notes</div>
+          <div class="form-card">
+            ${vRow('Pre-Call Notes',  f.preCallNotes)}
+            ${vRow('Post-Call Notes', f.postCallNotes)}
+          </div>
+        `;
+      }
+
+      function vRow(label, val) {
+        const empty = !val || !String(val).trim();
+        return `<div class="vrow">
+          <span class="lbl">${label}</span>
+          <span class="val${empty ? ' empty' : ''}">${empty ? 'No data' : esc(String(val))}</span>
+        </div>`;
+      }
+
+      // EDIT MODE
+      function renderEditMode(f) {
+        document.getElementById('page-body').innerHTML = `
+          <div class="sec-label first">Personal Information</div>
+          <div class="form-card">
+            ${eRow('Last Name',   'e-lastName',   f.lastName,   'text', true,  true)}
+            ${eRow('First Name',  'e-firstName',  f.firstName,  'text', true,  true)}
+            ${eRow('Middle Name', 'e-middleName', f.middleName, 'text', true,  true)}
+            ${eRow('Specialty',   'e-specialty',  f.specialty,  'text', true,  false)}
+          </div>
+          <div class="sec-label">Coverage Details</div>
+          <div class="form-card">
+            ${eRow('Hospital / Pharmacy Name', 'e-hospitalPharmacyName', f.hospitalPharmacyName, 'text', true, false)}
+            ${eRow('Date of Cover', 'e-dateOfCover', f.dateOfCover, 'date', true, false)}
+          </div>
+          <div class="sec-label">Call Notes</div>
+          <div class="form-card">
+            ${eRowTA('Pre-Call Notes',  'e-preCallNotes',  f.preCallNotes,  true)}
+            ${eRowTA('Post-Call Notes', 'e-postCallNotes', f.postCallNotes, true)}
+          </div>
+        `;
+      }
+
+      function eRow(label, id, val, type='text', required=false, updatesTitle=false) {
+        const star    = required ? '<span class="req-star">*</span>' : '';
+        const ph      = PH[id.replace('e-', '')] || '';
+        const titleFn = updatesTitle ? 'updateAppbarTitle();' : '';
+        const errFn   = required    ? `clearErr('${id}');` : '';
+        const handler = (titleFn || errFn)
+          ? `oninput="${titleFn}${errFn}"`
+          : '';
+        return `<div class="erow">
+          <span class="lbl">${label}${star}</span>
+          <input id="${id}" type="${type}" value="${esc(val || '')}" placeholder="${esc(ph)}"
+            ${required ? 'data-required="true"' : ''} ${handler}>
+          ${required ? `<span class="error-msg" id="${id}-err">This field is required.</span>` : ''}
+        </div>`;
+      }
+
+      function eRowTA(label, id, val, required=false) {
+        const star = required ? '<span class="req-star">*</span>' : '';
+        const ph   = PH[id.replace('e-', '')] || '';
+        return `<div class="erow">
+          <span class="lbl">${label}${star}</span>
+          <textarea id="${id}" rows="3" placeholder="${esc(ph)}"
+            ${required ? `data-required="true" oninput="clearErr('${id}')"` : ''}>${esc(val || '')}</textarea>
+          ${required ? `<span class="error-msg" id="${id}-err">This field is required.</span>` : ''}
+        </div>`;
+      }
+
+      // FLUSH DOM
+      function flushDOM() {
+        const fields = {
+          lastName:             'e-lastName',
+          firstName:            'e-firstName',
+          middleName:           'e-middleName',
+          specialty:            'e-specialty',
+          hospitalPharmacyName: 'e-hospitalPharmacyName',
+          dateOfCover:          'e-dateOfCover',
+          preCallNotes:         'e-preCallNotes',
+          postCallNotes:        'e-postCallNotes',
+        };
+        for (const [k, id] of Object.entries(fields)) {
+          const el = document.getElementById(id);
+          if (el) formData[k] = el.value;
+        }
+      }
+
+      // VALIDATION
+      function validateForm() {
+        document.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
+        document.querySelectorAll('.error-msg.show').forEach(el => el.classList.remove('show'));
+
+        let valid = true;
+        const reqIds = [
+          'e-lastName', 'e-firstName', 'e-middleName', 'e-specialty',
+          'e-hospitalPharmacyName', 'e-dateOfCover',
+          'e-preCallNotes', 'e-postCallNotes',
+        ];
+        reqIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          if (!el.value.trim()) {
+            el.classList.add('field-error');
+            const err = document.getElementById(id + '-err');
+            if (err) err.classList.add('show');
+            valid = false;
+          }
+        });
+
+        if (!valid) showToast('Please fill out all required fields.', true);
+        return valid;
+      }
+
+      // SUBMIT / SAVE
+      function submitForm() {
+        flushDOM();
+        if (!validateForm()) return;
+        try { sessionStorage.setItem('incFormData', JSON.stringify(formData)); } catch(e) {}
+        const sent = sendToBridge(buildPayload(formData));
+        if (sent) showToast('Incidental Coverage Form submitted.');
+      }
+
+      function saveEdits() {
+        flushDOM();
+        if (!validateForm()) return;
+        try { sessionStorage.setItem('incFormData', JSON.stringify(formData)); } catch(e) {}
+        const sent = sendToBridge(buildPayload(formData));
+        if (sent) {
+          editSnapshot = null;
+          editMode = false;
+          showToast('Form updated successfully.');
+          render();
+        }
+      }
+
+      function resetAddForm() {
+        formData = blankForm();
+        render();
+        showToast('Form has been reset.');
+      }
+
+      function resetEditForm() {
+        if (editSnapshot) formData = deepClone(editSnapshot);
+        renderEditMode(formData);
+        showToast('Changes have been reset.');
+      }
+
+      // HELPERS
+      function clearErr(id) {
+        const el = document.getElementById(id);
+        if (el && el.value.trim()) {
+          el.classList.remove('field-error');
+          const err = document.getElementById(id + '-err');
+          if (err) err.classList.remove('show');
+        }
+      }
+
+      function formatDate(raw) {
+        if (!raw) return '';
+        const d = new Date(raw + 'T00:00:00');
+        if (isNaN(d)) return raw;
+        return d.toLocaleDateString('en-US', { month:'long', day:'2-digit', year:'numeric' });
+      }
+
+      function showToast(msg, err=false) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = 'toast' + (err ? ' err' : '');
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 3000);
+      }
+
+      function esc(s) {
+        return String(s)
+          .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+          .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+
+      // INIT
+      formData = loadFormData();
+      render();
+    </script>
+  </body>
+</html>

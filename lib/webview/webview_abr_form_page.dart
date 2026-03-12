@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+// New imports for downloading and unzipping the ZIP file.
+import 'package:http/http.dart' as http;
+import 'package:archive/archive.dart';
+
 class AbrFormWebviewPage extends StatefulWidget {
   const AbrFormWebviewPage({Key? key}) : super(key: key);
 
@@ -16,9 +20,13 @@ class _AbrFormWebviewPageState extends State<AbrFormWebviewPage> {
   late final WebViewController _controller;
   bool _isLoading = true;
 
-  /// Direct Firebase Storage URL for abr_form_page.html.
-  static const String _htmlUrl =
-      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fabr_form_page.html?alt=media&token=17b10fc7-6e46-462b-aa36-52c9cec371be';
+  /// Direct Firebase Storage URL for abr_form_page.zip.
+  /// Make sure this points to your ZIP file and has a valid token.
+  static const String _zipUrl =
+      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fabr_form_page.zip?alt=media&token=33bc30fc-ef29-4689-a5bf-5f2e9cd9b8fe';
+
+  /// Name of the HTML file inside the ZIP.
+  static const String _innerHtmlFileName = 'abr_form_page.html';
 
   String _createdBy = '';
 
@@ -27,7 +35,7 @@ class _AbrFormWebviewPageState extends State<AbrFormWebviewPage> {
     super.initState();
     _loadCreatedByFromPrefs();
     _initWebViewController();
-    _loadRemoteHtml();
+    _loadZipAndHtml();
   }
 
   Future<void> _loadCreatedByFromPrefs() async {
@@ -42,7 +50,7 @@ class _AbrFormWebviewPageState extends State<AbrFormWebviewPage> {
   Future<String> _getSanitizedUserEmail() async {
     final prefs = await SharedPreferences.getInstance();
     final userEmail = prefs.getString('userEmail') ?? '';
-    // Same sanitizer pattern as your original AbrFormPage
+    // Same sanitizer pattern as previous AbrFormPage.
     return userEmail.replaceAll(RegExp(r'[.#\$\\\[\]/]'), '_');
   }
 
@@ -106,20 +114,56 @@ class _AbrFormWebviewPageState extends State<AbrFormWebviewPage> {
       );
   }
 
-  Future<void> _loadRemoteHtml() async {
+  /// Downloads the ZIP from Firebase Storage, extracts `abr_form_page.html`,
+  /// and loads the HTML string into the WebView.
+  Future<void> _loadZipAndHtml() async {
     try {
-      debugPrint('Loading ABR HTML from: $_htmlUrl');
-      await _controller.loadRequest(Uri.parse(_htmlUrl));
-      debugPrint('ABR HTML requested in WebView');
+      debugPrint('Downloading ABR ZIP from: $_zipUrl');
+      setState(() {
+        _isLoading = true;
+      });
+
+      final response = await http.get(Uri.parse(_zipUrl));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download ZIP (status: ${response.statusCode})');
+      }
+
+      final bytes = response.bodyBytes;
+
+      // Decode the ZIP archive.
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      String? htmlContent;
+
+      for (final file in archive) {
+        if (file is ArchiveFile && file.name == _innerHtmlFileName) {
+          final contentBytes = file.content as List<int>;
+          htmlContent = utf8.decode(contentBytes);
+          break;
+        }
+      }
+
+      if (htmlContent == null) {
+        throw Exception('HTML file $_innerHtmlFileName not found in ZIP');
+      }
+
+      debugPrint('ABR HTML extracted from ZIP, loading into WebView...');
+      await _controller.loadHtmlString(htmlContent);
+      debugPrint('ABR HTML loaded into WebView from ZIP');
+
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
     } catch (e) {
-      debugPrint('Error loading ABR remote HTML: $e');
+      debugPrint('Error loading ABR HTML from ZIP: $e');
       if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error loading form: $e'),
+          content: Text('Error loading form from ZIP: $e'),
         ),
       );
     }
@@ -129,7 +173,7 @@ class _AbrFormWebviewPageState extends State<AbrFormWebviewPage> {
     try {
       final userKey = await _getSanitizedUserEmail();
 
-      // Mirror original AbrFormPage field names and structure.
+      // Mirror previous AbrFormPage field names and structure.
       final payloadToSave = <String, dynamic>{
         'agronomist': data['agronomist'] ?? '',
         'area': data['area'] ?? '',
@@ -215,7 +259,7 @@ class _AbrFormWebviewPageState extends State<AbrFormWebviewPage> {
           setState(() {
             _isLoading = true;
           });
-          await _loadRemoteHtml();
+          await _loadZipAndHtml();
         },
         backgroundColor: const Color(0xFF5e1398),
         child: const Icon(

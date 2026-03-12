@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sample Crop Prescription Form</title>
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --pd: #4A2371;
+        --p: #5958B2;
+        --surface: #F9F5FF;
+        --card: #FFFFFF;
+        --text: #000000;
+        --muted: #2B2B2B;
+        --border: #E9E3F5;
+        --green: #059669;
+        --red: #DC2626;
+        --grad: linear-gradient(135deg, #4A2371 0%, #4A2371 55%, #5958B2 100%);
+        --max-w: 760px;
+      }
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { height: 100%; }
+      body {
+        font-family: 'Figtree', sans-serif;
+        background: var(--surface);
+        color: var(--text);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .appbar {
+        background: var(--grad);
+        border-radius: 0 0 22px 22px;
+        padding: 14px 18px 18px;
+        display: flex; align-items: center;
+        position: sticky; top: 0; z-index: 50;
+        box-shadow: 0 6px 28px rgba(76,29,149,.3);
+        flex-shrink: 0;
+      }
+      .appbar-inner { width:100%; display:flex; align-items:center; justify-content:space-between; }
+      .appbar-left { display:flex; align-items:center; gap:8px; min-width:0; }
+      .back-btn {
+        background: rgba(255,255,255,.18); border:none; border-radius:9px;
+        width:34px; height:34px; flex-shrink:0;
+        display:flex; align-items:center; justify-content:center;
+        cursor:pointer; color:#fff; transition:background .2s;
+      }
+      .back-btn:hover { background:rgba(255,255,255,.3); }
+      .back-btn.hidden { visibility:hidden; pointer-events:none; width:0; }
+      .appbar-titles { min-width:0; }
+      .appbar-subtitle { font-size:13px; color:rgba(255,255,255,.65); }
+      .appbar-title-main {
+        font-size:17px; font-weight:700; color:#fff;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      }
+      .edit-btn {
+        flex-shrink:0;
+        background:rgba(255,255,255,.22); border:none; border-radius:18px;
+        padding:5px 16px; cursor:pointer;
+        font-family:'Figtree',sans-serif; font-size:13px; font-weight:700; color:#fff;
+        transition:background .2s;
+      }
+      .edit-btn:hover { background:rgba(255,255,255,.35); }
+      .edit-btn.is-cancel { color:rgba(255,255,255,.65); font-weight:600; }
+
+      .scroll-body { flex:1; overflow-y:auto; padding:14px 14px 32px; display:flex; flex-direction:column; align-items:center; }
+      .page-content { width:100%; max-width:var(--max-w); }
+
+      .sec-label {
+        font-size:14px; font-weight:700; color:var(--p);
+        letter-spacing:.4px; padding-left:8px; margin:20px 0 8px;
+        text-transform:uppercase;
+      }
+      .sec-label.first { margin-top:4px; }
+      .form-card { background:var(--card); border-radius:18px; box-shadow:0 3px 14px rgba(0,0,0,.06); overflow:hidden; }
+
+      /* VIEW */
+      .vrow { padding:12px 16px; border-bottom:1px solid #F0EBF9; display:flex; flex-direction:column; gap:2px; }
+      .vrow:last-child { border-bottom:none; }
+      .vrow .lbl { font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; }
+      .vrow .val { font-size:16px; font-weight:400; color:var(--text); min-height:20px; }
+      .vrow .val.empty { color:#9CA3AF; }
+      .two-vrow { display:grid; grid-template-columns:1fr 1fr; }
+      .two-vrow .vrow { border-bottom:none; border-right:1px solid #F0EBF9; }
+      .two-vrow .vrow:last-child { border-right:none; }
+      .two-vrow-wrap { border-bottom:1px solid #F0EBF9; }
+      .two-vrow-wrap:last-child { border-bottom:none; }
+
+      /* EDIT */
+      .erow { padding:12px 16px; border-bottom:1px solid #F0EBF9; display:flex; flex-direction:column; gap:4px; }
+      .erow:last-child { border-bottom:none; }
+      .erow .lbl { font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; }
+      .erow input, .erow textarea, .erow select {
+        width:100%; font-family:'Figtree',sans-serif; font-size:16px; font-weight:500;
+        color:var(--text); background:rgba(107,33,200,.04);
+        border:1.5px solid rgba(107,33,200,.25); border-radius:9px;
+        padding:8px 11px; outline:none; transition:border-color .2s; resize:none;
+      }
+      .erow input::placeholder, .erow textarea::placeholder { color:#B0A8C8; font-weight:400; }
+      .erow input:focus, .erow textarea:focus, .erow select:focus { border-color:var(--p); }
+      .two-erow { display:grid; grid-template-columns:1fr 1fr; }
+      .two-erow .erow { border-right:1px solid #F0EBF9; border-bottom:none; }
+      .two-erow .erow:last-child { border-right:none; }
+      .two-erow-wrap { border-bottom:1px solid #F0EBF9; }
+      .two-erow-wrap:last-child { border-bottom:none; }
+
+      /* VALIDATION */
+      .field-error { border-color:var(--red) !important; background:rgba(220,38,38,.04) !important; }
+      .error-msg { color:var(--red); font-size:11.5px; font-weight:600; margin-top:2px; display:none; }
+      .error-msg.show { display:block; }
+      .req-star { color:var(--red); margin-left:2px; }
+
+      /* SECTION CARDS */
+      .section-bar { display:flex; align-items:center; justify-content:space-between; margin:20px 0 8px; }
+      .section-bar .sec-label { margin:0; }
+      .add-section-btn {
+        background:var(--grad); border:none; border-radius:18px;
+        padding:5px 12px; cursor:pointer; display:flex; align-items:center; gap:4px;
+        font-family:'Figtree',sans-serif; font-weight:700; font-size:12px; color:#fff;
+        box-shadow:0 2px 8px rgba(156,64,255,.35); transition:opacity .2s;
+      }
+      .add-section-btn:hover { opacity:.82; }
+      .section-card { background:var(--card); border-radius:18px; box-shadow:0 3px 14px rgba(0,0,0,.06); margin-bottom:12px; overflow:hidden; }
+      .section-head {
+        display:flex; align-items:center; gap:10px; padding:11px 14px;
+        cursor:pointer; user-select:none;
+        background:linear-gradient(135deg,rgba(107,33,200,.07),rgba(156,64,255,.03));
+        transition:background .2s;
+      }
+      .section-head:hover { background:linear-gradient(135deg,rgba(107,33,200,.12),rgba(156,64,255,.06)); }
+      .section-num { width:28px; height:28px; background:var(--grad); border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; color:#fff; flex-shrink:0; }
+      .section-label { flex:1; font-weight:700; font-size:14px; color:var(--p); }
+      .chev { width:17px; height:17px; color:var(--p); transition:transform .25s; flex-shrink:0; }
+      .chev.open { transform:rotate(180deg); }
+      .section-delete-btn {
+        background:none; border:none; cursor:pointer; color:var(--red);
+        padding:4px; border-radius:6px; display:flex; align-items:center;
+        transition:background .15s; flex-shrink:0;
+      }
+      .section-delete-btn:hover { background:rgba(220,38,38,.1); }
+      .section-body { display:none; padding:10px 14px 14px; }
+      .section-body.open { display:block; }
+
+      .detail-vrow { display:flex; flex-direction:column; gap:2px; margin-bottom:9px; }
+      .detail-vrow .lbl { font-size:10.5px; font-weight:700; color:var(--muted); letter-spacing:.4px; text-transform:uppercase; }
+      .detail-vrow .val { background:#F9F7FD; border:1px solid var(--border); border-radius:8px; padding:8px 10px; font-size:15px; font-weight:500; color:var(--text); min-height:32px; }
+      .detail-vrow .val.empty { color:#9CA3AF; }
+      .detail-erow { display:flex; flex-direction:column; gap:3px; margin-bottom:9px; }
+      .detail-erow .lbl { font-size:10.5px; font-weight:700; color:var(--muted); letter-spacing:.4px; text-transform:uppercase; }
+      .detail-erow input, .detail-erow textarea {
+        width:100%; font-family:'Figtree',sans-serif; font-size:14px; font-weight:500;
+        color:var(--text); background:rgba(107,33,200,.03);
+        border:1.5px solid rgba(107,33,200,.22); border-radius:8px;
+        padding:7px 10px; outline:none; transition:border-color .2s; resize:none;
+      }
+      .detail-erow input::placeholder, .detail-erow textarea::placeholder { color:#B0A8C8; font-weight:400; }
+      .detail-erow input:focus, .detail-erow textarea:focus { border-color:var(--p); }
+      .detail-two-col { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+      .detail-three-col { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+
+      /* SIGNATURE */
+      .sig-wrap { padding:10px 16px; border-bottom:1px solid #F0EBF9; display:flex; flex-direction:column; gap:4px; }
+      .sig-wrap:last-child { border-bottom:none; }
+      .sig-wrap .lbl { font-size:10.5px; font-weight:700; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; }
+      .sig-box { border:1px solid var(--border); border-radius:11px; overflow:hidden; background:#fff; }
+      .sig-box.editable { border:1.5px solid rgba(107,33,200,.45); cursor:crosshair; }
+      .sig-box.field-error { border-color:var(--red) !important; }
+      canvas.sig-cv { display:block; width:100%; height:100px; touch-action:none; }
+      .sig-footer-row { display:flex; align-items:center; justify-content:space-between; margin-top:3px; min-height:22px; }
+      .clear-sig { background:none; border:none; cursor:pointer; color:var(--red); font-family:'Figtree',sans-serif; font-size:12.5px; padding:3px 0; margin-left:auto; flex-shrink:0; }
+      .clear-sig:hover { text-decoration:underline; }
+      .sig-view-wrap { background:#F9F7FD; border:1px solid var(--border); border-radius:9px; padding:8px; }
+      .sig-view-wrap canvas { border:none; height:80px; }
+
+      /* FOOTER */
+      .form-footer { display:none; gap:10px; margin-top:24px; margin-bottom:9px; width:100%; max-width:var(--max-w); }
+      .form-footer.visible { display:flex; }
+      .form-btn {
+        height:52px; background:var(--grad); border:none; border-radius:15px;
+        font-family:'Figtree',sans-serif; font-size:16px; font-weight:700; color:#fff;
+        cursor:pointer; box-shadow:0 5px 18px rgba(107,33,200,.44);
+        transition:opacity .2s, transform .15s; flex:1;
+      }
+      .form-btn:hover { opacity:.9; transform:translateY(-1px); }
+      .form-btn:active { transform:translateY(0); }
+      .form-btn-reset {
+        height:52px; background:#fff; border:2px solid var(--p); border-radius:15px;
+        font-family:'Figtree',sans-serif; font-size:16px; font-weight:700; color:var(--p);
+        cursor:pointer; transition:background .2s, transform .15s; flex:1;
+      }
+      .form-btn-reset:hover { background:#F3EFFF; transform:translateY(-1px); }
+      .form-btn-reset:active { transform:translateY(0); }
+
+      /* TOAST */
+      .toast {
+        position:fixed; bottom:32px; left:50%; transform:translateX(-50%) translateY(12px);
+        background:var(--green); color:#fff; padding:10px 24px; border-radius:11px;
+        font-size:14px; font-weight:500; box-shadow:0 3px 14px rgba(0,0,0,.14);
+        opacity:0; transition:opacity .28s, transform .28s; pointer-events:none; z-index:999;
+        white-space:nowrap;
+      }
+      .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+      .toast.err { background:var(--red); }
+
+      /* MODAL */
+      .modal-overlay {
+        position:fixed; inset:0; z-index:500;
+        background:rgba(0,0,0,.45);
+        display:flex; align-items:center; justify-content:center; padding:24px;
+        opacity:0; pointer-events:none; transition:opacity .2s;
+      }
+      .modal-overlay.show { opacity:1; pointer-events:all; }
+      .modal {
+        background:#fff; border-radius:16px; width:100%; max-width:320px;
+        box-shadow:0 12px 40px rgba(0,0,0,.18); overflow:hidden;
+        transform:translateY(10px); transition:transform .22s ease;
+      }
+      .modal-overlay.show .modal { transform:translateY(0); }
+      .modal-body { padding:22px 20px 12px; }
+      .modal-title { font-size:16px; font-weight:700; color:var(--text); margin-bottom:8px; }
+      .modal-msg { font-size:14px; font-weight:400; color:#555; line-height:1.5; }
+      .modal-actions { display:flex; justify-content:flex-end; gap:4px; padding:10px 12px 14px; }
+      .modal-btn { border:none; background:none; cursor:pointer; font-family:'Figtree',sans-serif; font-size:14px; padding:7px 16px; border-radius:8px; transition:background .15s; }
+      .modal-btn.cancel-btn { color:#888; font-weight:500; }
+      .modal-btn.cancel-btn:hover { background:#f3f3f3; }
+      .modal-btn.remove-btn { color:var(--red); font-weight:700; }
+      .modal-btn.remove-btn:hover { background:rgba(220,38,38,.08); }
+
+      @keyframes fadeUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+      .fade-up { animation:fadeUp .38s ease both; }
+
+      @media (max-width: 520px) {
+        .two-vrow { grid-template-columns: 1fr; }
+        .two-vrow .vrow { border-right: none; border-bottom: 1px solid #F0EBF9; }
+        .two-vrow .vrow:last-child { border-bottom: none; }
+        .two-erow { grid-template-columns: 1fr; }
+        .two-erow .erow { border-right: none; border-bottom: 1px solid #F0EBF9; }
+        .two-erow .erow:last-child { border-bottom: none; }
+        .detail-two-col { grid-template-columns: 1fr; gap: 0; }
+        .detail-three-col { grid-template-columns: 1fr; gap: 0; }
+        .appbar-subtitle { font-size: 11px; }
+        .appbar-title-main { font-size: 15px; }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- APP BAR -->
+    <div class="appbar">
+      <div class="appbar-inner">
+        <div class="appbar-left">
+          <button class="back-btn" id="back-btn" onclick="history.back()" title="Back">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="appbar-titles">
+            <div class="appbar-subtitle">Sample Crop Prescription</div>
+            <div class="appbar-title-main" id="appbar-title">New Form</div>
+          </div>
+        </div>
+        <button class="edit-btn" id="edit-btn" onclick="toggleEdit()">Edit</button>
+      </div>
+    </div>
+
+    <!-- PAGE BODY -->
+    <div class="scroll-body fade-up">
+      <div class="page-content" id="page-body"></div>
+      <div class="form-footer" id="form-footer">
+        <div id="form-footer-inner" style="display:flex;gap:10px;width:100%;"></div>
+      </div>
+    </div>
+
+    <!-- TOAST -->
+    <div class="toast" id="toast"></div>
+
+    <!-- DELETE MODAL -->
+    <div class="modal-overlay" id="delete-adv-modal" onclick="onOverlayClickAdv(event)">
+      <div class="modal">
+        <div class="modal-body">
+          <div class="modal-title">Remove Advisory Detail</div>
+          <div class="modal-msg" id="modal-adv-msg">Remove this advisory detail entry?</div>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel-btn" onclick="closeDeleteAdvModal()">Cancel</button>
+          <button class="modal-btn remove-btn" onclick="confirmDeleteAdv()">Remove</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="delete-prod-modal" onclick="onOverlayClickProd(event)">
+      <div class="modal">
+        <div class="modal-body">
+          <div class="modal-title">Remove Product</div>
+          <div class="modal-msg" id="modal-prod-msg">Remove this product entry?</div>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel-btn" onclick="closeDeleteProdModal()">Cancel</button>
+          <button class="modal-btn remove-btn" onclick="confirmDeleteProd()">Remove</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // MODE DETECTTION
+      const urlParams = new URLSearchParams(window.location.search);
+      const ADD_MODE = urlParams.get('mode') === 'add';
+
+      let formData = null;
+      let editSnapshot = null;
+      let editMode = false;
+      let pendingDelAdvIdx = null;
+      let pendingDelProdIdx = null;
+
+      const sigState = { isDrawing:false, points:[], lastPoint:null, canvas:null, ctx:null };
+      let sigSnapshot = [];
+
+      const PLACEHOLDERS_SCP = {
+        'e-farmerName':         'e.g. Juan Dela Cruz',
+        'e-farmAddress':        'e.g. Brgy. San Jose, Laguna',
+        'e-typeOfEvent':        'e.g. Field Day, Training',
+        'e-cellphoneNumber':    'e.g. 09XX XXX XXXX',
+        'e-venueOfEvent':       'e.g. Barangay Hall, San Jose',
+        'e-cropsPlanted':       'e.g. Rice, Corn, Vegetables',
+        'e-cropAdvisorName':    'e.g. Maria Santos',
+        'e-cropAdvisorContact': 'e.g. 09XX XXX XXXX',
+        'e-farmerNameSecond':   'e.g. Juan Dela Cruz',
+        'e-preferredDealer':    'e.g. AgriMart, San Jose',
+        'adv-keyConcern':       'e.g. Pest infestation, disease outbreak\u2026',
+        'adv-recommendation':   'e.g. Apply Indofil M-45 at 2g/L every 7 days\u2026',
+        'prod-productName':     'e.g. Indofil M-45',
+        'prod-quantity':        'e.g. 10',
+        'prod-packaging':       'e.g. 1 kg bag',
+      };
+
+      function blankAdvisory() { return { keyConcern:'', recommendation:'' }; }
+      function blankProduct() { return { productName:'', quantity:'', packaging:'' }; }
+      function blankForm() {
+        return {
+          farmerName:'', dateOfEvent:'', farmAddress:'',
+          typeOfEvent:'', cellphoneNumber:'', venueOfEvent:'',
+          cropsPlanted:'', advisoryDetails:[],
+          cropAdvisorName:'', cropAdvisorContact:'',
+          products:[], farmerNameSecond:'',
+          dateNeeded:'', preferredDealer:'', createdBy:'',
+        };
+      }
+
+      function loadFormData() {
+        if (ADD_MODE) return blankForm();
+        try { const r=sessionStorage.getItem('scpFormData'); if(r) return JSON.parse(r); } catch(e){}
+        return blankForm();
+      }
+      function deepClone(o) { return JSON.parse(JSON.stringify(o)); }
+
+      function buildPayload(f) {
+        return {
+          farmerName: f.farmerName||'', farmAddress: f.farmAddress||'',
+          cellphoneNumber: f.cellphoneNumber||'', dateOfEvent: f.dateOfEvent||'',
+          typeOfEvent: f.typeOfEvent||'', venueOfEvent: f.venueOfEvent||'',
+          cropsPlanted: f.cropsPlanted||'',
+          advisoryDetails: (f.advisoryDetails||[]).map(a=>({ keyConcern:a.keyConcern||'', productRecommendation:a.recommendation||'' })),
+          cropAdvisorName: f.cropAdvisorName||'', cropAdvisorContact: f.cropAdvisorContact||'',
+          products: (f.products||[]).map(p=>({ productName:p.productName||'', quantity:p.quantity||'', packaging:p.packaging||'' })),
+          farmerNameSecond: f.farmerNameSecond||'',
+          farmerSignaturePoints: sigState.points.map(pt=>({ x:pt.x, y:pt.y, pressure:pt.pressure??1.0, type:pt.type })),
+          dateNeeded: f.dateNeeded||'', preferredDealer: f.preferredDealer||'',
+          createdBy: f.createdBy||'', timestamp: new Date().toISOString(),
+        };
+      }
+
+      function sendToBridge(payload) {
+        try {
+          if (window.SCPBridge && typeof window.SCPBridge.postMessage==='function') { window.SCPBridge.postMessage(JSON.stringify(payload)); return true; }
+          else if (typeof SCPBridge!=='undefined' && SCPBridge.postMessage) { SCPBridge.postMessage(JSON.stringify(payload)); return true; }
+          else { showToast('Unable to send form to app. Please try again.',true); return false; }
+        } catch(e) { showToast('Error sending form. Please try again.',true); return false; }
+      }
+
+      function toggleEdit() {
+        if (!editMode) { editSnapshot=deepClone(formData); sigSnapshot=deepClone(sigState.points); editMode=true; }
+        else { formData=deepClone(editSnapshot); sigState.points=deepClone(sigSnapshot); editSnapshot=null; sigSnapshot=[]; editMode=false; }
+        render();
+      }
+
+      function render() {
+        const footer=document.getElementById('form-footer');
+        const footerInner=document.getElementById('form-footer-inner');
+        const editBtn=document.getElementById('edit-btn');
+        const backBtn=document.getElementById('back-btn');
+
+        if (ADD_MODE) {
+          document.getElementById('appbar-title').textContent='New Form';
+          editBtn.style.display='none'; backBtn.className='back-btn';
+          footer.className='form-footer visible';
+          footerInner.innerHTML=`<button class="form-btn-reset" onclick="resetAddForm()">Reset</button><button class="form-btn" onclick="submitForm()">Submit</button>`;
+          renderEditMode(formData);
+        } else {
+          const n=formData.farmerName||'';
+          document.getElementById('appbar-title').textContent=n||'Crop Prescription';
+          editBtn.style.display=''; editBtn.textContent=editMode?'Cancel':'Edit';
+          editBtn.className='edit-btn'+(editMode?' is-cancel':'');
+          backBtn.className='back-btn'+(editMode?' hidden':'');
+          footer.className='form-footer'+(editMode?' visible':'');
+          footerInner.innerHTML=editMode
+            ?`<button class="form-btn-reset" onclick="resetEditForm()">Reset</button><button class="form-btn" onclick="saveEdits()">Update Form</button>`:'';
+          editMode?renderEditMode(formData):renderViewMode(formData);
+        }
+        if (editMode||ADD_MODE) requestAnimationFrame(initSignatureCanvas);
+      }
+
+      // VIEW MODE
+      function renderViewMode(f) {
+        const adv=f.advisoryDetails||[], prod=f.products||[];
+        document.getElementById('page-body').innerHTML=`
+          <div class="sec-label first">General Information</div>
+          <div class="form-card">
+            ${vRow('Farmer Name',f.farmerName)}
+            ${vRow('Date of Event',formatDate(f.dateOfEvent))}
+            <div class="two-vrow-wrap"><div class="two-vrow">
+              ${vRow('Farm Address',f.farmAddress)}
+              ${vRow('Type of Event',f.typeOfEvent)}
+            </div></div>
+            <div class="two-vrow-wrap"><div class="two-vrow">
+              ${vRow('Cellphone Number',f.cellphoneNumber)}
+              ${vRow('Venue of Event',f.venueOfEvent)}
+            </div></div>
+            ${vRow('Crops Planted',f.cropsPlanted)}
+          </div>
+
+          <div class="section-bar"><div class="sec-label" style="margin:0">Advisory Details</div></div>
+          ${!adv.length?`<p style="color:#9CA3AF;font-size:14px;padding:4px 8px;">No advisory details recorded.</p>`:adv.map((a,i)=>viewAdvCard(a,i)).join('')}
+
+          <div class="sec-label">Crop Advisor Information</div>
+          <div class="form-card">
+            <div class="two-vrow-wrap"><div class="two-vrow">
+              ${vRow('Name of Crop Advisor',f.cropAdvisorName)}
+              ${vRow('Crop Advisor Contact Number',f.cropAdvisorContact)}
+            </div></div>
+          </div>
+
+          <div class="section-bar"><div class="sec-label" style="margin:0">Indofil Crop Solutions & Technologies</div></div>
+          ${!prod.length?`<p style="color:#9CA3AF;font-size:14px;padding:4px 8px;">No products recorded.</p>`:prod.map((p,i)=>viewProdCard(p,i)).join('')}
+
+          <div class="sec-label">Farmer Acknowledgment</div>
+          <div class="form-card">
+            ${vRow('Name of Farmer',f.farmerNameSecond)}
+            ${vRow('Date Needed',formatDate(f.dateNeeded))}
+            ${vRow('Preferred Dealer',f.preferredDealer)}
+            ${viewSignature()}
+          </div>`;
+      }
+
+      function viewAdvCard(a,i) {
+        return `<div class="section-card">
+          <div class="section-head" onclick="toggleSection('sv-adv',${i})">
+            <div class="section-num">${i+1}</div>
+            <div class="section-label">${esc(a.keyConcern?a.keyConcern.substring(0,40)+(a.keyConcern.length>40?'…':''):`Advisory Detail ${i+1}`)}</div>
+            <svg class="chev" id="sv-adv-chev-${i}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="section-body" id="sv-adv-body-${i}">
+            ${detailVRow('Key Concerns',a.keyConcern)}
+            ${detailVRow('Product Recommendation',a.recommendation)}
+          </div>
+        </div>`;
+      }
+      function viewProdCard(p,i) {
+        return `<div class="section-card">
+          <div class="section-head" onclick="toggleSection('sv-prod',${i})">
+            <div class="section-num">${i+1}</div>
+            <div class="section-label">${esc(p.productName||`Product ${i+1}`)}</div>
+            <svg class="chev" id="sv-prod-chev-${i}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="section-body" id="sv-prod-body-${i}">
+            ${detailVRow('Product Name',p.productName)}
+            <div class="detail-two-col">
+              ${detailVRow('Quantity',p.quantity)}
+              ${detailVRow('Packaging',p.packaging)}
+            </div>
+          </div>
+        </div>`;
+      }
+      function viewSignature() {
+        if (!sigState.points||!sigState.points.length)
+          return `<div class="vrow"><span class="lbl">Signature of Farmer</span><span class="val empty">No data</span></div>`;
+        return `<div class="vrow"><span class="lbl">Signature of Farmer</span><div class="sig-view-wrap"><canvas id="sig-view-canvas"></canvas></div></div>`;
+      }
+      function vRow(label,val) {
+        const empty=!val||!String(val).trim();
+        return `<div class="vrow"><span class="lbl">${label}</span><span class="val${empty?' empty':''}">${empty?'No data':esc(String(val))}</span></div>`;
+      }
+      function detailVRow(label,val) {
+        const empty=!val||!String(val).trim();
+        return `<div class="detail-vrow"><span class="lbl">${label}</span><div class="val${empty?' empty':''}">${empty?'No data':esc(String(val))}</div></div>`;
+      }
+
+      // EDIT MODE
+      function renderEditMode(f) {
+        const adv=f.advisoryDetails||[], prod=f.products||[];
+        document.getElementById('page-body').innerHTML=`
+          <div class="sec-label first">General Information</div>
+          <div class="form-card">
+            ${eRow('Name of Farmer','e-farmerName',f.farmerName,'text',true)}
+            ${eRow('Date of Event','e-dateOfEvent',f.dateOfEvent,'date',true)}
+            <div class="two-erow-wrap"><div class="two-erow">
+              ${eRow('Farm Address','e-farmAddress',f.farmAddress,'text',true)}
+              ${eRow('Type of Event','e-typeOfEvent',f.typeOfEvent,'text',true)}
+            </div></div>
+            <div class="two-erow-wrap"><div class="two-erow">
+              ${eRow('Cellphone Number','e-cellphoneNumber',f.cellphoneNumber,'tel',true,true)}
+              ${eRow('Venue of Event','e-venueOfEvent',f.venueOfEvent,'text',true)}
+            </div></div>
+            ${eRow('Crops Planted','e-cropsPlanted',f.cropsPlanted,'text',true)}
+          </div>
+
+          <div class="section-bar">
+            <div class="sec-label" style="margin:0">Advisory Details</div>
+            <button class="add-section-btn" onclick="addAdvRow()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Advisory
+            </button>
+          </div>
+          <div id="edit-adv-list">${adv.map((a,i)=>editAdvCard(a,i)).join('')}</div>
+
+          <div class="sec-label">Crop Advisor Information</div>
+          <div class="form-card">
+            <div class="two-erow-wrap"><div class="two-erow">
+              ${eRow('Name of Crop Advisor','e-cropAdvisorName',f.cropAdvisorName,'text',true)}
+              ${eRow('Crop Advisor Contact Number','e-cropAdvisorContact',f.cropAdvisorContact,'tel',true,true)}
+            </div></div>
+          </div>
+
+          <div class="section-bar">
+            <div class="sec-label" style="margin:0">Indofil Crop Solutions & Technologies</div>
+            <button class="add-section-btn" onclick="addProdRow()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Product
+            </button>
+          </div>
+          <div id="edit-prod-list">${prod.map((p,i)=>editProdCard(p,i)).join('')}</div>
+
+          <div class="sec-label">Farmer Acknowledgment</div>
+          <div class="form-card">
+            ${eRow('Name of Farmer','e-farmerNameSecond',f.farmerNameSecond,'text',true)}
+            ${eRow('Date Needed','e-dateNeeded',f.dateNeeded,'date',true)}
+            ${eRow('Preferred Dealer','e-preferredDealer',f.preferredDealer,'text',true)}
+            <div class="sig-wrap">
+              <span class="lbl">Signature of Farmer<span class="req-star">*</span></span>
+              <div class="sig-box editable" id="sig-box-wrap">
+                <div class="sig-box-inner"><canvas class="sig-cv" id="signaturePad"></canvas></div>
+              </div>
+              <div class="sig-footer-row">
+                <span class="error-msg" id="sig-err">This field is required.</span>
+                <button type="button" class="clear-sig" onclick="clearSignature()">&#x2715; Clear Signature</button>
+              </div>
+            </div>
+          </div>`;
+      }
+
+      function eRow(label,id,val,type='text',required=false,isPhone=false) {
+        const star=required?'<span class="req-star">*</span>':'';
+        const inputmode=isPhone?'inputmode="numeric" pattern="[0-9]*"':(type==='number'?'inputmode="numeric"':'');
+        const enforcer=isPhone?'enforcePhone(this);':'';
+        const oninput=required?`oninput="${enforcer}clearErr('${id}')"` :(isPhone?`oninput="enforcePhone(this)"`:'');
+        const ph=PLACEHOLDERS_SCP[id]||'';
+        const phAttr=ph?`placeholder="${esc(ph)}"`:'' ;
+        return `<div class="erow"><span class="lbl">${label}${star}</span>
+          <input id="${id}" type="${type==='tel'?'tel':type}" value="${esc(val||'')}" ${inputmode} ${phAttr} ${oninput} ${required?'data-required="true"':''}>
+          ${required?`<span class="error-msg" id="${id}-err">This field is required.</span>`:''}</div>`;
+      }
+
+      function editAdvCard(a,i) {
+        return `<div class="section-card" id="adv-card-${i}">
+          <div class="section-head" onclick="toggleSection('ed-adv',${i})">
+            <div class="section-num">${i+1}</div>
+            <div class="section-label" id="ed-adv-lbl-${i}">${esc(a.keyConcern?a.keyConcern.substring(0,40)+(a.keyConcern.length>40?'…':''):`Advisory Detail ${i+1}`)}</div>
+            <svg class="chev" id="ed-adv-chev-${i}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            <button class="section-delete-btn" onclick="openDeleteAdvModal(event,${i})" title="Remove">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>
+          </div>
+          <div class="section-body" id="ed-adv-body-${i}">
+            ${detailERowTA('Key Concerns','eadv-kc-'+i,a.keyConcern,'adv',i,'keyConcern',true)}
+            ${detailERowTA('Product Recommendation','eadv-rec-'+i,a.recommendation,'adv',i,'recommendation',true)}
+          </div>
+        </div>`;
+      }
+      function editProdCard(p,i) {
+        return `<div class="section-card" id="prod-card-${i}">
+          <div class="section-head" onclick="toggleSection('ed-prod',${i})">
+            <div class="section-num">${i+1}</div>
+            <div class="section-label" id="ed-prod-lbl-${i}">${esc(p.productName||`Product ${i+1}`)}</div>
+            <svg class="chev" id="ed-prod-chev-${i}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            <button class="section-delete-btn" onclick="openDeleteProdModal(event,${i})" title="Remove">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>
+          </div>
+          <div class="section-body" id="ed-prod-body-${i}">
+            ${detailERow('Product Name','eprod-name-'+i,p.productName,'prod',i,'productName',true)}
+            <div class="detail-two-col">
+              ${detailERowInt('Quantity','eprod-qty-'+i,p.quantity,'prod',i,'quantity',true)}
+              ${detailERow('Packaging','eprod-pack-'+i,p.packaging,'prod',i,'packaging',true)}
+            </div>
+          </div>
+        </div>`;
+      }
+
+      function detailERow(label,id,val,section,idx,key,required=false) {
+        const star=required?'<span class="req-star">*</span>':'';
+        const handler=`onSectionInput('${section}',${idx},'${key}',this.value)${required?`;clearErr('${id}')`:''};`;
+        const ph=PLACEHOLDERS_SCP[`${section}-${key}`]||'';
+        const phAttr=ph?`placeholder="${esc(ph)}"`:'' ;
+        return `<div class="detail-erow"><span class="lbl">${label}${star}</span>
+          <input id="${id}" value="${esc(val||'')}" ${phAttr} oninput="${handler}" ${required?'data-required="true"':''}>
+          ${required?`<span class="error-msg" id="${id}-err">Required.</span>`:''}</div>`;
+      }
+      function detailERowTA(label,id,val,section,idx,key,required=false) {
+        const star=required?'<span class="req-star">*</span>':'';
+        const handler=`onSectionInputTA('${section}',${idx},'${key}',this.value)${required?`;clearErr('${id}')`:''};`;
+        const ph=PLACEHOLDERS_SCP[`${section}-${key}`]||'';
+        const phAttr=ph?`placeholder="${esc(ph)}"`:'' ;
+        return `<div class="detail-erow"><span class="lbl">${label}${star}</span>
+          <textarea id="${id}" rows="2" ${phAttr} oninput="${handler}" ${required?'data-required="true"':''} style="resize:vertical">${esc(val||'')}</textarea>
+          ${required?`<span class="error-msg" id="${id}-err">Required.</span>`:''}</div>`;
+      }
+      function detailERowInt(label,id,val,section,idx,key,required=false) {
+        const star=required?'<span class="req-star">*</span>':'';
+        const handler=`onSectionInput('${section}',${idx},'${key}',this.value);enforceInteger(this)${required?`;clearErr('${id}')`:''};`;
+        const ph=PLACEHOLDERS_SCP[`${section}-${key}`]||'';
+        const phAttr=ph?`placeholder="${esc(ph)}"`:'' ;
+        return `<div class="detail-erow"><span class="lbl">${label}${star}</span>
+          <input id="${id}" type="text" inputmode="numeric" value="${esc(val||'')}" ${phAttr} oninput="${handler}" ${required?'data-required="true"':''}>
+          ${required?`<span class="error-msg" id="${id}-err">Required.</span>`:''}</div>`;
+      }
+
+      function onSectionInput(section,i,key,val) {
+        if (section==='adv') {
+          formData.advisoryDetails[i]=formData.advisoryDetails[i]||blankAdvisory();
+          formData.advisoryDetails[i][key]=val;
+          if (key==='keyConcern') { const l=document.getElementById(`ed-adv-lbl-${i}`); if(l) l.textContent=val?val.substring(0,40)+(val.length>40?'…':''):`Advisory Detail ${i+1}`; }
+        } else if (section==='prod') {
+          formData.products[i]=formData.products[i]||blankProduct();
+          formData.products[i][key]=val;
+          if (key==='productName') { const l=document.getElementById(`ed-prod-lbl-${i}`); if(l) l.textContent=val||`Product ${i+1}`; }
+        }
+      }
+      function onSectionInputTA(section,i,key,val) { onSectionInput(section,i,key,val); }
+
+      function addAdvRow() {
+        formData.advisoryDetails=formData.advisoryDetails||[];
+        const i=formData.advisoryDetails.length;
+        formData.advisoryDetails.push(blankAdvisory());
+        const list=document.getElementById('edit-adv-list');
+        const div=document.createElement('div');
+        div.innerHTML=editAdvCard(formData.advisoryDetails[i],i);
+        list.appendChild(div.firstElementChild);
+        setTimeout(()=>toggleSection('ed-adv',i),50);
+      }
+      function addProdRow() {
+        formData.products=formData.products||[];
+        const i=formData.products.length;
+        formData.products.push(blankProduct());
+        const list=document.getElementById('edit-prod-list');
+        const div=document.createElement('div');
+        div.innerHTML=editProdCard(formData.products[i],i);
+        list.appendChild(div.firstElementChild);
+        setTimeout(()=>toggleSection('ed-prod',i),50);
+      }
+
+      function toggleSection(prefix,i) {
+        const body=document.getElementById(`${prefix}-body-${i}`);
+        const chev=document.getElementById(`${prefix}-chev-${i}`);
+        if (!body) return;
+        const open=body.classList.toggle('open');
+        if (chev) chev.classList.toggle('open',open);
+      }
+
+      function openDeleteAdvModal(event,i) {
+        event.stopPropagation(); pendingDelAdvIdx=i;
+        const kc=formData.advisoryDetails[i]?.keyConcern||'';
+        document.getElementById('modal-adv-msg').textContent=kc?`Remove advisory "${kc.substring(0,40)}"?`:'Remove this advisory detail entry?';
+        document.getElementById('delete-adv-modal').classList.add('show');
+      }
+      function closeDeleteAdvModal() { document.getElementById('delete-adv-modal').classList.remove('show'); pendingDelAdvIdx=null; }
+      function confirmDeleteAdv() {
+        const i=pendingDelAdvIdx; closeDeleteAdvModal();
+        if (i===null||i===undefined) return;
+        flushDOM(); formData.advisoryDetails.splice(i,1); renderEditMode(formData); requestAnimationFrame(initSignatureCanvas);
+      }
+      function onOverlayClickAdv(e) { if(e.target===document.getElementById('delete-adv-modal')) closeDeleteAdvModal(); }
+
+      function openDeleteProdModal(event,i) {
+        event.stopPropagation(); pendingDelProdIdx=i;
+        const name=formData.products[i]?.productName||'';
+        document.getElementById('modal-prod-msg').textContent=name?`Remove "${name}" from the product list?`:'Remove this product entry?';
+        document.getElementById('delete-prod-modal').classList.add('show');
+      }
+      function closeDeleteProdModal() { document.getElementById('delete-prod-modal').classList.remove('show'); pendingDelProdIdx=null; }
+      function confirmDeleteProd() {
+        const i=pendingDelProdIdx; closeDeleteProdModal();
+        if (i===null||i===undefined) return;
+        flushDOM(); formData.products.splice(i,1); renderEditMode(formData); requestAnimationFrame(initSignatureCanvas);
+      }
+      function onOverlayClickProd(e) { if(e.target===document.getElementById('delete-prod-modal')) closeDeleteProdModal(); }
+
+      function flushDOM() {
+        const f=formData;
+        const simple={
+          farmerName:'e-farmerName', dateOfEvent:'e-dateOfEvent',
+          farmAddress:'e-farmAddress', typeOfEvent:'e-typeOfEvent',
+          cellphoneNumber:'e-cellphoneNumber', venueOfEvent:'e-venueOfEvent',
+          cropsPlanted:'e-cropsPlanted', cropAdvisorName:'e-cropAdvisorName',
+          cropAdvisorContact:'e-cropAdvisorContact', farmerNameSecond:'e-farmerNameSecond',
+          dateNeeded:'e-dateNeeded', preferredDealer:'e-preferredDealer',
+        };
+        for (const [k,id] of Object.entries(simple)) { const el=document.getElementById(id); if(el) f[k]=el.value; }
+        (f.advisoryDetails||[]).forEach((a,i)=>{ const kc=document.getElementById(`eadv-kc-${i}`); const rc=document.getElementById(`eadv-rec-${i}`); if(kc) a.keyConcern=kc.value; if(rc) a.recommendation=rc.value; });
+        (f.products||[]).forEach((p,i)=>{ const nm=document.getElementById(`eprod-name-${i}`); const qt=document.getElementById(`eprod-qty-${i}`); const pk=document.getElementById(`eprod-pack-${i}`); if(nm) p.productName=nm.value; if(qt) p.quantity=qt.value; if(pk) p.packaging=pk.value; });
+      }
+
+      function validateForm() {
+        document.querySelectorAll('.field-error').forEach(el=>el.classList.remove('field-error'));
+        document.querySelectorAll('.error-msg.show').forEach(el=>el.classList.remove('show'));
+        let valid=true;
+        ['e-farmerName','e-dateOfEvent','e-farmAddress','e-typeOfEvent','e-cellphoneNumber','e-venueOfEvent','e-cropsPlanted','e-cropAdvisorName','e-cropAdvisorContact','e-farmerNameSecond','e-dateNeeded','e-preferredDealer'].forEach(id=>{
+          const el=document.getElementById(id); if(!el) return;
+          if(!el.value.trim()) { el.classList.add('field-error'); const err=document.getElementById(id+'-err'); if(err) err.classList.add('show'); valid=false; }
+        });
+        const hasSig=sigState.points&&sigState.points.length>0;
+        if (!hasSig) { const sigBox=document.getElementById('sig-box-wrap'); if(sigBox) sigBox.classList.add('field-error'); const err=document.getElementById('sig-err'); if(err) err.classList.add('show'); valid=false; }
+        (formData.advisoryDetails||[]).forEach((a,i)=>{
+          [`eadv-kc-${i}`,`eadv-rec-${i}`].forEach(id=>{
+            const el=document.getElementById(id); if(!el) return;
+            if(!el.value.trim()) { el.classList.add('field-error'); const err=document.getElementById(id+'-err'); if(err) err.classList.add('show'); const body=document.getElementById(`ed-adv-body-${i}`); const chev=document.getElementById(`ed-adv-chev-${i}`); if(body&&!body.classList.contains('open')){body.classList.add('open');if(chev)chev.classList.add('open');} valid=false; }
+          });
+        });
+        (formData.products||[]).forEach((p,i)=>{
+          [`eprod-name-${i}`,`eprod-qty-${i}`,`eprod-pack-${i}`].forEach(id=>{
+            const el=document.getElementById(id); if(!el) return;
+            if(!el.value.trim()) { el.classList.add('field-error'); const err=document.getElementById(id+'-err'); if(err) err.classList.add('show'); const body=document.getElementById(`ed-prod-body-${i}`); const chev=document.getElementById(`ed-prod-chev-${i}`); if(body&&!body.classList.contains('open')){body.classList.add('open');if(chev)chev.classList.add('open');} valid=false; }
+          });
+        });
+        if (!valid) showToast('Please fill out all required fields.',true);
+        return valid;
+      }
+
+      function submitForm() {
+        flushDOM(); if(!validateForm()) return;
+        try { sessionStorage.setItem('scpFormData',JSON.stringify(formData)); } catch(e){}
+        const sent=sendToBridge(buildPayload(formData));
+        if (sent) showToast('Sample Crop Prescription Form submitted.');
+      }
+      function saveEdits() {
+        flushDOM(); if(!validateForm()) return;
+        try { sessionStorage.setItem('scpFormData',JSON.stringify(formData)); } catch(e){}
+        const sent=sendToBridge(buildPayload(formData));
+        if (sent) { editSnapshot=null; sigSnapshot=[]; editMode=false; showToast('Form updated successfully.'); render(); requestAnimationFrame(redrawViewSignature); }
+      }
+      function resetAddForm() { formData=blankForm(); sigState.points=[]; sigState.lastPoint=null; render(); showToast('Form has been reset.'); }
+      function resetEditForm() { if(editSnapshot) formData=deepClone(editSnapshot); if(sigSnapshot) sigState.points=deepClone(sigSnapshot); renderEditMode(formData); requestAnimationFrame(initSignatureCanvas); showToast('Changes have been reset.'); }
+
+      function initSignatureCanvas() {
+        const canvas=document.getElementById('signaturePad'); if(!canvas) return;
+        sigState.canvas=canvas;
+        const ratio=window.devicePixelRatio||1;
+        canvas.width=canvas.clientWidth*ratio; canvas.height=canvas.clientHeight*ratio;
+        const ctx=canvas.getContext('2d'); ctx.scale(ratio,ratio); sigState.ctx=ctx;
+        redrawFromPoints(canvas,ctx); updateSigPlaceholder();
+        const newCanvas=canvas.cloneNode(true); canvas.parentNode.replaceChild(newCanvas,canvas);
+        sigState.canvas=newCanvas; const ctx2=newCanvas.getContext('2d'); ctx2.scale(ratio,ratio); sigState.ctx=ctx2;
+        redrawFromPoints(newCanvas,ctx2);
+        newCanvas.addEventListener('mousedown',handleSigDown,{passive:false});
+        newCanvas.addEventListener('mousemove',handleSigMove,{passive:false});
+        newCanvas.addEventListener('mouseup',handleSigUp,{passive:false});
+        newCanvas.addEventListener('mouseleave',handleSigUp,{passive:false});
+        newCanvas.addEventListener('touchstart',handleSigDown,{passive:false});
+        newCanvas.addEventListener('touchmove',handleSigMove,{passive:false});
+        newCanvas.addEventListener('touchend',handleSigUp,{passive:false});
+        newCanvas.addEventListener('touchcancel',handleSigUp,{passive:false});
+      }
+      function updateSigPlaceholder() { const ph=document.getElementById('sig-placeholder'); if(!ph) return; ph.style.display=(sigState.points&&sigState.points.length>0)?'none':'flex'; }
+      function getEventXY(e,canvas) { const rect=canvas.getBoundingClientRect(); const pointer=e.touches?e.touches[0]:(e.changedTouches?e.changedTouches[0]:e); return{x:pointer.clientX-rect.left,y:pointer.clientY-rect.top}; }
+      function handleSigDown(e) {
+        e.preventDefault(); const{x,y}=getEventXY(e,sigState.canvas); sigState.isDrawing=true;
+        sigState.points.push({x,y,type:'down',pressure:e.pressure||1.0}); sigState.lastPoint={x,y};
+        updateSigPlaceholder();
+        const sigBox=document.getElementById('sig-box-wrap'); if(sigBox) sigBox.classList.remove('field-error');
+        const err=document.getElementById('sig-err'); if(err) err.classList.remove('show');
+      }
+      function handleSigMove(e) { if(!sigState.isDrawing) return; e.preventDefault(); const{x,y}=getEventXY(e,sigState.canvas); drawSigLine(sigState.lastPoint,{x,y}); sigState.points.push({x,y,type:'move',pressure:e.pressure||1.0}); sigState.lastPoint={x,y}; }
+      function handleSigUp(e) { if(!sigState.isDrawing) return; e.preventDefault(); const{x,y}=getEventXY(e,sigState.canvas); sigState.points.push({x,y,type:'up',pressure:e.pressure||1.0}); sigState.lastPoint=null; sigState.isDrawing=false; }
+      function drawSigLine(from,to) { if(!from||!sigState.ctx) return; const ctx=sigState.ctx; ctx.strokeStyle='#000'; ctx.lineWidth=2; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(from.x,from.y); ctx.lineTo(to.x,to.y); ctx.stroke(); }
+      function clearSignature() { const canvas=sigState.canvas||document.getElementById('signaturePad'); if(!canvas) return; canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); sigState.points=[]; sigState.lastPoint=null; updateSigPlaceholder(); }
+      function redrawFromPoints(canvas,ctx) {
+        if(!sigState.points||!sigState.points.length) return;
+        ctx.strokeStyle='#000'; ctx.lineWidth=2; ctx.lineCap='round'; let last=null;
+        sigState.points.forEach(pt=>{ if(pt.type==='down'){last=pt;} else if(pt.type==='move'&&last){ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(pt.x,pt.y);ctx.stroke();last=pt;} else if(pt.type==='up'){last=null;} });
+      }
+      function redrawViewSignature() { const canvas=document.getElementById('sig-view-canvas'); if(!canvas) return; const ratio=window.devicePixelRatio||1; canvas.width=canvas.clientWidth*ratio; canvas.height=canvas.clientHeight*ratio; const ctx=canvas.getContext('2d'); ctx.scale(ratio,ratio); redrawFromPoints(canvas,ctx); }
+      function enforceInteger(input) { input.value=input.value.replace(/[^0-9]/g,''); }
+      function enforcePhone(input) { input.value=input.value.replace(/[^0-9+\-\s()]/g,''); }
+      function clearErr(id) { const el=document.getElementById(id); if(el&&el.value.trim()){el.classList.remove('field-error');const err=document.getElementById(id+'-err');if(err)err.classList.remove('show');} }
+      function formatDate(raw) { if(!raw) return''; const d=new Date(raw+'T00:00:00'); if(isNaN(d)) return raw; return d.toLocaleDateString('en-US',{month:'long',day:'2-digit',year:'numeric'}); }
+      function showToast(msg,err=false) { const t=document.getElementById('toast'); t.textContent=msg; t.className='toast'+(err?' err':''); t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),3000); }
+      function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+      formData=loadFormData();
+      if (ADD_MODE) { if(!formData.advisoryDetails.length) formData.advisoryDetails.push(blankAdvisory()); if(!formData.products.length) formData.products.push(blankProduct()); }
+      render();
+      if (!ADD_MODE&&!editMode) requestAnimationFrame(redrawViewSignature);
+    </script>
+  </body>
+</html>

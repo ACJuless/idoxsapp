@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:archive/archive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -17,9 +20,9 @@ class _WebviewSalesOrderFormPageState extends State<WebviewSalesOrderFormPage> {
   late final WebViewController _controller;
   bool _isLoading = true;
 
-  /// Direct Firebase Storage URL for sales_order_form_page.html.
-  static const String _htmlUrl =
-      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fsales_order_form_page.html?alt=media&token=fd58d732-fe76-4bb4-b98c-269b3f092327';
+  /// Direct Firebase Storage URL for sales_order_form_page.zip.
+  static const String _zipUrl =
+      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fsales_order_form_page.zip?alt=media&token=38447df2-d34f-4377-84a7-0a9227aca89e';
 
   @override
   void initState() {
@@ -84,7 +87,7 @@ class _WebviewSalesOrderFormPageState extends State<WebviewSalesOrderFormPage> {
         ),
       );
 
-    _loadRemoteHtml();
+    _loadZipAndExtractHtml();
   }
 
   Future<String> _getSanitizedUserEmail() async {
@@ -145,20 +148,54 @@ class _WebviewSalesOrderFormPageState extends State<WebviewSalesOrderFormPage> {
     }
   }
 
-  Future<void> _loadRemoteHtml() async {
+  Future<void> _loadZipAndExtractHtml() async {
     try {
-      debugPrint('Loading Sales Order HTML from: $_htmlUrl');
-      await _controller.loadRequest(Uri.parse(_htmlUrl));
-      debugPrint('Sales Order HTML requested in WebView');
+      debugPrint('Downloading Sales Order ZIP from: $_zipUrl');
+      setState(() {
+        _isLoading = true;
+      });
+
+      // Download ZIP file
+      final response = await http.get(Uri.parse(_zipUrl));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download ZIP: ${response.statusCode}');
+      }
+
+      // Decode ZIP bytes
+      final bytes = response.bodyBytes;
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      // Find the HTML file in the ZIP
+      String? htmlContent;
+      for (final file in archive) {
+        if (file is ArchiveFile &&
+            file.name == 'sales_order_form_page.html') {
+          htmlContent = utf8.decode(file.content as List<int>);
+          debugPrint('Found HTML file in ZIP: ${file.name}');
+          break;
+        }
+      }
+
+      if (htmlContent == null) {
+        throw Exception('HTML file "sales_order_form_page.html" not found in ZIP');
+      }
+
+      // Load HTML content into WebView
+      await _controller.loadHtmlString(htmlContent);
+      debugPrint('Sales Order HTML loaded from ZIP into WebView');
+
+      setState(() {
+        _isLoading = false;
+      });
     } catch (e) {
-      debugPrint('Error loading Sales Order remote HTML: $e');
+      debugPrint('Error loading Sales Order ZIP/HTML: $e');
       if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error loading form: $e'),
+          content: Text('Error loading form from ZIP: $e'),
         ),
       );
     }
@@ -177,7 +214,7 @@ class _WebviewSalesOrderFormPageState extends State<WebviewSalesOrderFormPage> {
               setState(() {
                 _isLoading = true;
               });
-              await _loadRemoteHtml();
+              await _loadZipAndExtractHtml();
             },
           ),
         ],

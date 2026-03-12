@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:archive/archive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -18,9 +21,9 @@ class _IncidentalCoverageFormWebviewPageState
   late final WebViewController _controller;
   bool _isLoading = true;
 
-  /// Direct Firebase Storage URL for incidental_coverage_form_page.html
-  static const String _htmlUrl =
-      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fincidental_coverage_form_page.html?alt=media&token=d9d27655-2e72-4df1-bf98-92c19cf154aa';
+  /// Direct Firebase Storage URL for incidental_coverage_form_page.zip
+  static const String _zipUrl =
+      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fincidental_coverage_form_page.zip?alt=media&token=19525e5f-8c10-4927-beeb-5e15e3aca52c';
 
   @override
   void initState() {
@@ -85,7 +88,7 @@ class _IncidentalCoverageFormWebviewPageState
         ),
       );
 
-    _loadRemoteHtml();
+    _loadZipAndExtractHtml();
   }
 
   Future<String> _getSanitizedUserEmail() async {
@@ -139,20 +142,54 @@ class _IncidentalCoverageFormWebviewPageState
     }
   }
 
-  Future<void> _loadRemoteHtml() async {
+  Future<void> _loadZipAndExtractHtml() async {
     try {
-      debugPrint('Loading incidental HTML from: $_htmlUrl');
-      await _controller.loadRequest(Uri.parse(_htmlUrl));
-      debugPrint('Incidental HTML requested in WebView');
+      debugPrint('Downloading Incidental ZIP from: $_zipUrl');
+      setState(() {
+        _isLoading = true;
+      });
+
+      // Download ZIP file
+      final response = await http.get(Uri.parse(_zipUrl));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download ZIP: ${response.statusCode}');
+      }
+
+      // Decode ZIP bytes
+      final bytes = response.bodyBytes;
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      // Find the HTML file in the ZIP
+      String? htmlContent;
+      for (final file in archive) {
+        if (file is ArchiveFile &&
+            file.name == 'incidental_coverage_form_page.html') {
+          htmlContent = utf8.decode(file.content as List<int>);
+          debugPrint('Found HTML file in ZIP: ${file.name}');
+          break;
+        }
+      }
+
+      if (htmlContent == null) {
+        throw Exception('HTML file "webview_incidental_coverage_form_page.html" not found in ZIP');
+      }
+
+      // Load HTML content into WebView
+      await _controller.loadHtmlString(htmlContent);
+      debugPrint('Incidental HTML loaded from ZIP into WebView');
+
+      setState(() {
+        _isLoading = false;
+      });
     } catch (e) {
-      debugPrint('Error loading incidental remote HTML: $e');
+      debugPrint('Error loading Incidental ZIP/HTML: $e');
       if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error loading form: $e'),
+          content: Text('Error loading form from ZIP: $e'),
         ),
       );
     }
@@ -171,7 +208,7 @@ class _IncidentalCoverageFormWebviewPageState
               setState(() {
                 _isLoading = true;
               });
-              await _loadRemoteHtml();
+              await _loadZipAndExtractHtml();
             },
           ),
         ],
