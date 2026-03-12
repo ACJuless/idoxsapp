@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance Form</title>
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --pd: #4A2371;
+        --p: #5958B2;
+        --lb: #67C6ED;
+        --surface: #F9F5FF;
+        --card: #FFFFFF;
+        --text: #000000;
+        --muted: #2B2B2B;
+        --border: #E9E3F5;
+        --green: #059669;
+        --red: #DC2626;
+        --grad: linear-gradient(135deg, #4A2371 0%, #4A2371 55%, #5958B2 100%);
+        --max-w: 760px;
+      }
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { height: 100%; }
+      body {
+        font-family: 'Figtree', sans-serif;
+        background: var(--surface);
+        color: var(--text);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* APP BAR */
+      .appbar {
+        background: var(--grad);
+        border-radius: 0 0 22px 22px;
+        padding: 14px 18px 18px;
+        display: flex; align-items: center;
+        position: sticky; top: 0; z-index: 50;
+        box-shadow: 0 6px 28px rgba(76,29,149,.3);
+        flex-shrink: 0;
+      }
+      .appbar-inner {
+        width: 100%;
+        display: flex; align-items: center; justify-content: space-between;
+      }
+      .appbar-left { display:flex; align-items:center; gap:8px; min-width:0; }
+      .back-btn {
+        background: rgba(255,255,255,.18); border:none; border-radius:9px;
+        width:34px; height:34px; flex-shrink:0;
+        display:flex; align-items:center; justify-content:center;
+        cursor:pointer; color:#fff; transition:background .2s;
+      }
+      .back-btn:hover { background:rgba(255,255,255,.3); }
+      .back-btn.hidden { visibility:hidden; pointer-events:none; width:0; margin-right:0px; }
+      .appbar-titles { min-width:0; }
+      .appbar-subtitle { font-size:15px; color:rgba(255,255,255,.65); }
+      .appbar-event {
+        font-size:18px; font-weight:700; color:#fff;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px;
+      }
+      .edit-btn {
+        flex-shrink:0;
+        background:rgba(255,255,255,.22); border:none; border-radius:18px;
+        padding:5px 16px; cursor:pointer;
+        font-family:'Figtree',sans-serif; font-size:13px; font-weight:700; color:#fff;
+        transition:background .2s;
+      }
+      .edit-btn:hover { background:rgba(255,255,255,.35); }
+      .edit-btn.is-cancel { color:rgba(255,255,255,.65); font-weight:600; }
+
+      /* PAGE BODY */
+      .scroll-body {
+        flex:1; overflow-y:auto;
+        padding:14px 14px 32px;
+        display: flex; flex-direction: column; align-items: center;
+      }
+      .page-content {
+        width: 100%; max-width: var(--max-w);
+      }
+
+      .sec-label {
+        font-size:14px; font-weight:700; color:var(--p);
+        letter-spacing:.4px; padding-left:8px; margin:20px 0 8px; 
+        text-transform:uppercase;
+      }
+      .sec-label.first { margin-top:4px; }
+      .form-card {
+        background:var(--card); border-radius:18px;
+        box-shadow:0 3px 14px rgba(0,0,0,.06); overflow:hidden;
+      }
+
+      /* VIEW MODE */
+      .vrow { 
+        padding:12px 16px; border-bottom:1px solid #F0EBF9; 
+        display:flex; flex-direction:column; gap:3px; 
+      }
+      .vrow:last-child { border-bottom:none; }
+      .vrow .lbl { font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; }
+      .vrow .val { font-size:16px; font-weight:400; color:var(--text); min-height:20px; }
+      .vrow .val.empty { color:#9CA3AF; }
+
+      /* EDIT MODE */
+      .erow { 
+        padding:12px 16px; border-bottom:1px solid #F0EBF9; 
+        display:flex; flex-direction:column; gap:3px; 
+      }
+      .erow:last-child { border-bottom:none; }
+      .erow .lbl { font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; }
+      .erow input, .erow textarea {
+        width:100%; font-family:'Figtree',sans-serif; font-size:16px; font-weight:500;
+        color:var(--text); background:rgba(107,33,200,.04);
+        border:1.5px solid rgba(107,33,200,.25); border-radius:9px;
+        padding:8px 11px; outline:none; transition:border-color .2s; resize:none;
+      }
+      .erow input::placeholder, .erow textarea::placeholder { color:#B0A8C8; font-weight:400; }
+      .erow input:focus, .erow textarea:focus { border-color:var(--p); }
+
+      /* ATTENDEES */
+      .att-bar { display:flex; align-items:center; justify-content:space-between; margin:20px 0 8px; }
+      .att-bar .sec-label { margin:0; }
+      .add-att-btn {
+        background:var(--grad); border:none; border-radius:18px;
+        padding:5px 12px; cursor:pointer; display:flex; align-items:center; gap:4px;
+        font-family:'Figtree',sans-serif; font-weight:700; font-size:12px; color:#fff;
+        box-shadow:0 2px 8px rgba(156,64,255,.35); transition:opacity .2s;
+      }
+      .add-att-btn:hover { opacity:.82; }
+
+      /* ATTENDEE COLLAPSIBLE CARD */
+      .att-card {
+        background:var(--card); border-radius:18px;
+        box-shadow:0 3px 14px rgba(0,0,0,.06); margin-bottom:12px; overflow:hidden;
+      }
+      .att-head {
+        display:flex; align-items:center; gap:10px; padding:12px 14px;
+        cursor:pointer; user-select:none;
+        background:linear-gradient(135deg,rgba(107,33,200,.07),rgba(156,64,255,.03));
+        transition:background .2s;
+      }
+      .att-head:hover { background:linear-gradient(135deg,rgba(107,33,200,.12),rgba(156,64,255,.06)); }
+      .att-num {
+        width:28px; height:28px; background:var(--grad); border-radius:50%;
+        display:flex; align-items:center; justify-content:center;
+        font-family:'Figtree',sans-serif; font-weight:700; font-size:13px; color:#fff; flex-shrink:0;
+      }
+      .att-label { flex:1; font-family:'Figtree',sans-serif; font-weight:700; font-size:14px; color:var(--p); }
+      .chev { width:18px; height:18px; color:var(--p); transition:transform .25s; flex-shrink:0; }
+      .chev.open { transform:rotate(180deg); }
+      .att-delete-btn {
+        background: none; border: none; cursor: pointer;
+        color: var(--red); padding: 4px; border-radius: 6px;
+        display: flex; align-items: center; justify-content: center;
+        transition: background .15s; flex-shrink:0;
+      }
+      .att-delete-btn:hover { background: rgba(220,38,38,.1); }
+      .att-body { display:none; padding:10px 14px 14px; }
+      .att-body.open { display:block; }
+
+      /* ATTENDEE VIEW */
+      .av-row { display:flex; flex-direction:column; gap:2px; margin-bottom:9px; }
+      .av-row .lbl { font-size:10.5px; font-weight:700; color:var(--muted); letter-spacing:.4px; text-transform:uppercase; }
+      .av-row .val {
+        background:#F9F7FD; border:1px solid var(--border); border-radius:8px;
+        padding:8px 10px; font-size:15px; font-weight:500; color:var(--text); min-height:34px;
+      }
+      .av-row .val.empty { color:#9CA3AF; }
+
+      /* ATTENDEE EDIT */
+      .ae-row { display:flex; flex-direction:column; gap:3px; margin-bottom:9px; }
+      .ae-row .lbl { font-size:10.5px; font-weight:700; color:var(--muted); letter-spacing:.4px; text-transform:uppercase; }
+      .ae-row input {
+        width:100%; font-family:'Figtree',sans-serif; font-size:15px; font-weight:500;
+        color:var(--text); background:rgba(107,33,200,.03);
+        border:1.5px solid rgba(107,33,200,.22); border-radius:8px;
+        padding:7px 10px; outline:none; transition:border-color .2s;
+      }
+      .ae-row input::placeholder { color:#B0A8C8; font-weight:400; }
+      .ae-row input:focus { border-color:var(--p); }
+      .two-col { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+
+      /* RESPONSIVE DESIGN */
+      @media (max-width: 480px) {
+        .two-col { grid-template-columns:1fr; gap:0; }
+      }
+
+      /* SIGNATURE CANVAS */
+      .sig-lbl { font-size:10.5px; font-weight:700; color:var(--muted); letter-spacing:1.1px; text-transform:uppercase; margin:12px 0 5px; }
+      .sig-box { border:1px solid var(--border); border-radius:11px; overflow:hidden; background:#fff; }
+      .sig-box.editable { border:1.5px solid rgba(107,33,200,.45); cursor:crosshair; }
+      .sig-box.sig-error { border-color: var(--red) !important; }
+      canvas.sig-cv { display:block; width:100%; height:80px; touch-action:none; }
+
+      .sig-footer-row {
+        display:flex; align-items:center; justify-content:space-between;
+        margin-top:3px; min-height:22px;
+      }
+      .clear-sig {
+        background:none; border:none; cursor:pointer;
+        color:var(--red); font-family:'Figtree',sans-serif; font-size:12.5px;
+        padding:3px 0; margin-left:auto; flex-shrink:0;
+      }
+      .clear-sig:hover { text-decoration:underline; }
+      .no-sig { color:#9CA3AF; font-size:12px; text-align:center; margin-top:4px; font-style:italic; }
+
+      /* VALIDATIONS */
+      .field-error { border-color: var(--red) !important; background: rgba(220,38,38,.04) !important; }
+      .error-msg { color:var(--red); font-size:11.5px; font-weight:600; display:none; }
+      .error-msg.show { display:block; }
+      .req-star { color:var(--red); margin-left:2px; }
+
+      /* FORM FOOTER (Reset + Submit/Update Buttons) */
+      .form-footer {
+        display: none;
+        gap: 10px;
+        margin-top: 24px;
+        margin-bottom: 9px;
+        width: 100%;
+        max-width: var(--max-w);
+      }
+      .form-footer.visible { display: flex; }
+      .form-btn {
+        height:52px; background:var(--grad); border:none; border-radius:15px;
+        font-family:'Figtree',sans-serif; font-size:16px; font-weight:700; color:#fff;
+        cursor:pointer; box-shadow:0 5px 18px rgba(107,33,200,.44);
+        transition:opacity .2s, transform .15s; letter-spacing:.3px;
+        flex:1;
+      }
+      .form-btn:hover { opacity:.9; transform:translateY(-1px); }
+      .form-btn:active { transform:translateY(0); }
+      .form-btn-reset {
+        height:52px; background:#fff; border:2px solid var(--p); border-radius:15px;
+        font-family:'Figtree',sans-serif; font-size:16px; font-weight:700; color:var(--p);
+        cursor:pointer;
+        transition:background .2s, transform .15s; letter-spacing:.3px;
+        flex:1;
+      }
+      .form-btn-reset:hover { background:#F3EFFF; transform:translateY(-1px); }
+      .form-btn-reset:active { transform:translateY(0); }
+
+      /* TOAST */
+      .toast {
+        position:fixed; bottom:32px; left:50%; transform:translateX(-50%) translateY(12px);
+        background:var(--green); color:#fff; padding:10px 24px; border-radius:11px;
+        font-size:14px; font-weight:500; box-shadow:0 3px 14px rgba(0,0,0,.14);
+        opacity:0; transition:opacity .28s, transform .28s; pointer-events:none; z-index:999;
+        white-space:nowrap;
+      }
+      .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+      .toast.err { background:var(--red); }
+
+      /* DELETE ATTENDEE MODAL */
+      .modal-overlay {
+        position: fixed; inset: 0; z-index: 500;
+        background: rgba(0,0,0,.45);
+        display: flex; align-items: center; justify-content: center;
+        padding: 24px;
+        opacity: 0; pointer-events: none;
+        transition: opacity .2s;
+      }
+      .modal-overlay.show { opacity:1; pointer-events:all; }
+      .modal {
+        background: #fff; border-radius: 16px;
+        width: 100%; max-width: 320px;
+        box-shadow: 0 12px 40px rgba(0,0,0,.18);
+        overflow: hidden;
+        transform: translateY(10px);
+        transition: transform .22s ease;
+      }
+      .modal-overlay.show .modal { transform: translateY(0); }
+      .modal-body { padding: 22px 20px 12px; }
+      .modal-title { font-size:16px; font-weight:700; color:var(--text); margin-bottom:9px; }
+      .modal-msg { font-size:14.5px; font-weight:400; color:#555; line-height:1.5; }
+      .modal-actions {
+        display: flex; justify-content: flex-end; gap: 4px;
+        padding: 10px 12px 14px;
+      }
+      .modal-btn {
+        border: none; background: none; cursor: pointer;
+        font-family: 'Figtree', sans-serif; font-size:14px;
+        padding: 7px 16px; border-radius: 8px;
+        transition: background .15s;
+      }
+      .modal-btn.cancel-btn { color:#888; font-weight:500; }
+      .modal-btn.cancel-btn:hover { background:#f3f3f3; }
+      .modal-btn.remove-btn { color:var(--red); font-weight:700; }
+      .modal-btn.remove-btn:hover { background:rgba(220,38,38,.08); }
+
+      @keyframes fadeUp {
+        from { opacity:0; transform:translateY(14px); }
+        to { opacity:1; transform:translateY(0); }
+      }
+      .fade-up { animation:fadeUp .38s ease both; }
+    </style>
+  </head>
+
+  <body>
+    <!-- APP BAR -->
+    <div class="appbar">
+      <div class="appbar-inner">
+        <div class="appbar-left">
+          <button class="back-btn" id="back-btn" onclick="history.back()" title="Back">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="appbar-titles">
+            <div class="appbar-subtitle">Attendance Form</div>
+            <div class="appbar-event" id="appbar-title"></div>
+          </div>
+        </div>
+        <button class="edit-btn" id="edit-btn" onclick="toggleEdit()">Edit</button>
+      </div>
+    </div>
+
+    <!-- PAGE BODY -->
+    <div class="scroll-body fade-up" id="page-body-wrap">
+      <div class="page-content" id="page-body"></div>
+
+      <!-- FORM FOOTER (Reset + Submit/Update) -->
+      <div class="form-footer" id="form-footer">
+        <div id="form-footer-inner" style="display:flex;gap:10px;width:100%;"></div>
+      </div>
+    </div>
+
+    <!-- TOAST -->
+    <div class="toast" id="toast"></div>
+
+    <!-- CONFIRM DELETE MODAL -->
+    <div class="modal-overlay" id="delete-modal" onclick="onOverlayClick(event)">
+      <div class="modal">
+        <div class="modal-body">
+          <div class="modal-title">Remove Attendee</div>
+          <div class="modal-msg" id="modal-msg">Remove this attendee from the list?</div>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel-btn" onclick="closeDeleteModal()">Cancel</button>
+          <button class="modal-btn remove-btn" onclick="confirmDelete()">Remove</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // MODE DETECTION
+      const urlParams = new URLSearchParams(window.location.search);
+      const ADD_MODE = urlParams.get('mode') === 'add';
+
+      // STATE
+      let formData = null;
+      let editSnapshot = null;
+      let editMode = false;
+      let pendingDeleteIndex = null;
+
+      // BLANK FORM TEMPLATE
+      function blankForm() {
+        return {
+          eventName: '', date: '', location: '', cropFocus: '', cropStatus: '',
+          dealers: [], focusProducts: [], remarks: '', createdBy: '',
+          attendees: [], attendeeSignatures: []
+        };
+      }
+
+      function loadFormData() {
+        if (ADD_MODE) return blankForm();
+        try {
+          const raw = sessionStorage.getItem('attendanceFormData');
+          if (raw) return JSON.parse(raw);
+        } catch(e) {}
+        return blankForm();
+      }
+
+      function deepClone(obj) {
+        return JSON.parse(JSON.stringify(obj));
+      }
+
+      function toggleEdit() {
+        if (!editMode) {
+          editSnapshot = deepClone(formData);
+          editMode = true;
+        } else {
+          formData = deepClone(editSnapshot);
+          editSnapshot = null;
+          editMode = false;
+        }
+        render();
+      }
+
+      function render() {
+        const f = formData;
+        const footer = document.getElementById('form-footer');
+        const footerInner = document.getElementById('form-footer-inner');
+        const editBtn = document.getElementById('edit-btn');
+        const backBtn = document.getElementById('back-btn');
+
+        if (ADD_MODE) {
+          document.getElementById('appbar-title').textContent = 'New Form';
+          editBtn.style.display = 'none';
+          backBtn.className = 'back-btn';
+          footer.className = 'form-footer visible';
+          footerInner.innerHTML = `
+            <button class="form-btn-reset" onclick="resetAddForm()">Reset</button>
+            <button class="form-btn" onclick="submitAddForm()">Submit</button>
+          `;
+          renderAddMode(f);
+        } else {
+          document.getElementById('appbar-title').textContent = f.eventName || '';
+          editBtn.style.display = '';
+          editBtn.textContent = editMode ? 'Cancel' : 'Edit';
+          editBtn.className = 'edit-btn' + (editMode ? ' is-cancel' : '');
+          backBtn.className = 'back-btn' + (editMode ? ' hidden' : '');
+          footer.className = 'form-footer' + (editMode ? ' visible' : '');
+          footerInner.innerHTML = editMode
+            ? `<button class="form-btn-reset" onclick="resetEditForm()">Reset</button>
+               <button class="form-btn" onclick="saveEdits()">Update Form</button>`
+            : '';
+          editMode ? renderEditMode(f) : renderViewMode(f);
+        }
+      }
+
+      function renderAddMode(f) { renderEditMode(f); }
+    
+      function resetAddForm() {
+        formData = blankForm();
+        render();
+        toast('Form has been reset.');
+      }
+
+      function resetEditForm() {
+        if (editSnapshot) formData = deepClone(editSnapshot);
+        renderEditMode(formData);
+        toast('Changes have been reset.');
+      }
+
+      function submitAddForm() {
+        if (!validateForm()) return;
+        collectFormData();
+        try { sessionStorage.setItem('attendanceFormData', JSON.stringify(formData)); } catch(e) {}
+        toast('Form submitted successfully.');
+      }
+
+      function renderViewMode(f) {
+        document.getElementById('page-body').innerHTML = `
+          <div class="sec-label first">BASIC INFORMATION</div>
+          <div class="form-card">
+            ${vRow('Event Name', f.eventName)}
+            ${vRow('Date', formatDate(f.date))}
+            ${vRow('Location', f.location)}
+            ${vRow('Focus Products', (f.focusProducts || []).join(', '))}
+            ${f.createdBy ? vRow('Created By', f.createdBy) : ''}
+          </div>
+          <div class="sec-label">CROP &amp; DEALER INFORMATION</div>
+          <div class="form-card">
+            ${vRow('Crop Focus', f.cropFocus)}
+            ${vRow('Crop Status', f.cropStatus)}
+            ${vRow('Name of Dealers', (f.dealers || []).join(', '))}
+            ${vRow('Remarks', f.remarks)}
+          </div>
+          <div class="att-bar">
+            <div class="sec-label" style="margin:0">ATTENDEES</div>
+          </div>
+          ${!(f.attendees || []).length
+            ? `<p style="color:#9CA3AF;font-size:15px;padding:4px 8px;">No attendees recorded.</p>`
+            : f.attendees.map((a, i) => viewAttendeeCard(a, i, f)).join('')
+          }
+        `;
+        setTimeout(() => {
+          (f.attendees || []).forEach((a, i) => {
+            const canvas = document.getElementById(`sv-cv-${i}`);
+            if (!canvas) return;
+            const sig = (f.attendeeSignatures || []).find(s => s && s.name === a.name);
+            if (sig && sig.img) {
+              const img = new Image();
+              img.onload = () => canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+              img.src = sig.img;
+            }
+          });
+        }, 60);
+      }
+
+      function formatDate(raw) {
+        if (!raw) return '';
+        const d = new Date(raw + 'T00:00:00');
+        if (isNaN(d)) return raw;
+        return d.toLocaleDateString('en-US', { month: 'long', day: '2-digit', year: 'numeric' });
+      }
+
+      const PLACEHOLDERS = {
+        'Event Name':              'e.g., Field Day \u2013 Corn Farmers',
+        'Date':                    'e.g., 2026-02-14',
+        'Location':                'e.g., Brgy. Mabini, Davao del Norte',
+        'Focus Products':          'e.g., Indofil 800 WP, Proviso 250 EC',
+        'Created By':              'e.g., juan.delacruz@indofil.ph',
+        'Crop Focus':              'e.g., Corn',
+        'Crop Status':             'e.g., Vegetative',
+        'Name of Dealers':         'e.g., AgriMart Davao, GreenLeaf Supply',
+        'Remarks':                 'e.g., Good turnout from farmers',
+        'Full Name':               'e.g., Juan Dela Cruz',
+        'Telephone / CP No.':      'e.g., 09171234567',
+        'Hectares':                'e.g., 3.5',
+        'Address':                 'e.g., Brgy. Mabini, Davao del Norte',
+        'Crop':                    'e.g., Corn',
+        'Insecticide':             'e.g., Primex 25 WP',
+        'Fungicide':               'e.g., Indofil 800 WP',
+        'Herbicide':               'e.g., Akostar 480 SL',
+        'Crop Nutrition / Foliar': 'e.g., Indolizer',
+        'Dealer Name (Source)':    'e.g., AgriMart Davao',
+        'Facebook Link':           'e.g., fb.com/juan.delacruz',
+      };
+
+      function vRow(label, val) {
+        const empty = !val || String(val).trim() === '';
+        return `<div class="vrow">
+          <span class="lbl">${label}</span>
+          <span class="val${empty ? ' empty' : ''}">${empty ? 'No data' : esc(val)}</span>
+        </div>`;
+      }
+
+      function viewAttendeeCard(a, i, f) {
+        const sig = (f.attendeeSignatures || []).find(s => s && s.name === a.name);
+        const hasSig = sig && sig.img;
+        return `
+        <div class="att-card">
+          <div class="att-head" onclick="toggleAtt('sv',${i})">
+            <div class="att-num">${i + 1}</div>
+            <div class="att-label">${esc(a.name || `Attendee ${i + 1}`)}</div>
+            <svg class="chev" id="sv-chev-${i}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="att-body" id="sv-body-${i}">
+            ${avRow('Full Name', a.name)}
+            <div class="two-col">
+              ${avRow('Telephone / CP No.', a.telephone)}
+              ${avRow('Hectares', a.hectares)}
+            </div>
+            ${avRow('Address', a.address)}
+            <div class="two-col">
+              ${avRow('Crop', a.crop)}
+              ${avRow('Insecticide', a.insecticide)}
+            </div>
+            <div class="two-col">
+              ${avRow('Fungicide', a.fungicide)}
+              ${avRow('Herbicide', a.herbicide)}
+            </div>
+            <div class="two-col">
+              ${avRow('Crop Nutrition / Foliar', a.nutrition)}
+              ${avRow('Dealer Name (Source)', a.dealerSource)}
+            </div>
+            ${avRow('Facebook Link', a.facebookLink)}
+            <div class="sig-lbl">Signature</div>
+            <div class="sig-box">
+              <canvas class="sig-cv" id="sv-cv-${i}" width="600" height="80"
+                style="${!hasSig ? 'opacity:.3;' : ''}"></canvas>
+            </div>
+            ${!hasSig ? '<p class="no-sig">No signature on record</p>' : ''}
+          </div>
+        </div>`;
+      }
+
+      function avRow(label, val) {
+        const empty = !val || String(val).trim() === '';
+        return `<div class="av-row">
+          <span class="lbl">${label}</span>
+          <div class="val${empty ? ' empty' : ''}">${empty ? 'No data' : esc(String(val))}</div>
+        </div>`;
+      }
+
+      function renderEditMode(f) {
+        document.getElementById('page-body').innerHTML = `
+          <div class="sec-label first">BASIC INFORMATION</div>
+          <div class="form-card">
+            ${eRow('Event Name', 'e-eventName', f.eventName, 'text', true)}
+            ${eRow('Date','e-date', f.date, 'date', true)}
+            ${eRow('Location', 'e-location', f.location)}
+            ${eRow('Focus Products', 'e-focusProducts',(f.focusProducts||[]).join(', '))}
+          </div>
+          <div class="sec-label">CROP &amp; DEALER INFORMATION</div>
+          <div class="form-card">
+            ${eRow('Crop Focus', 'e-cropFocus', f.cropFocus)}
+            ${eRow('Crop Status', 'e-cropStatus', f.cropStatus)}
+            ${eRow('Name of Dealers', 'e-dealers', (f.dealers||[]).join(', '))}
+            ${eRowTA('Remarks', 'e-remarks', f.remarks)}
+          </div>
+          <div class="att-bar">
+            <div class="sec-label" style="margin:0">ATTENDEES</div>
+            <button class="add-att-btn" onclick="addAttendeeRow()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Attendee
+            </button>
+          </div>
+          <div id="edit-att-list">
+            ${(f.attendees || []).map((a, i) => editAttendeeCard(a, i)).join('')}
+          </div>
+        `;
+        setTimeout(() => {
+          (f.attendees || []).forEach((a, i) => {
+            const canvas = document.getElementById(`ed-cv-${i}`);
+            if (!canvas) return;
+            enableDraw(canvas);
+            const sig = (f.attendeeSignatures || [])[i];
+            if (sig && sig.img) {
+              const img = new Image();
+              img.onload = () => canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+              img.src = sig.img;
+            }
+          });
+        }, 60);
+      }
+
+      function eRow(label, id, val, type = 'text', required = false) {
+        const star = required ? '<span class="req-star">*</span>' : '';
+        const hint = PLACEHOLDERS[label] || '';
+        const clearHandler = required ? `oninput="clearFieldError('${id}')"` : '';
+        return `<div class="erow">
+          <span class="lbl">${label}${star}</span>
+          <input id="${id}" type="${type}" value="${esc(val || '')}" placeholder="${esc(hint)}" ${required ? 'data-required="true"' : ''} ${clearHandler}>
+          ${required ? `<span class="error-msg" id="${id}-err">This field is required.</span>` : ''}
+        </div>`;
+      }
+
+      function eRowTA(label, id, val) {
+        const hint = PLACEHOLDERS[label] || '';
+        return `<div class="erow">
+          <span class="lbl">${label}</span>
+          <textarea id="${id}" rows="3" placeholder="${esc(hint)}">${esc(val || '')}</textarea>
+        </div>`;
+      }
+
+      function editAttendeeCard(a, i) {
+        return `
+        <div class="att-card" id="att-card-${i}">
+          <div class="att-head" onclick="toggleAtt('ed',${i})">
+            <div class="att-num">${i + 1}</div>
+            <div class="att-label" id="ed-lbl-${i}">${esc(a.name || `Attendee ${i + 1}`)}</div>
+            <svg class="chev" id="ed-chev-${i}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            <button class="att-delete-btn" onclick="openDeleteModal(event,${i})" title="Remove attendee">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+              </svg>
+            </button>
+          </div>
+          <div class="att-body" id="ed-body-${i}">
+            ${aeRow('Full Name', `ea-name-${i}`, a.name, i, 'name', true)}
+            <div class="two-col">
+              ${aeRow('Telephone / CP No.', `ea-tel-${i}`, a.telephone, i, 'telephone')}
+              ${aeRow('Hectares', `ea-hec-${i}`, a.hectares, i, 'hectares')}
+            </div>
+            ${aeRow('Address', `ea-addr-${i}`, a.address, i, 'address')}
+            <div class="two-col">
+              ${aeRow('Crop', `ea-crop-${i}`, a.crop, i, 'crop')}
+              ${aeRow('Insecticide', `ea-ins-${i}`, a.insecticide, i, 'insecticide')}
+            </div>
+            <div class="two-col">
+              ${aeRow('Fungicide', `ea-fun-${i}`, a.fungicide, i, 'fungicide')}
+              ${aeRow('Herbicide', `ea-her-${i}`, a.herbicide, i, 'herbicide')}
+            </div>
+            <div class="two-col">
+              ${aeRow('Crop Nutrition / Foliar', `ea-nut-${i}`, a.nutrition, i, 'nutrition')}
+              ${aeRow('Dealer Name (Source)', `ea-dlr-${i}`, a.dealerSource, i, 'dealerSource')}
+            </div>
+            ${aeRow('Facebook Link', `ea-fb-${i}`, a.facebookLink, i, 'facebookLink')}
+            <div class="sig-lbl">Signature<span class="req-star">*</span></div>
+            <div class="sig-box editable" id="sig-box-${i}">
+              <canvas class="sig-cv" id="ed-cv-${i}" width="600" height="80"></canvas>
+            </div>
+            <div class="sig-footer-row">
+              <span class="error-msg" id="sig-err-${i}">This field is required.</span>
+              <button class="clear-sig" onclick="clearSig(${i})">&#x2715; Clear Signature</button>
+            </div>
+          </div>
+        </div>`;
+      }
+
+      function aeRow(label, id, val, attIdx, key, required = false) {
+        const star = required ? '<span class="req-star">*</span>' : '';
+        const hint = PLACEHOLDERS[label] || '';
+        const clearHandler = required ? `oninput="onAttInput(${attIdx},'${key}',this.value); clearFieldError('${id}')"` : `oninput="onAttInput(${attIdx},'${key}',this.value)"`;
+        return `<div class="ae-row">
+          <span class="lbl">${label}${star}</span>
+          <input id="${id}" value="${esc(val || '')}" placeholder="${esc(hint)}"
+            ${required ? `data-required="true"` : ''}
+            ${clearHandler}>
+          ${required ? `<span class="error-msg" id="${id}-err">This field is required.</span>` : ''}
+        </div>`;
+      }
+
+      function onAttInput(i, key, val) {
+        formData.attendees[i] = formData.attendees[i] || {};
+        formData.attendees[i][key] = val;
+        if (key === 'name') {
+          const lbl = document.getElementById(`ed-lbl-${i}`);
+          if (lbl) lbl.textContent = val || `Attendee ${i + 1}`;
+        }
+      }
+
+      function addAttendeeRow() {
+        formData.attendees = formData.attendees || [];
+        const i = formData.attendees.length;
+        formData.attendees.push({ name:'', address:'', telephone:'', hectares:'', crop:'', insecticide:'', fungicide:'', herbicide:'', nutrition:'', dealerSource:'', facebookLink:'' });
+        const list = document.getElementById('edit-att-list');
+        const div = document.createElement('div');
+        div.innerHTML = editAttendeeCard(formData.attendees[i], i);
+        list.appendChild(div.firstElementChild);
+        setTimeout(() => {
+          const canvas = document.getElementById(`ed-cv-${i}`);
+          if (canvas) enableDraw(canvas);
+          toggleAtt('ed', i);
+        }, 50);
+      }
+
+      function openDeleteModal(event, i) {
+        event.stopPropagation();
+        pendingDeleteIndex = i;
+        const nameEl = document.getElementById(`ea-name-${i}`);
+        const name = (nameEl && nameEl.value.trim()) || (formData.attendees[i] && formData.attendees[i].name) || '';
+        document.getElementById('modal-msg').textContent = name
+          ? `Remove "${name}" from the attendee list?`
+          : 'Remove this attendee from the list?';
+        document.getElementById('delete-modal').classList.add('show');
+      }
+
+      function closeDeleteModal() {
+        document.getElementById('delete-modal').classList.remove('show');
+        pendingDeleteIndex = null;
+      }
+
+      function confirmDelete() {
+        const i = pendingDeleteIndex;
+        closeDeleteModal();
+        if (i === null || i === undefined) return;
+        flushDOMToFormData();
+        formData.attendees.splice(i, 1);
+        if (formData.attendeeSignatures && formData.attendeeSignatures.length > i) {
+          formData.attendeeSignatures.splice(i, 1);
+        }
+        renderEditMode(formData);
+      }
+
+      function onOverlayClick(event) {
+        if (event.target === document.getElementById('delete-modal')) closeDeleteModal();
+      }
+
+      function flushDOMToFormData() {
+        const f = formData;
+        const fields = {
+          eventName: 'e-eventName', date: 'e-date', location: 'e-location',
+          cropFocus: 'e-cropFocus', cropStatus: 'e-cropStatus', remarks: 'e-remarks',
+        };
+        for (const [key, id] of Object.entries(fields)) {
+          const el = document.getElementById(id);
+          if (el) f[key] = el.value;
+        }
+        const fpEl = document.getElementById('e-focusProducts');
+        if (fpEl) f.focusProducts = fpEl.value.split(',').map(s => s.trim()).filter(Boolean);
+        const dlEl = document.getElementById('e-dealers');
+        if (dlEl) f.dealers = dlEl.value.split(',').map(s => s.trim()).filter(Boolean);
+
+        const newSigs = [];
+        (f.attendees || []).forEach((a, i) => {
+          const keys = {
+            name:`ea-name-${i}`, telephone:`ea-tel-${i}`, hectares:`ea-hec-${i}`,
+            address:`ea-addr-${i}`, crop:`ea-crop-${i}`, insecticide:`ea-ins-${i}`,
+            fungicide:`ea-fun-${i}`, herbicide:`ea-her-${i}`, nutrition:`ea-nut-${i}`,
+            dealerSource:`ea-dlr-${i}`, facebookLink:`ea-fb-${i}`,
+          };
+          for (const [key, id] of Object.entries(keys)) {
+            const el = document.getElementById(id);
+            if (el) a[key] = el.value;
+          }
+          const canvas = document.getElementById(`ed-cv-${i}`);
+          if (canvas) {
+            const ctx = canvas.getContext('2d');
+            const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            const hasDrawing = pixels.some((v, idx) => idx % 4 === 3 && v > 0);
+            newSigs.push({ name: a.name || '', img: hasDrawing ? canvas.toDataURL() : '' });
+          } else {
+            const prev = (f.attendeeSignatures || [])[i];
+            newSigs.push(prev || { name: a.name || '', img: '' });
+          }
+        });
+        f.attendeeSignatures = newSigs;
+      }
+
+      function validateForm() {
+        const f = formData;
+        let valid = true;
+        document.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
+        document.querySelectorAll('.error-msg.show').forEach(el => el.classList.remove('show'));
+        document.querySelectorAll('.sig-error').forEach(el => el.classList.remove('sig-error'));
+
+        const evEl = document.getElementById('e-eventName');
+        if (!evEl || !evEl.value.trim()) {
+          if (evEl) evEl.classList.add('field-error');
+          const errEl = document.getElementById('e-eventName-err');
+          if (errEl) errEl.classList.add('show');
+          valid = false;
+        }
+        const dtEl = document.getElementById('e-date');
+        if (!dtEl || !dtEl.value.trim()) {
+          if (dtEl) dtEl.classList.add('field-error');
+          const errEl = document.getElementById('e-date-err');
+          if (errEl) errEl.classList.add('show');
+          valid = false;
+        }
+
+        (f.attendees || []).forEach((a, i) => {
+          const nameEl = document.getElementById(`ea-name-${i}`);
+          if (!nameEl || !nameEl.value.trim()) {
+            if (nameEl) nameEl.classList.add('field-error');
+            const errEl = document.getElementById(`ea-name-${i}-err`);
+            if (errEl) errEl.classList.add('show');
+            const body = document.getElementById(`ed-body-${i}`);
+            const chev = document.getElementById(`ed-chev-${i}`);
+            if (body && !body.classList.contains('open')) { body.classList.add('open'); if (chev) chev.classList.add('open'); }
+            valid = false;
+          }
+          const canvas = document.getElementById(`ed-cv-${i}`);
+          if (canvas) {
+            const ctx = canvas.getContext('2d');
+            const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            const hasDrawing = pixels.some((v, idx) => idx % 4 === 3 && v > 0);
+            if (!hasDrawing) {
+              const sigBox = document.getElementById(`sig-box-${i}`);
+              if (sigBox) sigBox.classList.add('sig-error');
+              const sigErr = document.getElementById(`sig-err-${i}`);
+              if (sigErr) sigErr.classList.add('show');
+              const body = document.getElementById(`ed-body-${i}`);
+              const chev = document.getElementById(`ed-chev-${i}`);
+              if (body && !body.classList.contains('open')) { body.classList.add('open'); if (chev) chev.classList.add('open'); }
+              valid = false;
+            }
+          }
+        });
+
+        if (!valid) { toast('Please fill out all required fields.', true); }
+        return valid;
+      }
+
+      function collectFormData() {
+        const f = formData;
+        f.eventName     = val('e-eventName');
+        f.date          = val('e-date');
+        f.location      = val('e-location');
+        f.focusProducts = val('e-focusProducts').split(',').map(s => s.trim()).filter(Boolean);
+        f.cropFocus     = val('e-cropFocus');
+        f.cropStatus    = val('e-cropStatus');
+        f.dealers       = val('e-dealers').split(',').map(s => s.trim()).filter(Boolean);
+        f.remarks       = val('e-remarks');
+
+        (f.attendees || []).forEach((a, i) => {
+          a.name         = val(`ea-name-${i}`);
+          a.telephone    = val(`ea-tel-${i}`);
+          a.hectares     = val(`ea-hec-${i}`);
+          a.address      = val(`ea-addr-${i}`);
+          a.crop         = val(`ea-crop-${i}`);
+          a.insecticide  = val(`ea-ins-${i}`);
+          a.fungicide    = val(`ea-fun-${i}`);
+          a.herbicide    = val(`ea-her-${i}`);
+          a.nutrition    = val(`ea-nut-${i}`);
+          a.dealerSource = val(`ea-dlr-${i}`);
+          a.facebookLink = val(`ea-fb-${i}`);
+        });
+
+        f.attendeeSignatures = (f.attendees || []).map((a, i) => {
+          const canvas = document.getElementById(`ed-cv-${i}`);
+          return { name: a.name, img: canvas ? canvas.toDataURL() : '' };
+        });
+      }
+
+      function saveEdits() {
+        if (!validateForm()) return;
+        collectFormData();
+        try { sessionStorage.setItem('attendanceFormData', JSON.stringify(formData)); } catch(e) {}
+        editSnapshot = null;
+        editMode = false;
+        toast('Form updated successfully.');
+        render();
+      }
+
+      function toggleAtt(prefix, i) {
+        const body = document.getElementById(`${prefix}-body-${i}`);
+        const chev = document.getElementById(`${prefix}-chev-${i}`);
+        const open = body.classList.toggle('open');
+        chev.classList.toggle('open', open);
+      }
+
+      function val(id) {
+        const el = document.getElementById(id);
+        return el ? el.value.trim() : '';
+      }
+
+      function enableDraw(canvas) {
+        let drawing = false, lx = 0, ly = 0;
+        const pos = e => {
+          const r = canvas.getBoundingClientRect();
+          const sx = canvas.width / r.width;
+          const sy = canvas.height / r.height;
+          return e.touches
+            ? [(e.touches[0].clientX - r.left) * sx, (e.touches[0].clientY - r.top) * sy]
+            : [(e.clientX - r.left) * sx, (e.clientY - r.top) * sy];
+        };
+        const stroke = (x, y) => {
+          const ctx = canvas.getContext('2d');
+          ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(x, y);
+          ctx.strokeStyle = '#1A1A2E'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+          ctx.stroke();
+          [lx, ly] = [x, y];
+        };
+        const clearSigError = () => {
+          const idx = canvas.id.replace('ed-cv-', '');
+          const sigBox = document.getElementById(`sig-box-${idx}`);
+          if (sigBox) sigBox.classList.remove('sig-error');
+          const sigErr = document.getElementById(`sig-err-${idx}`);
+          if (sigErr) sigErr.classList.remove('show');
+        };
+        canvas.onmousedown = e => { drawing = true; [lx, ly] = pos(e); clearSigError(); };
+        canvas.onmousemove = e => { if (drawing) { const [x,y] = pos(e); stroke(x,y); } };
+        canvas.onmouseup = () => drawing = false;
+        canvas.onmouseleave = () => drawing = false;
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); drawing=true; [lx,ly]=pos(e); clearSigError(); }, { passive:false });
+        canvas.addEventListener('touchmove', e => { e.preventDefault(); if(drawing){const[x,y]=pos(e);stroke(x,y);} }, { passive:false });
+        canvas.addEventListener('touchend', () => drawing = false);
+      }
+
+      function clearSig(i) {
+        const c = document.getElementById(`ed-cv-${i}`);
+        if (c) {
+          c.getContext('2d').clearRect(0, 0, c.width, c.height);
+          const sigBox = document.getElementById(`sig-box-${i}`);
+          if (sigBox) sigBox.classList.remove('sig-error');
+          const sigErr = document.getElementById(`sig-err-${i}`);
+          if (sigErr) sigErr.classList.remove('show');
+        }
+      }
+
+      function clearFieldError(id) {
+        const el = document.getElementById(id);
+        if (el && el.value.trim()) {
+          el.classList.remove('field-error');
+          const errEl = document.getElementById(id + '-err');
+          if (errEl) errEl.classList.remove('show');
+        }
+      }
+
+      function toast(msg, err = false) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = 'toast' + (err ? ' err' : '');
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 3000);
+      }
+
+      function esc(s) {
+        return String(s)
+          .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+          .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+
+      // INIT
+      formData = loadFormData();
+      render();
+    </script>
+  </body>
+</html>

@@ -1,10 +1,12 @@
-import 'package:flutter/material.dart';
-import 'package:table_calendar/table_calendar.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../deduction_input_page.dart';
-import '../doctor_menu/call_detail_page.dart';
+import 'dart:async';
 import 'dart:math';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:table_calendar/table_calendar.dart';
+
+import '../doctor_menu/call_detail_page.dart';
 import '../itinerary_menu/call_off_field.dart';
 
 class ItineraryPage extends StatefulWidget {
@@ -20,14 +22,13 @@ class _ItineraryPageState extends State<ItineraryPage> {
 
   Map<String, int> _scheduledCallsCount = {};
   Map<String, Map<String, int>> _barColorCounts = {};
-
-  // map of dateKey -> offField reason (first non‑empty reason found for that date)
   Map<String, String> _offFieldReasons = {};
 
   String emailKey = '';
 
-  // 0 = Day, 1 = Week, 2 = Month (default)
   int _selectedViewIndex = 2;
+
+  bool _isOffline = false;
 
   @override
   void initState() {
@@ -40,22 +41,18 @@ class _ItineraryPageState extends State<ItineraryPage> {
     final userEmail = prefs.getString('userEmail') ?? '';
     setState(() {
       emailKey = userEmail.replaceAll(RegExp(r'[.#$\[\\]/]'), '_');
-      _fetchScheduledCallsCount(_focusedDay);
     });
+    if (emailKey.isNotEmpty) {
+      await _fetchScheduledCallsCount(_focusedDay);
+      if (mounted) setState(() {});
+    }
   }
 
   String _dateKey(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  void _goToDeductionInput(BuildContext context, DateTime selectedDay) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => DeductionInputPage(selectedDate: selectedDay),
-      ),
-    );
-    setState(() {});
-  }
+  String _monthId(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';
 
   Future<void> _fetchScheduledCallsCount(DateTime focusedDay) async {
     if (emailKey.isEmpty) return;
@@ -67,69 +64,97 @@ class _ItineraryPageState extends State<ItineraryPage> {
     Map<String, Map<String, int>> colorCounts = {};
     Map<String, String> offFieldReasons = {};
 
-    final doctorsSnap = await FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
-        .get();
+    try {
+      final doctorsSnap = await FirebaseFirestore.instance
+          .collection('flowDB')
+          .doc('users')
+          .collection(emailKey)
+          .doc('doctors')
+          .collection('doctors')
+          .get();
 
-    for (var doc in doctorsSnap.docs) {
-      var scheduledVisitsSnap =
-          await doc.reference.collection('scheduledVisits').get();
+      for (var doc in doctorsSnap.docs) {
+        final monthsRoot = doc.reference
+            .collection('scheduledVisits')
+            .doc('months')
+            .collection('months');
 
-      for (var v in scheduledVisitsSnap.docs) {
-        final visitData = v.data();
-        final visitDateString = visitData['scheduledDate'];
+        final monthsSnap = await monthsRoot.get();
 
-        if (visitDateString != null && visitDateString.length == 10) {
-          final dt = DateTime.tryParse(visitDateString);
-          if (dt != null && !dt.isBefore(first) && !dt.isAfter(last)) {
-            counts[visitDateString] = (counts[visitDateString] ?? 0) + 1;
+        for (var monthDoc in monthsSnap.docs) {
+          final monthIdStr = monthDoc.id;
+          if (monthIdStr.length != 7 || !monthIdStr.contains('-')) continue;
+          final parts = monthIdStr.split('-');
+          final y = int.tryParse(parts[0]);
+          final m = int.tryParse(parts[1]);
+          if (y == null || m == null) continue;
 
-            String colorKey = "white";
-            final bool isSubmitted = visitData['submitted'] == true;
-            final bool isSurprise = visitData['surprise'] == true;
-            DateTime nowCut = DateTime.now();
-            DateTime? visitDate;
+          final monthStart = DateTime.utc(y, m, 1);
+          final monthEnd = DateTime.utc(y, m + 1, 0);
 
-            try {
-              visitDate = DateTime.parse(visitDateString);
-            } catch (_) {
-              visitDate = null;
-            }
+          if (monthEnd.isBefore(first) || monthStart.isAfter(last)) continue;
 
-            if (isSurprise) {
-              colorKey = "yellow";
-            } else if (isSubmitted) {
-              colorKey = "green";
-            } else if (visitDate != null &&
-                DateTime(nowCut.year, nowCut.month, nowCut.day)
-                    .isAfter(visitDate)) {
-              colorKey = "red";
-            }
+          final datesSnap = await monthDoc.reference.collection('dates').get();
 
-            colorCounts[visitDateString] ??= {
-              "red": 0,
-              "yellow": 0,
-              "green": 0,
-              "white": 0
-            };
-            colorCounts[visitDateString]![colorKey] =
-                colorCounts[visitDateString]![colorKey]! + 1;
+          for (var v in datesSnap.docs) {
+            final visitData = v.data();
+            final visitDateString = visitData['scheduledDate'];
 
-            final offFieldValue = visitData['offField'];
-            if (offFieldValue != null &&
-                offFieldValue.toString().trim().isNotEmpty) {
-              offFieldReasons.putIfAbsent(
-                  visitDateString, () => offFieldValue.toString().trim());
+            if (visitDateString != null &&
+                visitDateString is String &&
+                visitDateString.length == 10) {
+              final dt = DateTime.tryParse(visitDateString);
+              if (dt != null && !dt.isBefore(first) && !dt.isAfter(last)) {
+                counts[visitDateString] =
+                    (counts[visitDateString] ?? 0) + 1;
+
+                String colorKey = "white";
+                final bool isSubmitted = visitData['submitted'] == true;
+                final bool isSurprise = visitData['surprise'] == true;
+                final nowCut = DateTime.now();
+                DateTime? visitDate;
+
+                try {
+                  visitDate = DateTime.parse(visitDateString);
+                } catch (_) {
+                  visitDate = null;
+                }
+
+                if (isSurprise) {
+                  colorKey = "yellow";
+                } else if (isSubmitted) {
+                  colorKey = "green";
+                } else if (visitDate != null &&
+                    DateTime(nowCut.year, nowCut.month, nowCut.day)
+                        .isAfter(visitDate)) {
+                  colorKey = "red";
+                }
+
+                colorCounts[visitDateString] ??= {
+                  "red": 0,
+                  "yellow": 0,
+                  "green": 0,
+                  "white": 0
+                };
+                colorCounts[visitDateString]![colorKey] =
+                    colorCounts[visitDateString]![colorKey]! + 1;
+
+                final offFieldValue = visitData['offField'];
+                if (offFieldValue != null &&
+                    offFieldValue.toString().trim().isNotEmpty) {
+                  offFieldReasons.putIfAbsent(
+                      visitDateString, () => offFieldValue.toString().trim());
+                }
+              }
             }
           }
         }
       }
+    } catch (e) {
+      debugPrint('Error in _fetchScheduledCallsCount: $e');
     }
 
+    if (!mounted) return;
     setState(() {
       _scheduledCallsCount = counts;
       _barColorCounts = colorCounts;
@@ -137,46 +162,25 @@ class _ItineraryPageState extends State<ItineraryPage> {
     });
   }
 
-  Future<List<Map<String, dynamic>>> _getAllTargetDeductionsForDay(
-      DateTime selectedDay) async {
+  /// Get all scheduled visits across all doctors for the selected day.
+  /// Mirrors the Firestore path from VisitsTab in doctor_detail_page.dart:
+  /// scheduledVisits/months/months/{yyyy-MM}/dates, and filters scheduledDate == yyyy-MM-dd.
+  Future<List<Map<String, dynamic>>> getAllScheduledVisitsForSelectedDay(
+    List<QueryDocumentSnapshot> doctorDocs,
+    DateTime selectedDay,
+  ) async {
     if (emailKey.isEmpty) return [];
-    final String targetDateKey = _dateKey(selectedDay);
 
-    final doctorsSnap = await FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
-        .get();
-
-    List<Map<String, dynamic>> allDeducts = [];
-    for (var doc in doctorsSnap.docs) {
-      final doctorId = doc.data()['doc_id'] ?? doc.id;
-      final scheduledDocRef =
-          doc.reference.collection('scheduledVisits').doc(targetDateKey);
-
-      final targetDeductionsSnap =
-          await scheduledDocRef.collection('targetDeductions').get();
-
-      for (var d in targetDeductionsSnap.docs) {
-        allDeducts.add({
-          'doctorName':
-              "${doc.data()['lastName'] ?? ''}, ${doc.data()['firstName'] ?? ''}",
-          'doctorId': doctorId,
-          'deductionId': d.id,
-          'deduction': d.data(),
-        });
-      }
-    }
-    return allDeducts;
-  }
-
-  Future<List<Map<String, dynamic>>> _getAllScheduledVisitsForSelectedDay(
-      List<QueryDocumentSnapshot> doctorDocs, DateTime selectedDay) async {
-    if (emailKey.isEmpty) return [];
     final List<Map<String, dynamic>> allVisits = [];
-    final targetDateKey = _dateKey(selectedDay);
+
+    final targetDateKey =
+        '${selectedDay.year.toString().padLeft(4, '0')}-'
+        '${selectedDay.month.toString().padLeft(2, '0')}-'
+        '${selectedDay.day.toString().padLeft(2, '0')}';
+
+    final monthId =
+        '${selectedDay.year.toString().padLeft(4, '0')}-'
+        '${selectedDay.month.toString().padLeft(2, '0')}';
 
     for (var doc in doctorDocs) {
       final docData = doc.data() as Map<String, dynamic>;
@@ -184,12 +188,21 @@ class _ItineraryPageState extends State<ItineraryPage> {
       final doctorName =
           "${docData['lastName'] ?? ''}, ${docData['firstName'] ?? ''}";
 
-      var scheduledVisitsSnap =
-          await doc.reference.collection('scheduledVisits').get();
+      final monthDocRef = doc.reference
+          .collection('scheduledVisits')
+          .doc('months')
+          .collection('months')
+          .doc(monthId);
 
-      for (var v in scheduledVisitsSnap.docs) {
-        final visitData = v.data();
+      final datesSnap = await monthDocRef
+          .collection('dates')
+          .orderBy('scheduledDate')
+          .get();
+
+      for (var v in datesSnap.docs) {
+        final visitData = v.data() as Map<String, dynamic>;
         final visitDateString = visitData['scheduledDate'] ?? '';
+
         if (visitDateString == targetDateKey) {
           allVisits.add({
             'doctorName': doctorName,
@@ -205,8 +218,9 @@ class _ItineraryPageState extends State<ItineraryPage> {
       }
     }
 
-    allVisits.sort(
-        (a, b) => (a['scheduledTime'] ?? '').compareTo(b['scheduledTime'] ?? ''));
+    allVisits.sort((a, b) =>
+        (a['scheduledTime'] ?? '').compareTo(b['scheduledTime'] ?? ''));
+
     return allVisits;
   }
 
@@ -234,7 +248,8 @@ class _ItineraryPageState extends State<ItineraryPage> {
               borderRadius: BorderRadius.circular(16),
             ),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               alignment: Alignment.center,
               child: Text(
                 label,
@@ -251,158 +266,14 @@ class _ItineraryPageState extends State<ItineraryPage> {
     );
   }
 
-  // Compute the Monday of the week that contains [date]
   DateTime _startOfWeek(DateTime date) {
-    // DateTime.weekday: Monday = 1 ... Sunday = 7
     final int weekday = date.weekday;
     return DateTime(date.year, date.month, date.day)
         .subtract(Duration(days: weekday - 1));
   }
 
-  // Build the 7‑day row for Day view
-  Widget _buildDayWeekStrip() {
-    final DateTime baseDay = _selectedDay ?? _focusedDay;
-    final DateTime start = _startOfWeek(baseDay);
-    final DateTime today = DateTime.now();
-
-    final List<DateTime> weekDays =
-        List.generate(7, (i) => start.add(Duration(days: i)));
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      child: Column(
-        children: [
-          // Top row: left arrow, center = 7 day cells, right arrow
-          Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.chevron_left),
-                onPressed: () {
-                  final DateTime newBase = baseDay.subtract(const Duration(days: 7));
-                  setState(() {
-                    _selectedDay = newBase;
-                    _focusedDay = newBase;
-                    _fetchScheduledCallsCount(_focusedDay);
-                  });
-                },
-              ),
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: weekDays.map((d) {
-                    final bool isSelected =
-                        _selectedDay != null && _isSameDate(d, _selectedDay!);
-                    final bool isToday = _isSameDate(d, today);
-
-                    Color bgColor;
-                    Color textColor;
-
-                    if (isSelected && isToday) {
-                      bgColor = const Color(0xFF8a00ff);
-                      textColor = Colors.white;
-                    } else if (isSelected) {
-                      bgColor = const Color(0xFF4e2f80);
-                      textColor = Colors.white;
-                    } else if (isToday) {
-                      bgColor = Colors.green.shade500;
-                      textColor = Colors.white;
-                    } else {
-                      bgColor = Colors.grey.shade200;
-                      textColor = Colors.black87;
-                    }
-
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _selectedDay = d;
-                            _focusedDay = d;
-                          });
-                        },
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                          decoration: BoxDecoration(
-                            color: bgColor,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                _weekdayLetter(d.weekday),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: textColor,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${d.day}',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: textColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.chevron_right),
-                onPressed: () {
-                  final DateTime newBase = baseDay.add(const Duration(days: 7));
-                  setState(() {
-                    _selectedDay = newBase;
-                    _focusedDay = newBase;
-                    _fetchScheduledCallsCount(_focusedDay);
-                  });
-                },
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   bool _isSameDate(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
-  }
-
-  String _formatWeekLabel(DateTime start, DateTime end) {
-    // Simple numeric label, you can customize with intl if you want
-    String _monthName(int m) {
-      const names = [
-        '',
-        'Jan',
-        'Feb',
-        'Mar',
-        'Apr',
-        'May',
-        'Jun',
-        'Jul',
-        'Aug',
-        'Sep',
-        'Oct',
-        'Nov',
-        'Dec'
-      ];
-      return names[m];
-    }
-
-    final String startLabel =
-        "${_monthName(start.month)} ${start.day.toString().padLeft(2, '0')}";
-    final String endLabel =
-        "${_monthName(end.month)} ${end.day.toString().padLeft(2, '0')}";
-    return "$startLabel - $endLabel, ${start.year}";
   }
 
   String _weekdayLetter(int weekday) {
@@ -420,20 +291,41 @@ class _ItineraryPageState extends State<ItineraryPage> {
       case DateTime.friday:
         return "F";
       case DateTime.saturday:
-        return "Sa";      
+        return "Sa";
       default:
         return "";
     }
   }
 
-  // Optional day header (not used for day cells anymore, kept if needed)
+  String _weekdayName(int weekday) {
+    switch (weekday) {
+      case DateTime.sunday:
+        return "Sunday";
+      case DateTime.monday:
+        return "Monday";
+      case DateTime.tuesday:
+        return "Tuesday";
+      case DateTime.wednesday:
+        return "Wednesday";
+      case DateTime.thursday:
+        return "Thursday";
+      case DateTime.friday:
+        return "Friday";
+      case DateTime.saturday:
+        return "Saturday";
+      default:
+        return "";
+    }
+  }
+
   Widget _buildDayHeader() {
     final DateTime day = _selectedDay ?? _focusedDay;
     final String formatted =
         "${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}";
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: Row(
         children: [
           IconButton(
@@ -460,7 +352,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "${_weekdayName(day.weekday)}",
+                  _weekdayName(day.weekday),
                   style: TextStyle(
                     fontSize: 14,
                     color: Colors.grey.shade700,
@@ -485,34 +377,11 @@ class _ItineraryPageState extends State<ItineraryPage> {
     );
   }
 
-  String _weekdayName(int weekday) {
-    switch (weekday) {
-      case DateTime.sunday:
-        return "Sunday";
-      case DateTime.monday:
-        return "Monday";
-      case DateTime.tuesday:
-        return "Tuesday";
-      case DateTime.wednesday:
-        return "Wednesday";
-      case DateTime.thursday:
-        return "Thursday";
-      case DateTime.friday:
-        return "Friday";
-      case DateTime.saturday:
-        return "Saturday";
-      default:
-        return "";
-    }
-  }
-
-  /// TIME SLOT AREA FOR DAY VIEW (6 AM - 10 PM)
   Widget _buildDayTimeSlots() {
-    // 6 AM to 10 PM = 16 hours (6,7,...,22)
     final List<int> hours = List.generate(16, (index) => 6 + index);
 
     return SizedBox(
-      height: 600, // you can tweak this for your screen
+      height: 600,
       child: ListView.builder(
         physics: const ClampingScrollPhysics(),
         itemCount: hours.length,
@@ -551,7 +420,6 @@ class _ItineraryPageState extends State<ItineraryPage> {
                       const SizedBox(height: 4),
                       Expanded(
                         child: Container(
-                          // This is where you could later overlay events for that hour.
                           color: Colors.transparent,
                         ),
                       ),
@@ -564,6 +432,17 @@ class _ItineraryPageState extends State<ItineraryPage> {
         },
       ),
     );
+  }
+
+  String _doctorInitials(String fullName) {
+    if (fullName.trim().isEmpty) return "DR";
+    final parts = fullName.trim().split(RegExp(r'\s+'));
+    if (parts.length == 1) {
+      return parts[0].substring(0, 1).toUpperCase();
+    }
+    return (parts[0].substring(0, 1) +
+            parts[1].substring(0, 1))
+        .toUpperCase();
   }
 
   @override
@@ -639,172 +518,205 @@ class _ItineraryPageState extends State<ItineraryPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // VIEW SELECTOR ROW (Day / Week / Month)
                     Padding(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      child: Row(
-                        children: [
-                          _buildViewSelectorChip(label: 'Day', index: 0),
-                          _buildViewSelectorChip(label: 'Week', index: 1),
-                          _buildViewSelectorChip(label: 'Month', index: 2),
-                        ],
-                      ),
-                    ),
-
-                    // CALENDAR / DAY HEADER AREA
-                    if (_selectedViewIndex == 0) ...[
-                      // DAY VIEW: 7‑day week strip with arrows
-                      _buildDayWeekStrip(),
-                      // TIME SLOTS UNDER THE DAY STRIP
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 4),
-                        child: _buildDayTimeSlots(),
-                      ),
-                    ] else
-                      // WEEK / MONTH: keep TableCalendar (month view for now)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8.0, vertical: 12),
-                        child: TableCalendar(
-                          headerStyle: const HeaderStyle(
-                            formatButtonVisible: false,
-                            titleCentered: true,
-                            titleTextStyle: TextStyle(
-                                fontSize: 20, fontWeight: FontWeight.bold),
-                          ),
-                          rowHeight: 105,
-                          daysOfWeekHeight: 40,
-                          firstDay: DateTime.utc(2010, 1, 1),
-                          lastDay: DateTime.utc(2050, 12, 31),
-                          focusedDay: _focusedDay,
-                          selectedDayPredicate: (day) =>
-                              isSameDay(day, _selectedDay) ||
-                              (isSameDay(day, DateTime.now()) &&
-                                  _selectedDay == null),
-                          onDaySelected: (selectedDay, focusedDay) {
-                            setState(() {
-                              _selectedDay = selectedDay;
-                              _focusedDay = focusedDay;
-                            });
-                          },
-                          onPageChanged: (focusedDay) {
-                            setState(() {
-                              _focusedDay = focusedDay;
-                            });
-                            _fetchScheduledCallsCount(focusedDay);
-                          },
-                          calendarBuilders: CalendarBuilders(
-                            defaultBuilder: (context, date, focusedDay) {
-                              final key = _dateKey(date);
-                              int count = _scheduledCallsCount[key] ?? 0;
-                              final hasOffField =
-                                  _offFieldReasons.containsKey(key);
-                              final bool isToday =
-                                  isSameDay(date, DateTime.now());
-                              final bool isSelected = _selectedDay != null &&
-                                  isSameDay(date, _selectedDay!);
-                              if (isToday && isSelected) {
-                                // today + selected
-                                return _buildTodaySelectedCell(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8.0, vertical: 12),
+                      child: TableCalendar(
+                        headerStyle: const HeaderStyle(
+                          formatButtonVisible: false,
+                          titleCentered: true,
+                          titleTextStyle: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold),
+                        ),
+                        rowHeight: 105,
+                        daysOfWeekHeight: 40,
+                        firstDay: DateTime.utc(2010, 1, 1),
+                        lastDay: DateTime.utc(2050, 12, 31),
+                        focusedDay: _focusedDay,
+                        selectedDayPredicate: (day) =>
+                            isSameDay(day, _selectedDay) ||
+                            (isSameDay(day, DateTime.now()) &&
+                                _selectedDay == null),
+                        onDaySelected: (selectedDay, focusedDay) {
+                          setState(() {
+                            _selectedDay = selectedDay;
+                            _focusedDay = focusedDay;
+                          });
+                        },
+                        onPageChanged: (focusedDay) {
+                          setState(() {
+                            _focusedDay = focusedDay;
+                          });
+                          _fetchScheduledCallsCount(focusedDay);
+                        },
+                        calendarBuilders: CalendarBuilders(
+                          defaultBuilder: (context, date, focusedDay) {
+                            final key = _dateKey(date);
+                            int count =
+                                _scheduledCallsCount[key] ?? 0;
+                            final hasOffField =
+                                _offFieldReasons.containsKey(key);
+                            final bool isToday =
+                                isSameDay(date, DateTime.now());
+                            final bool isSelected = _selectedDay != null &&
+                                isSameDay(date, _selectedDay!);
+                            if (isToday && isSelected) {
+                              return GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _selectedDay = date;
+                                    _focusedDay = date;
+                                  });
+                                },
+                                child: _buildTodaySelectedCell(
                                   context,
                                   date,
                                   count,
                                   hasOffField: hasOffField,
-                                );
-                              } else if (isToday) {
-                                // today only
-                                return _buildTodayCell(
+                                ),
+                              );
+                            } else if (isToday) {
+                              return GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _selectedDay = date;
+                                    _focusedDay = date;
+                                  });
+                                },
+                                child: _buildTodayCell(
                                   context,
                                   date,
                                   count,
                                   hasOffField: hasOffField,
-                                );
-                              } else if (isSelected) {
-                                // selected but not today
-                                return _buildSelectedDayCell(
+                                ),
+                              );
+                            } else if (isSelected) {
+                              return GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _selectedDay = date;
+                                    _focusedDay = date;
+                                  });
+                                },
+                                child: _buildSelectedDayCell(
                                   context,
                                   date,
                                   count,
                                   hasOffField: hasOffField,
-                                );
-                              }
-                              return _buildDayCell(
+                                ),
+                              );
+                            }
+                            return GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedDay = date;
+                                  _focusedDay = date;
+                                });
+                              },
+                              child: _buildDayCell(
                                 context,
                                 date,
                                 count,
                                 maxCalls,
                                 hasOffField: hasOffField,
-                              );
-                            },
-                            todayBuilder: (context, date, focusedDay) {
-                              final key = _dateKey(date);
-                              int count = _scheduledCallsCount[key] ?? 0;
-                              final hasOffField =
-                                  _offFieldReasons.containsKey(key);
-                              final bool isSelected = _selectedDay != null &&
-                                  isSameDay(date, _selectedDay!);
-                              if (isSelected) {
-                                return _buildTodaySelectedCell(
+                              ),
+                            );
+                          },
+                          todayBuilder: (context, date, focusedDay) {
+                            final key = _dateKey(date);
+                            int count =
+                                _scheduledCallsCount[key] ?? 0;
+                            final hasOffField =
+                                _offFieldReasons.containsKey(key);
+                            final bool isSelected = _selectedDay != null &&
+                                isSameDay(date, _selectedDay!);
+                            if (isSelected) {
+                              return GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _selectedDay = date;
+                                    _focusedDay = date;
+                                  });
+                                },
+                                child: _buildTodaySelectedCell(
                                   context,
                                   date,
                                   count,
                                   hasOffField: hasOffField,
-                                );
-                              }
-                              return _buildTodayCell(
+                                ),
+                              );
+                            }
+                            return GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedDay = date;
+                                  _focusedDay = date;
+                                });
+                              },
+                              child: _buildTodayCell(
                                 context,
                                 date,
                                 count,
                                 hasOffField: hasOffField,
-                              );
-                            },
-                            selectedBuilder: (context, date, focusedDay) {
-                              final key = _dateKey(date);
-                              int count = _scheduledCallsCount[key] ?? 0;
-                              final hasOffField =
-                                  _offFieldReasons.containsKey(key);
-                              final bool isToday =
-                                  isSameDay(date, DateTime.now());
-                              if (isToday) {
-                                return _buildTodaySelectedCell(
+                              ),
+                            );
+                          },
+                          selectedBuilder:
+                              (context, date, focusedDay) {
+                            final key = _dateKey(date);
+                            int count =
+                                _scheduledCallsCount[key] ?? 0;
+                            final hasOffField =
+                                _offFieldReasons.containsKey(key);
+                            final bool isToday =
+                                isSameDay(date, DateTime.now());
+                            if (isToday) {
+                              return GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _selectedDay = date;
+                                    _focusedDay = date;
+                                  });
+                                },
+                                child: _buildTodaySelectedCell(
                                   context,
                                   date,
                                   count,
                                   hasOffField: hasOffField,
-                                );
-                              }
-                              return _buildSelectedDayCell(
+                                ),
+                              );
+                            }
+                            return GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedDay = date;
+                                  _focusedDay = date;
+                                });
+                              },
+                              child: _buildSelectedDayCell(
                                 context,
                                 date,
                                 count,
                                 hasOffField: hasOffField,
-                              );
-                            },
-                          ),
-                          calendarStyle: const CalendarStyle(
-                            todayDecoration: BoxDecoration(),
-                            selectedDecoration: BoxDecoration(),
-                            defaultDecoration: BoxDecoration(),
-                            weekendDecoration: BoxDecoration(),
-                            outsideDecoration: BoxDecoration(),
-                            cellMargin: EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 8,
-                            ),
+                              ),
+                            );
+                          },
+                        ),
+                        calendarStyle: const CalendarStyle(
+                          todayDecoration: BoxDecoration(),
+                          selectedDecoration: BoxDecoration(),
+                          defaultDecoration: BoxDecoration(),
+                          weekendDecoration: BoxDecoration(),
+                          outsideDecoration: BoxDecoration(),
+                          cellMargin: EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 8,
                           ),
                         ),
                       ),
-
-                    if (_selectedDay != null)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 12, horizontal: 12),
-                        child: Row(
-                          children: const [],
-                        ),
-                      ),
+                    ),
+                    if (_selectedDay != null) _buildDayHeader(),
                     if (selectedOffFieldReason != null &&
                         selectedOffFieldReason.isNotEmpty)
                       Padding(
@@ -815,7 +727,8 @@ class _ItineraryPageState extends State<ItineraryPage> {
                           child: Padding(
                             padding: const EdgeInsets.all(12.0),
                             child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
                               children: [
                                 Icon(Icons.info_outline,
                                     color: Colors.red.shade700),
@@ -828,8 +741,10 @@ class _ItineraryPageState extends State<ItineraryPage> {
                                       Text(
                                         "Off Field",
                                         style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.red.shade800,
+                                          fontWeight:
+                                              FontWeight.bold,
+                                          color: Colors
+                                              .red.shade800,
                                           fontSize: 15,
                                         ),
                                       ),
@@ -837,7 +752,8 @@ class _ItineraryPageState extends State<ItineraryPage> {
                                       Text(
                                         selectedOffFieldReason,
                                         style: TextStyle(
-                                          color: Colors.red.shade900,
+                                          color: Colors
+                                              .red.shade900,
                                           fontSize: 14,
                                         ),
                                       ),
@@ -852,11 +768,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
                     Padding(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 6, vertical: 4),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          return _scheduledCallsColumn(context);
-                        },
-                      ),
+                      child: _scheduledCallsColumn(context),
                     ),
                   ],
                 ),
@@ -870,7 +782,8 @@ class _ItineraryPageState extends State<ItineraryPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Padding(
-          padding: EdgeInsets.only(left: 6, bottom: 8, top: 8),
+          padding:
+              EdgeInsets.only(left: 6, bottom: 8, top: 8),
           child: Center(
             child: Text(
               "Upcoming Visits",
@@ -882,162 +795,393 @@ class _ItineraryPageState extends State<ItineraryPage> {
             ),
           ),
         ),
-        (emailKey.isEmpty)
-            ? SizedBox(
-                height: 140,
-                child: const Center(child: CircularProgressIndicator()),
-              )
-            : FutureBuilder<QuerySnapshot>(
-                future: FirebaseFirestore.instance
-                    .collection('flowDB')
-                    .doc('users')
-                    .collection(emailKey)
-                    .doc('doctors')
-                    .collection('doctors')
-                    .get(),
-                builder: (context, doctorSnapshot) {
-                  if (!doctorSnapshot.hasData) {
+        if (emailKey.isEmpty)
+          SizedBox(
+            height: 160,
+            child: const Center(child: CircularProgressIndicator()),
+          )
+        else
+          FutureBuilder<QuerySnapshot>(
+            future: FirebaseFirestore.instance
+                .collection('flowDB')
+                .doc('users')
+                .collection(emailKey)
+                .doc('doctors')
+                .collection('doctors')
+                .get()
+                .timeout(
+                  const Duration(seconds: 10),
+                  onTimeout: () {
+                    throw TimeoutException(
+                        'Failed to load doctors data');
+                  },
+                ),
+            builder: (context, doctorSnapshot) {
+              if (doctorSnapshot.hasError) {
+                debugPrint(
+                    'Error loading doctors: ${doctorSnapshot.error}');
+                return SizedBox(
+                  height: 160,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline,
+                          color: Colors.red, size: 40),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Error loading doctors\n${doctorSnapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            color: Colors.red, fontSize: 12),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {});
+                        },
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              if (doctorSnapshot.connectionState ==
+                  ConnectionState.waiting) {
+                return SizedBox(
+                  height: 160,
+                  child: const Center(
+                      child: CircularProgressIndicator()),
+                );
+              }
+
+              if (!doctorSnapshot.hasData ||
+                  doctorSnapshot.data!.docs.isEmpty) {
+                return SizedBox(
+                  height: 160,
+                  child: Center(
+                    child: Text(
+                      _isOffline
+                          ? 'Offline: showing last available data from cache.'
+                          : 'No doctors found.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.grey[700],
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              final doctorDocs = doctorSnapshot.data!.docs;
+
+              final selectedDayForVisits =
+                  _selectedDay ?? DateTime.now();
+
+              return FutureBuilder<List<Map<String, dynamic>>>(
+                future: getAllScheduledVisitsForSelectedDay(
+                  doctorDocs,
+                  selectedDayForVisits,
+                ).timeout(
+                  const Duration(seconds: 10),
+                  onTimeout: () {
+                    debugPrint(
+                        'Timeout loading scheduled visits for selected day');
+                    return <Map<String, dynamic>>[];
+                  },
+                ),
+                builder: (context, visitsSnapshot) {
+                  if (visitsSnapshot.hasError) {
+                    debugPrint(
+                        'Error loading visits: ${visitsSnapshot.error}');
                     return SizedBox(
-                      height: 140,
-                      child: const Center(child: CircularProgressIndicator()),
+                      height: 160,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error_outline,
+                              color: Colors.red, size: 40),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Error loading visits\n${visitsSnapshot.error}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: Colors.red, fontSize: 12),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {});
+                            },
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
                     );
                   }
-                  final doctorDocs = doctorSnapshot.data!.docs;
-                  if (doctorDocs.isEmpty) {
+
+                  if (visitsSnapshot.connectionState ==
+                          ConnectionState.waiting &&
+                      !visitsSnapshot.hasData) {
                     return SizedBox(
-                      height: 140,
-                      child: const Center(child: Text("No farmers found")),
+                      height: 160,
+                      child: const Center(
+                          child: CircularProgressIndicator()),
                     );
                   }
-                  // Use _selectedDay (or today as fallback) for both Month and Day view.
-                  final dayForList = _selectedDay ?? DateTime.now();
-                  return FutureBuilder<List<Map<String, dynamic>>>(
-                    future: _getAllScheduledVisitsForSelectedDay(
-                        doctorDocs, dayForList),
-                    builder: (context, visitsSnapshot) {
-                      if (!visitsSnapshot.hasData) {
+
+                  if (!visitsSnapshot.hasData ||
+                      visitsSnapshot.data!.isEmpty) {
+                    return SizedBox(
+                      height: 160,
+                      child: Center(
+                        child: Text(
+                          _isOffline
+                              ? 'Offline: showing cached schedule (none cached for this day).'
+                              : 'No scheduled visits for this date.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    );
+                  }
+
+                  final visitsForDay = visitsSnapshot.data!;
+
+                  return SizedBox(
+                    height: 160,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding:
+                          const EdgeInsets.only(left: 20, right: 0),
+                      itemCount: visitsForDay.length,
+                      itemBuilder: (context, idx) {
+                        final visit = visitsForDay[idx];
+                        final visitData =
+                            visit['visitData'] as Map<String, dynamic>;
+                        final scheduledTime =
+                            visit['scheduledTime'] ?? '';
+                        final bool isSubmitted =
+                            visitData['submitted'] == true;
+                        final bool isSurprise =
+                            visitData['surprise'] == true;
+
+                        Color cardBorderColor =
+                            Colors.grey.shade300;
+                        if (isSubmitted) {
+                          cardBorderColor =
+                              Colors.green.shade400;
+                        }
+                        Color cardColor = Colors.white;
+                        if (isSurprise) {
+                          cardColor =
+                              Colors.yellow.shade100;
+                        }
+
+                        final String doctorName =
+                            visit['doctorName'] ?? '-';
+                        final String hospital =
+                            visit['hospital'] ?? '';
+
                         return SizedBox(
-                          height: 140,
-                          child: const Center(
-                              child: CircularProgressIndicator()),
-                        );
-                      }
-                      final visitsForDay = visitsSnapshot.data!;
-                      if (visitsForDay.isEmpty) {
-                        return SizedBox(
-                          height: 140,
-                          child: const Center(
-                              child: Text("No scheduled calls for this date")),
-                        );
-                      }
-
-                      final now = DateTime.now();
-                      return ListView.builder(
-                        physics: const NeverScrollableScrollPhysics(),
-                        shrinkWrap: true,
-                        itemCount: visitsForDay.length,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        itemBuilder: (context, idx) {
-                          final visit = visitsForDay[idx];
-                          final visitData = visit['visitData'];
-                          final scheduledDateStr =
-                              visitData['scheduledDate'] ?? '';
-                          final bool isSubmitted =
-                              visitData['submitted'] == true;
-                          final bool isSurprise =
-                              visitData['surprise'] == true;
-
-                          DateTime? visitDate;
-                          try {
-                            visitDate = DateTime.parse(scheduledDateStr);
-                          } catch (_) {
-                            visitDate = null;
-                          }
-
-                          Color cardColor = Colors.grey.shade200;
-                          if (isSurprise) {
-                            cardColor = Colors.yellow.shade300;
-                          } else if (isSubmitted) {
-                            cardColor = Colors.green.shade200;
-                          } else if (visitDate != null &&
-                              DateTime(now.year, now.month, now.day)
-                                  .isAfter(visitDate)) {
-                            cardColor = Colors.red.shade200;
-                          }
-
-                          return Card(
-                            color: cardColor,
-                            margin: const EdgeInsets.only(bottom: 12),
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                radius: 27,
-                                backgroundColor: Colors.transparent,
-                                child: Text(
-                                  (() {
-                                    final fullName =
-                                        (visit['doctorName'] ?? "") as String;
-                                    if (fullName.trim().isEmpty) return "DR";
-                                    final parts = fullName
-                                        .trim()
-                                        .split(RegExp(r'\s+'));
-                                    if (parts.length == 1) {
-                                      return parts[0].isNotEmpty
-                                          ? parts[0]
-                                              .substring(0, 1)
-                                              .toUpperCase()
-                                          : "DR";
-                                    }
-                                    return (parts[0].substring(0, 1) +
-                                            parts[1].substring(0, 1))
-                                        .toUpperCase();
-                                  })(),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 22,
-                                    color: Colors.black,
+                          width: 150,
+                          height: 150,
+                          child: Padding(
+                            padding:
+                                const EdgeInsets.only(right: 6.0),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  width: 150,
+                                  height: 150,
+                                  decoration: BoxDecoration(
+                                    color: cardColor,
+                                    border: Border.all(
+                                      color: cardBorderColor,
+                                      width:
+                                          isSubmitted ? 2.3 : 1.2,
+                                    ),
+                                    borderRadius:
+                                        BorderRadius.circular(18),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Colors.black12,
+                                        blurRadius: 6,
+                                        offset: Offset(2, 3),
+                                      ),
+                                    ],
                                   ),
-                                ),
-                              ),
-                              title: Text(
-                                visit['doctorName'] ?? '-',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (visit['hospital'] != null &&
-                                      visit['hospital'] != '')
-                                    Text("${visit['hospital']}"),
-                                  Text("${visit['specialty']}"),
-                                  const SizedBox(height: 10),
-                                ],
-                              ),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => CallDetailPage(
-                                      doctor: visit['doctor'],
-                                      scheduledVisitId: visit['visitId'],
+                                  child: InkWell(
+                                    borderRadius:
+                                        BorderRadius.circular(18),
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              CallDetailPage(
+                                            doctor: visit['doctor']
+                                                as Map<String,
+                                                    dynamic>,
+                                            scheduledVisitId:
+                                                visit['visitId'],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: Padding(
+                                      padding:
+                                          const EdgeInsets.fromLTRB(
+                                              12, 16, 12, 10),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment
+                                                .start,
+                                        mainAxisSize:
+                                            MainAxisSize.min,
+                                        children: [
+                                          const SizedBox(
+                                              height: 18),
+                                          SizedBox(
+                                            height: 20,
+                                            child:
+                                                SingleChildScrollView(
+                                              scrollDirection:
+                                                  Axis.horizontal,
+                                              child: Text(
+                                                doctorName,
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow
+                                                        .visible,
+                                                softWrap: false,
+                                                style:
+                                                    const TextStyle(
+                                                  fontWeight:
+                                                      FontWeight
+                                                          .bold,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(
+                                              height: 4),
+                                          SizedBox(
+                                            height: 16,
+                                            child: Text(
+                                              scheduledTime,
+                                              maxLines: 1,
+                                              overflow:
+                                                  TextOverflow
+                                                      .ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors
+                                                    .grey
+                                                    .shade800,
+                                              ),
+                                            ),
+                                          ),
+                                          if (hospital
+                                              .isNotEmpty) ...[
+                                            const SizedBox(
+                                                height: 4),
+                                            SizedBox(
+                                              height: 32,
+                                              child: Text(
+                                                hospital,
+                                                maxLines: 2,
+                                                overflow:
+                                                    TextOverflow
+                                                        .ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors
+                                                      .grey
+                                                      .shade700,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                );
-                              },
+                                ),
+                                Positioned(
+                                  top: 10,
+                                  left: 10,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius:
+                                          BorderRadius.circular(
+                                              14),
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Colors
+                                              .black12,
+                                          blurRadius: 3,
+                                          offset:
+                                              Offset(1, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    padding:
+                                        const EdgeInsets.all(2),
+                                    child: const Icon(
+                                      Icons.assignment,
+                                      color: Colors.black,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
+                                if (isSubmitted)
+                                  Positioned(
+                                    top: -8,
+                                    left: -8,
+                                    child: Container(
+                                      decoration:
+                                          BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius:
+                                            BorderRadius
+                                                .circular(14),
+                                        boxShadow: const [
+                                          BoxShadow(
+                                            color: Colors
+                                                .black12,
+                                            blurRadius: 3,
+                                            offset: Offset(
+                                                0, 1),
+                                          ),
+                                        ],
+                                      ),
+                                      padding:
+                                          const EdgeInsets.all(
+                                              2),
+                                      child: const Icon(
+                                        Icons.check_circle,
+                                        color: Colors.green,
+                                        size: 20,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
-                          );
-                        },
-                      );
-                    },
+                          ),
+                        );
+                      },
+                    ),
                   );
                 },
-              ),
+              );
+            },
+          ),
       ],
     );
   }
 
-  // Normal day cell (non‑today, non‑selected)
   Widget _buildDayCell(
     BuildContext context,
     DateTime date,
@@ -1057,8 +1201,10 @@ class _ItineraryPageState extends State<ItineraryPage> {
       "white": Colors.white,
     };
 
-    final colorKeys =
-        colorCounts.entries.where((e) => e.value > 0).map((e) => e.key).toList();
+    final colorKeys = colorCounts.entries
+        .where((e) => e.value > 0)
+        .map((e) => e.key)
+        .toList();
 
     List<Widget> barSegments = [];
     for (int i = 0; i < colorKeys.length; i++) {
@@ -1069,11 +1215,14 @@ class _ItineraryPageState extends State<ItineraryPage> {
           flex: value,
           child: Container(
             height: 8,
-            margin: const EdgeInsets.symmetric(horizontal: 0.5),
+            margin:
+                const EdgeInsets.symmetric(horizontal: 0.5),
             decoration: BoxDecoration(
               color: segmentColors[color],
               borderRadius: BorderRadius.horizontal(
-                left: i == 0 ? const Radius.circular(4) : Radius.zero,
+                left: i == 0
+                    ? const Radius.circular(4)
+                    : Radius.zero,
                 right: i == colorKeys.length - 1
                     ? const Radius.circular(4)
                     : Radius.zero,
@@ -1091,7 +1240,8 @@ class _ItineraryPageState extends State<ItineraryPage> {
         decoration: BoxDecoration(
           color: Colors.grey.shade100,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.shade300, width: 1),
+          border: Border.all(
+              color: Colors.grey.shade300, width: 1),
         ),
         child: Stack(
           children: [
@@ -1120,16 +1270,20 @@ class _ItineraryPageState extends State<ItineraryPage> {
                   const SizedBox(height: 6),
                   if (total > 0)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      padding:
+                          const EdgeInsets.symmetric(
+                              horizontal: 10),
                       child: SizedBox(
                         height: 8,
                         child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.center,
                           children: barSegments,
                         ),
                       ),
                     ),
-                  if (total > 0) const SizedBox(height: 4),
+                  if (total > 0)
+                    const SizedBox(height: 4),
                   if (total > 0)
                     Text(
                       '$total',
@@ -1148,7 +1302,6 @@ class _ItineraryPageState extends State<ItineraryPage> {
     );
   }
 
-  // Today but NOT selected – solid green cell
   Widget _buildTodayCell(
     BuildContext context,
     DateTime date,
@@ -1167,8 +1320,10 @@ class _ItineraryPageState extends State<ItineraryPage> {
       "white": Colors.white,
     };
 
-    final colorKeys =
-        colorCounts.entries.where((e) => e.value > 0).map((e) => e.key).toList();
+    final colorKeys = colorCounts.entries
+        .where((e) => e.value > 0)
+        .map((e) => e.key)
+        .toList();
 
     List<Widget> barSegments = [];
     for (int i = 0; i < colorKeys.length; i++) {
@@ -1179,11 +1334,14 @@ class _ItineraryPageState extends State<ItineraryPage> {
           flex: value,
           child: Container(
             height: 8,
-            margin: const EdgeInsets.symmetric(horizontal: 0.5),
+            margin:
+                const EdgeInsets.symmetric(horizontal: 0.5),
             decoration: BoxDecoration(
               color: segmentColors[color],
               borderRadius: BorderRadius.horizontal(
-                left: i == 0 ? const Radius.circular(4) : Radius.zero,
+                left: i == 0
+                    ? const Radius.circular(4)
+                    : Radius.zero,
                 right: i == colorKeys.length - 1
                     ? const Radius.circular(4)
                     : Radius.zero,
@@ -1229,23 +1387,31 @@ class _ItineraryPageState extends State<ItineraryPage> {
                   const SizedBox(height: 6),
                   if (total > 0)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      padding:
+                          const EdgeInsets.symmetric(
+                              horizontal: 10),
                       child: SizedBox(
                         height: 8,
                         child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.center,
                           children: barSegments,
                         ),
                       ),
                     ),
-                  if (total > 0) const SizedBox(height: 4),
+                  if (total > 0)
+                    const SizedBox(height: 4),
                   if (total > 0)
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                      padding:
+                          const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.25),
-                        borderRadius: BorderRadius.circular(10),
+                        color:
+                            Colors.white.withOpacity(0.25),
+                        borderRadius:
+                            BorderRadius.circular(10),
                       ),
                       child: Text(
                         '$total',
@@ -1265,7 +1431,6 @@ class _ItineraryPageState extends State<ItineraryPage> {
     );
   }
 
-  // Selected but NOT today – purple gradient cell
   Widget _buildSelectedDayCell(
     BuildContext context,
     DateTime date,
@@ -1284,8 +1449,10 @@ class _ItineraryPageState extends State<ItineraryPage> {
       "white": Colors.white.withOpacity(0.4),
     };
 
-    final colorKeys =
-        colorCounts.entries.where((e) => e.value > 0).map((e) => e.key).toList();
+    final colorKeys = colorCounts.entries
+        .where((e) => e.value > 0)
+        .map((e) => e.key)
+        .toList();
 
     List<Widget> barSegments = [];
     for (int i = 0; i < colorKeys.length; i++) {
@@ -1296,11 +1463,14 @@ class _ItineraryPageState extends State<ItineraryPage> {
           flex: value,
           child: Container(
             height: 8,
-            margin: const EdgeInsets.symmetric(horizontal: 0.5),
+            margin:
+                const EdgeInsets.symmetric(horizontal: 0.5),
             decoration: BoxDecoration(
               color: segmentColors[color],
               borderRadius: BorderRadius.horizontal(
-                left: i == 0 ? const Radius.circular(4) : Radius.zero,
+                left: i == 0
+                    ? const Radius.circular(4)
+                    : Radius.zero,
                 right: i == colorKeys.length - 1
                     ? const Radius.circular(4)
                     : Radius.zero,
@@ -1315,8 +1485,8 @@ class _ItineraryPageState extends State<ItineraryPage> {
       height: 105,
       width: 80,
       child: Container(
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
             colors: [
               Color(0xFF8a00ff),
               Color(0xFFb000ff),
@@ -1324,7 +1494,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.all(Radius.circular(14)),
         ),
         child: Stack(
           children: [
@@ -1353,23 +1523,31 @@ class _ItineraryPageState extends State<ItineraryPage> {
                   const SizedBox(height: 6),
                   if (total > 0)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      padding:
+                          const EdgeInsets.symmetric(
+                              horizontal: 10),
                       child: SizedBox(
                         height: 8,
                         child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.center,
                           children: barSegments,
                         ),
                       ),
                     ),
-                  if (total > 0) const SizedBox(height: 4),
+                  if (total > 0)
+                    const SizedBox(height: 4),
                   if (total > 0)
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                      padding:
+                          const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.25),
-                        borderRadius: BorderRadius.circular(10),
+                        color:
+                            Colors.white.withOpacity(0.25),
+                        borderRadius:
+                            BorderRadius.circular(10),
                       ),
                       child: Text(
                         '$total',
@@ -1389,7 +1567,6 @@ class _ItineraryPageState extends State<ItineraryPage> {
     );
   }
 
-  // Today + selected – combined green + purple gradient
   Widget _buildTodaySelectedCell(
     BuildContext context,
     DateTime date,
@@ -1408,8 +1585,10 @@ class _ItineraryPageState extends State<ItineraryPage> {
       "white": Colors.white.withOpacity(0.4),
     };
 
-    final colorKeys =
-        colorCounts.entries.where((e) => e.value > 0).map((e) => e.key).toList();
+    final colorKeys = colorCounts.entries
+        .where((e) => e.value > 0)
+        .map((e) => e.key)
+        .toList();
 
     List<Widget> barSegments = [];
     for (int i = 0; i < colorKeys.length; i++) {
@@ -1420,11 +1599,14 @@ class _ItineraryPageState extends State<ItineraryPage> {
           flex: value,
           child: Container(
             height: 8,
-            margin: const EdgeInsets.symmetric(horizontal: 0.5),
+            margin:
+                const EdgeInsets.symmetric(horizontal: 0.5),
             decoration: BoxDecoration(
               color: segmentColors[color],
               borderRadius: BorderRadius.horizontal(
-                left: i == 0 ? const Radius.circular(4) : Radius.zero,
+                left: i == 0
+                    ? const Radius.circular(4)
+                    : Radius.zero,
                 right: i == colorKeys.length - 1
                     ? const Radius.circular(4)
                     : Radius.zero,
@@ -1439,16 +1621,16 @@ class _ItineraryPageState extends State<ItineraryPage> {
       height: 105,
       width: 80,
       child: Container(
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
             colors: [
-              Color(0xFF00c853), // green
-              Color(0xFF8a00ff), // purple
+              Color(0xFF00c853),
+              Color(0xFF8a00ff),
             ],
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
           ),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.all(Radius.circular(14)),
         ),
         child: Stack(
           children: [
@@ -1477,23 +1659,31 @@ class _ItineraryPageState extends State<ItineraryPage> {
                   const SizedBox(height: 6),
                   if (total > 0)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      padding:
+                          const EdgeInsets.symmetric(
+                              horizontal: 10),
                       child: SizedBox(
                         height: 8,
                         child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.center,
                           children: barSegments,
                         ),
                       ),
                     ),
-                  if (total > 0) const SizedBox(height: 4),
+                  if (total > 0)
+                    const SizedBox(height: 4),
                   if (total > 0)
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                      padding:
+                          const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.25),
-                        borderRadius: BorderRadius.circular(10),
+                        color:
+                            Colors.white.withOpacity(0.25),
+                        borderRadius:
+                            BorderRadius.circular(10),
                       ),
                       child: Text(
                         '$total',

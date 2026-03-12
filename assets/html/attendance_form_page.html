@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance Form - Indofil Philippines</title>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/signature_pad@4.2.0/dist/signature_pad.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Ubuntu', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .app-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #5e1398, #6d16b1, #7d19ca, #8c1ce4, #9c1ffd);
+            color: white;
+            padding: 20px;
+            border-radius: 24px 24px 0 0;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .form-card {
+            background: white;
+            border-radius: 18px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .form-section {
+            padding: 24px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #5958b2;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .label-tag {
+            background: #e0f7fa;
+            padding: 8px 12px;
+            border-radius: 12px;
+            display: inline-block;
+            font-size: 14px;
+            font-weight: 600;
+            color: #00695c;
+            margin-bottom: 8px;
+        }
+
+        .label-tag.required::after {
+            content: " *";
+            color: #d32f2f;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .form-group {
+            flex: 1;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            background: #e0f7fa;
+            font-family: 'Ubuntu', sans-serif;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #00bcd4;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(0,188,212,0.1);
+        }
+
+        .date-input:focus {
+            background: white;
+        }
+
+        .add-section {
+            background: #e0f7fa;
+            border-radius: 8px;
+            border: 1px solid #b2ebf2;
+            padding: 12px;
+            margin-bottom: 8px;
+        }
+
+        .add-section-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .add-button {
+            width: 26px;
+            height: 26px;
+            background: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .add-button:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+
+        .add-section-title {
+            flex: 1;
+            text-align: center;
+            font-size: 16px;
+            font-weight: 600;
+            color: #00695c;
+        }
+
+        /* Attendees table wrapper for horizontal scroll */
+        .table-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Table Styles */
+        .table-container {
+            /* removed overflow-x here; now handled by .table-wrapper */
+            margin: 8px 0;
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1400px;
+        }
+
+        .table-header {
+            width: 160px;
+            margin-right: 2px;
+            padding: 12px;
+            background: #52bb5f;
+            border-radius: 8px;
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .table-row {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+
+        .table-cell {
+            width: 160px;
+            height: 80px;
+            margin-right: 2px;
+        }
+
+        .table-input {
+            width: 100%;
+            height: 100%;
+            padding: 40px 8px 8px;
+            border: 1px solid #bdbdbd;
+            border-radius: 8px;
+            background: white;
+            font-size: 14px;
+            resize: none;
+        }
+
+        .table-input:focus {
+            outline: none;
+            border-color: #52bb5f;
+            box-shadow: 0 0 0 2px rgba(82,187,95,0.2);
+        }
+
+        .signature-container {
+            width: 160px;
+            height: 80px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            background: white;
+            margin-right: 4px;
+            overflow: hidden;
+        }
+
+        .signature-pad {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+
+        .sig-tools {
+            width: 70px;
+            margin-right: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .sig-button {
+            width: 32px;
+            height: 32px;
+            border: none;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .clear-btn {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .clear-btn:hover {
+            background: #ffcdd2;
+        }
+
+        .undo-btn {
+            background: #fff8e1;
+            color: #f57c00;
+        }
+
+        .undo-btn:hover {
+            background: #ffecb3;
+        }
+
+        .map-container {
+            height: 32vh;
+            width: 100%;
+            background: rgba(255,255,255,0.2);
+            border: 2px solid rgba(255,255,255,0.4);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+            overflow: hidden;
+            margin: 12px 0;
+        }
+
+        .leaflet-container {
+            height: 100%;
+            border-radius: 10px;
+        }
+
+        .location-info {
+            background: rgba(255,255,255,0.2);
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 12px;
+            margin-top: 12px;
+        }
+
+        .location-info .icon {
+            color: white;
+            font-size: 18px;
+        }
+
+        .multi-line-input {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .privacy-notice {
+            text-align: center;
+            margin-top: 30px;
+        }
+
+        .privacy-title {
+            font-size: 20px;
+            color: #d32f2f;
+            font-weight: 700;
+            margin-bottom: 30px;
+        }
+
+        .privacy-text {
+            color: #d32f2f;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .submit-btn {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #5958b2;
+            color: white;
+            border: none;
+            padding: 16px 32px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            font-family: 'Ubuntu', sans-serif;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(89,88,178,0.4);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .submit-btn:hover {
+            background: #4a488f;
+            transform: translateX(-50%) translateY(-2px);
+            box-shadow: 0 12px 32px rgba(89,88,178,0.5);
+        }
+
+        .submit-btn:active {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: white;
+        }
+
+        .retry-btn {
+            background: none;
+            border: 1px solid white;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-family: 'Ubuntu', sans-serif;
+        }
+
+        .retry-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                flex-direction: column;
+                gap: 12px;
+            }
+            
+            .table {
+                min-width: 1000px;
+            }
+            
+            body {
+                padding: 12px;
+            }
+        }
+
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 12px 0;
+            border-left: 4px solid #d32f2f;
+            display: none;
+        }
+
+        .success-message {
+            background: #e8f5e8;
+            color: #2e7d32;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 12px 0;
+            border-left: 4px solid #4caf50;
+            display: none;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="header">
+            <h1>📋 Attendance Form</h1>
+            <p>Indofil Philippines Inc.</p>
+        </div>
+
+        <div class="form-card">
+            <div class="form-section">
+                <div class="section-title">Input Event Details and Attendees</div>
+                
+                <div class="error-message" id="errorMessage"></div>
+                <div class="success-message" id="successMessage"></div>
+
+                <!-- Event Name + Crop Focus -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <span class="label-tag required">Name of Event</span>
+                        <input type="text" class="form-input" id="eventName" placeholder="Enter event name" required>
+                    </div>
+                    <div class="form-group">
+                        <span class="label-tag required">Crop Focus</span>
+                        <input type="text" class="form-input" id="cropFocus" placeholder="Enter crop focus" required>
+                    </div>
+                </div>
+
+                <!-- Attendees Section -->
+                <div class="add-section">
+                    <div class="add-section-header">
+                        <button type="button" class="add-button" onclick="addAttendeeRow()">+</button>
+                        <div class="add-section-title">Attendees</div>
+                    </div>
+                </div>
+
+                <!-- Attendees Table (wrapped for horizontal scroll) -->
+                <div class="table-wrapper">
+                    <div class="table-container">
+                        <div class="table-row">
+                            <div class="table-header">Name of Farmer</div>
+                            <div class="table-header">Address</div>
+                            <div class="table-header">Telephone/CP No.</div>
+                            <div class="table-header">Number of Hectares</div>
+                            <div class="table-header">Crop</div>
+                            <div class="table-header">Insecticide</div>
+                            <div class="table-header">Fungicide</div>
+                            <div class="table-header">Herbicide</div>
+                            <div class="table-header">Crop Nutrition/Follar</div>
+                            <div class="table-header">Dealer Name (Source)</div>
+                            <div class="table-header">Signature</div>
+                            <div class="table-header">Sig. Tools</div>
+                        </div>
+                        <div id="attendeesContainer"></div>
+                    </div>
+                </div>
+
+                <!-- Date + Crop Status -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <span class="label-tag required">Date</span>
+                        <input type="text" class="form-input date-input" id="date" placeholder="Select date" readonly onclick="pickDate()" required>
+                    </div>
+                    <div class="form-group">
+                        <span class="label-tag required">Crop Status</span>
+                        <input type="text" class="form-input" id="cropStatus" placeholder="Enter crop status" required>
+                    </div>
+                </div>
+
+                <!-- Dealers + Focus Products -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <div class="add-section">
+                            <div class="add-section-header">
+                                <button type="button" class="add-button" onclick="addDealer()">+</button>
+                                <div class="add-section-title">Name of Dealers</div>
+                            </div>
+                        </div>
+                        <div id="dealersContainer">
+                            <input type="text" class="form-input" placeholder="Enter dealer name">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <div class="add-section">
+                            <div class="add-section-header">
+                                <button type="button" class="add-button" onclick="addFocusProduct()">+</button>
+                                <div class="add-section-title">Focus Products</div>
+                            </div>
+                        </div>
+                        <div id="focusProductsContainer">
+                            <input type="text" class="form-input" placeholder="Enter focus product">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Venue -->
+                <div class="form-group">
+                    <span class="label-tag required">Venue</span>
+                    <input type="text" class="form-input" id="location" placeholder="Getting location..." readonly>
+                </div>
+
+                <!-- Map -->
+                <div class="map-container" id="mapContainer">
+                    <div id="map" class="leaflet-container"></div>
+                </div>
+
+                <div class="location-info" id="locationInfo" style="display: none;">
+                    <div class="icon">📍</div>
+                    <span id="resolvedAddress"></span>
+                </div>
+
+                <!-- Remarks -->
+                <div style="text-align: center; margin-top: 16px;">
+                    <div style="font-size: 14px; font-weight: 600;">Additional Remarks</div>
+                </div>
+                <textarea class="form-input multi-line-input" id="remarks" placeholder="Enter additional remarks (optional)"></textarea>
+
+                <!-- Privacy Notice -->
+                <div class="privacy-notice">
+                    <div class="privacy-title">PRIVACY NOTICE :</div>
+                    <div class="privacy-text">
+                        All information collected thru this attendance sheet shall be used for the purpose of expense liquidation, 
+                        market information gathering, future marketing promotions, and as proof of activity. 
+                        If you wish to revoke these authorization, you may send as an email via <a href="mailto:indofilph@indofil.com">indofilph@indofil.com</a> or call us at (02) 8636 3857 to 58. 
+                        All information collected will remain secured and confidential with Indofil Philippines Inc, 
+                        and only authorized personnel shall have access to them.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button class="submit-btn" onclick="submitForm()">
+        <span>✅ Submit</span>
+    </button>
+
+    <script>
+        // Global state
+        let attendeeCount = 1;
+        let dealerCount = 1;
+        let focusProductCount = 1;
+        let map = null;
+        let signaturePads = [];
+        let currentPosition = null;
+        let isGettingLocation = false;
+        let selectedDate = new Date();
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', function() {
+            initDate();
+            initLocation();
+            renderAttendees();
+            renderDealers();
+            renderFocusProducts();
+        });
+
+        function showMessage(message, isError = true) {
+            const errorEl = document.getElementById('errorMessage');
+            const successEl = document.getElementById('successMessage');
+            
+            if (isError) {
+                errorEl.textContent = message;
+                errorEl.style.display = 'block';
+                successEl.style.display = 'none';
+            } else {
+                successEl.textContent = message;
+                successEl.style.display = 'block';
+                errorEl.style.display = 'none';
+            }
+            
+            setTimeout(() => {
+                errorEl.style.display = 'none';
+                successEl.style.display = 'none';
+            }, 5000);
+        }
+
+        function initDate() {
+            const dateInput = document.getElementById('date');
+            updateDateText(selectedDate);
+        }
+
+        function updateDateText(date) {
+            const dateInput = document.getElementById('date');
+            dateInput.value = date.toISOString().split('T')[0];
+        }
+
+        function pickDate() {
+            const dateInput = document.getElementById('date');
+            const picked = new Date();
+            picked.setDate(picked.getDate()); // Today as default
+            const result = window.prompt('Enter date (YYYY-MM-DD):', dateInput.value);
+            if (result && !isNaN(Date.parse(result))) {
+                selectedDate = new Date(result);
+                updateDateText(selectedDate);
+            }
+        }
+
+        async function initLocation() {
+            setGettingLocation(true);
+            try {
+                if ('geolocation' in navigator) {
+                    navigator.geolocation.getCurrentPosition(
+                        position => {
+                            currentPosition = position.coords;
+                            setGettingLocation(false);
+                            updateMap();
+                            getAddressFromCoords();
+                        },
+                        error => {
+                            setGettingLocation(false);
+                            showMessage('Location access denied. Please enable location services.');
+                        },
+                        { enableHighAccuracy: true }
+                    );
+                } else {
+                    setGettingLocation(false);
+                    showMessage('Geolocation not supported by this browser.');
+                }
+            } catch (error) {
+                setGettingLocation(false);
+                showMessage('Failed to get location: ' + error.message);
+            }
+        }
+
+        function setGettingLocation(loading) {
+            isGettingLocation = loading;
+            const mapContainer = document.getElementById('mapContainer');
+            if (loading) {
+                mapContainer.innerHTML = `
+                    <div class="loading">
+                        <div style="width: 32px; height: 32px; border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid white; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                        <div style="margin-top: 16px; color: white;">Getting your location...</div>
+                    </div>
+                `;
+            } else {
+                // restore map content when not loading
+                mapContainer.innerHTML = '<div id="map" class="leaflet-container"></div>';
+            }
+        }
+
+        function updateMap() {
+            if (!currentPosition || !currentPosition.latitude || !currentPosition.longitude) return;
+
+            const mapContainer = document.getElementById('map');
+            mapContainer.innerHTML = '';
+
+            map = L.map('map').setView([currentPosition.latitude, currentPosition.longitude], 16);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            L.marker([currentPosition.latitude, currentPosition.longitude])
+                .addTo(map)
+                .bindPopup('Current Location')
+                .openPopup();
+
+            const locationInfo = document.getElementById('locationInfo');
+            locationInfo.style.display = 'block';
+        }
+
+        async function getAddressFromCoords() {
+            if (!currentPosition) return;
+
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentPosition.latitude}&lon=${currentPosition.longitude}&zoom=18&addressdetails=1`);
+                const data = await response.json();
+                
+                const addressParts = [];
+                if (data.address.road) addressParts.push(data.address.road);
+                if (data.address.suburb) addressParts.push(data.address.suburb);
+                if (data.address.city) addressParts.push(data.address.city);
+                if (data.address.state) addressParts.push(data.address.state);
+                if (data.address.postcode) addressParts.push(data.address.postcode);
+                if (data.address.country) addressParts.push(data.address.country);
+
+                const address = addressParts.join(', ');
+                document.getElementById('location').value = address;
+                document.getElementById('resolvedAddress').textContent = address;
+            } catch (error) {
+                console.error('Address lookup failed:', error);
+            }
+        }
+
+        function addAttendeeRow() {
+            attendeeCount++;
+            renderAttendees();
+        }
+
+        function renderAttendees() {
+            const container = document.getElementById('attendeesContainer');
+            container.innerHTML = '';
+
+            for (let i = 0; i < Math.max(3, attendeeCount); i++) {
+                const row = document.createElement('div');
+                row.className = 'table-row';
+                row.innerHTML = `
+                    <div class="table-cell">
+                        <input type="text" class="table-input" placeholder="${i+1}" data-field="attendee-${i}-name">
+                    </div>
+                    <div class="table-cell">
+                        <input type="text" class="table-input" placeholder="" data-field="attendee-${i}-address">
+                    </div>
+                    <div class="table-cell">
+                        <input type="tel" class="table-input" inputmode="numeric" pattern="[0-9]*" placeholder="" data-field="attendee-${i}-telephone">
+                    </div>
+                    <div class="table-cell">
+                        <input type="number" step="0.01" class="table-input" placeholder="" data-field="attendee-${i}-hectares">
+                    </div>
+                    <div class="table-cell">
+                        <input type="text" class="table-input" placeholder="" data-field="attendee-${i}-crop">
+                    </div>
+                    <div class="table-cell">
+                        <input type="text" class="table-input" placeholder="" data-field="attendee-${i}-insecticide">
+                    </div>
+                    <div class="table-cell">
+                        <input type="text" class="table-input" placeholder="" data-field="attendee-${i}-fungicide">
+                    </div>
+                    <div class="table-cell">
+                        <input type="text" class="table-input" placeholder="" data-field="attendee-${i}-herbicide">
+                    </div>
+                    <div class="table-cell">
+                        <input type="text" class="table-input" placeholder="" data-field="attendee-${i}-nutrition">
+                    </div>
+                    <div class="table-cell">
+                        <input type="text" class="table-input" placeholder="" data-field="attendee-${i}-dealer">
+                    </div>
+                    <div class="table-cell">
+                        <canvas class="signature-container signature-pad" data-signature="attendee-${i}"></canvas>
+                    </div>
+                    <div class="table-cell sig-tools">
+                        <button type="button" class="sig-button clear-btn" onclick="clearSignature('attendee-${i}')">✕</button>
+                        <button type="button" class="sig-button undo-btn" onclick="undoSignature('attendee-${i}')">↶</button>
+                    </div>
+                `;
+                container.appendChild(row);
+
+                // Initialize signature pad
+                initSignaturePad(`attendee-${i}`);
+            }
+        }
+
+        function initSignaturePad(id) {
+            const canvas = document.querySelector(`[data-signature="${id}"]`);
+            if (canvas && !signaturePads[id]) {
+                const signaturePad = new SignaturePad(canvas, {
+                    backgroundColor: 'rgb(255, 255, 255)',
+                    penColor: 'rgb(0, 0, 0)'
+                });
+                signaturePads[id] = signaturePad;
+            }
+        }
+
+        function clearSignature(id) {
+            if (signaturePads[id]) {
+                signaturePads[id].clear();
+            }
+        }
+
+        function undoSignature(id) {
+            if (signaturePads[id]) {
+                const data = signaturePads[id].toData();
+                if (data.length > 0) {
+                    data.pop();
+                    signaturePads[id].fromData(data);
+                }
+            }
+        }
+
+        function addDealer() {
+            dealerCount++;
+            renderDealers();
+        }
+
+        function renderDealers() {
+            const container = document.getElementById('dealersContainer');
+            container.innerHTML = '';
+            for (let i = 0; i < dealerCount; i++) {
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'form-input';
+                input.placeholder = 'Enter dealer name';
+                input.dataset.field = `dealer-${i}`;
+                container.appendChild(input);
+                if (i < dealerCount - 1) container.appendChild(document.createElement('br'));
+            }
+        }
+
+        function addFocusProduct() {
+            focusProductCount++;
+            renderFocusProducts();
+        }
+
+        function renderFocusProducts() {
+            const container = document.getElementById('focusProductsContainer');
+            container.innerHTML = '';
+            for (let i = 0; i < focusProductCount; i++) {
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'form-input';
+                input.placeholder = 'Enter focus product';
+                input.dataset.field = `focus-${i}`;
+                container.appendChild(input);
+                if (i < focusProductCount - 1) container.appendChild(document.createElement('br'));
+            }
+        }
+
+        async function submitForm() {
+            // Validation
+            const eventName = document.getElementById('eventName').value.trim();
+            const cropFocus = document.getElementById('cropFocus').value.trim();
+            const cropStatus = document.getElementById('cropStatus').value.trim();
+            const location = document.getElementById('location').value.trim();
+            const date = document.getElementById('date').value.trim();
+
+            if (!eventName) return showMessage('Please enter the event name.');
+            if (!cropFocus) return showMessage('Please enter the crop focus.');
+            if (!cropStatus) return showMessage('Please enter the crop status.');
+            if (!location) return showMessage('Please wait for location.');
+            if (!date) return showMessage('Please select a date.');
+
+            const dealers = Array.from(document.querySelectorAll('[data-field^="dealer-"]'))
+                .map(input => input.value.trim()).filter(v => v);
+            if (!dealers.length) return showMessage('Please enter at least one dealer name.');
+
+            const focusProducts = Array.from(document.querySelectorAll('[data-field^="focus-"]'))
+                .map(input => input.value.trim()).filter(v => v);
+            if (!focusProducts.length) return showMessage('Please enter at least one focus product.');
+
+            // Collect attendees
+            const attendees = [];
+            let hasValidAttendee = false;
+
+            for (let i = 0; i < attendeeCount; i++) {
+                const fields = {
+                    name: document.querySelector(`[data-field="attendee-${i}-name"]`)?.value.trim() || '',
+                    address: document.querySelector(`[data-field="attendee-${i}-address"]`)?.value.trim() || '',
+                    telephone: document.querySelector(`[data-field="attendee-${i}-telephone"]`)?.value.trim() || '',
+                    hectares: document.querySelector(`[data-field="attendee-${i}-hectares"]`)?.value.trim() || '',
+                    crop: document.querySelector(`[data-field="attendee-${i}-crop"]`)?.value.trim() || '',
+                    insecticide: document.querySelector(`[data-field="attendee-${i}-insecticide"]`)?.value.trim() || '',
+                    fungicide: document.querySelector(`[data-field="attendee-${i}-fungicide"]`)?.value.trim() || '',
+                    herbicide: document.querySelector(`[data-field="attendee-${i}-herbicide"]`)?.value.trim() || '',
+                    nutrition: document.querySelector(`[data-field="attendee-${i}-nutrition"]`)?.value.trim() || '',
+                    dealerSource: document.querySelector(`[data-field="attendee-${i}-dealer"]`)?.value.trim() || ''
+                };
+
+                const allEmpty = Object.values(fields).every(v => !v);
+                if (allEmpty) continue;
+
+                if (Object.values(fields).some(v => v) && 
+                    (!fields.name || !fields.address || !fields.telephone || !fields.hectares || 
+                     !fields.crop || !fields.insecticide || !fields.fungicide || !fields.herbicide || 
+                     !fields.nutrition || !fields.dealerSource)) {
+                    return showMessage(`Please complete all required fields for attendee row ${i + 1}.`);
+                }
+
+                if (Object.values(fields).some(v => v)) {
+                    hasValidAttendee = true;
+                    attendees.push(fields);
+                }
+            }
+
+            if (!hasValidAttendee) {
+                return showMessage('Please fill at least one attendee row.');
+            }
+
+            // Collect signatures
+            const attendeeSignatures = [];
+            for (let i = 0; i < attendeeCount; i++) {
+                const name = document.querySelector(`[data-field="attendee-${i}-name"]`)?.value.trim() || '';
+                const sigPad = signaturePads[`attendee-${i}`];
+                if (!name && (!sigPad || sigPad.isEmpty)) continue;
+
+                const signatureData = sigPad ? sigPad.toData() : [];
+                attendeeSignatures.push({
+                    name: name,
+                    points: signatureData
+                });
+            }
+
+            // Form data
+            const formData = {
+                eventName,
+                cropFocus,
+                cropStatus,
+                date,
+                location,
+                createdBy: 'web_user@example.com', // Replace with actual user
+                deviceLat: currentPosition?.latitude,
+                deviceLng: currentPosition?.longitude,
+                deviceAddress: document.getElementById('resolvedAddress').textContent,
+                timestamp: new Date().toISOString(),
+                remarks: document.getElementById('remarks').value.trim(),
+                attendees,
+                attendeeSignatures,
+                dealers,
+                focusProducts
+            };
+
+            // Simulate submission (replace with actual Firebase/Firestore)
+            console.log('Submitting form data:', formData);
+            
+            // Download as JSON for demo
+            const dataStr = JSON.stringify(formData, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `attendance_${new Date().toISOString().split('T')[0]}.json`;
+            link.click();
+
+            showMessage('Form submitted successfully! Data downloaded as JSON.', false);
+        }
+    </script>
+</body>
+</html>

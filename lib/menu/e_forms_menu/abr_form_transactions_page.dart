@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'abr_form_page.dart';
 
 /// Read‑only / editable detail page for a single ABR form.
+/// Read‑only / editable detail page for a single ABR form.
 class AbrFormReadonlyPage extends StatefulWidget {
   final Map<String, dynamic> formData;
   final String docId;
@@ -53,8 +54,11 @@ class _AbrFormReadonlyPageState extends State<AbrFormReadonlyPage> {
 
   String _createdBy = '';
 
-  // Product focus rows: list of maps, each with controllers
+  // Product focus rows
   List<_ProductFocusRowControllers> _productFocusControllers = [];
+
+  // For collapsible PF cards (view/edit)
+  final Set<int> _openPF = {};
 
   @override
   void initState() {
@@ -88,8 +92,8 @@ class _AbrFormReadonlyPageState extends State<AbrFormReadonlyPage> {
         text: formData['standardBudgetRequirement']?.toString() ?? '');
     _additionalBudgetRequestCtrl = TextEditingController(
         text: formData['additionalBudgetRequest']?.toString() ?? '');
-    _justificationForAdditionalBudgetCtrl =
-        TextEditingController(text: formData['justificationAdditionalBudget'] ?? '');
+    _justificationForAdditionalBudgetCtrl = TextEditingController(
+        text: formData['justificationAdditionalBudget'] ?? '');
     _totalBudgetRequestedCtrl = TextEditingController(
         text: formData['totalBudgetRequested']?.toString() ?? '');
     _actualBudgetSpentCtrl = TextEditingController(
@@ -98,41 +102,42 @@ class _AbrFormReadonlyPageState extends State<AbrFormReadonlyPage> {
         text: formData['totalTargetMoveoutValue']?.toString() ?? '');
     _totalActualMoveoutValueCtrl = TextEditingController(
         text: formData['totalActualMoveoutValue']?.toString() ?? '');
-    _remarksOnActivityOutputCtrl =
-        TextEditingController(text: formData['remarksActivityOutput'] ?? '');
-    _otherProductsSoldOrBookedCtrl =
-        TextEditingController(text: formData['otherProductsSoldBooked'] ?? '');
+    _remarksOnActivityOutputCtrl = TextEditingController(
+        text: formData['remarksActivityOutput'] ?? '');
+    _otherProductsSoldOrBookedCtrl = TextEditingController(
+        text: formData['otherProductsSoldBooked'] ?? '');
     _valueOfOtherProductsSoldOrBookedCtrl = TextEditingController(
         text: formData['valueOtherProductsSoldBooked']?.toString() ?? '');
-    _productsDeliveredToDealersCtrl =
-        TextEditingController(text: formData['productsDeliveredDealers'] ?? '');
+    _productsDeliveredToDealersCtrl = TextEditingController(
+        text: formData['productsDeliveredDealers'] ?? '');
     _valueOfProductsDeliveredToDealersCtrl = TextEditingController(
         text: formData['valueProductsDeliveredDealers']?.toString() ?? '');
 
     _createdBy = formData['createdBy'] ?? '';
 
-    final List<dynamic> productFocusRaw =
-        formData['productFocusRows'] ?? [];
+    final List<dynamic> productFocusRaw = formData['productFocusRows'] ?? [];
     _productFocusControllers = productFocusRaw
         .whereType<Map>()
         .map((m) => Map<String, dynamic>.from(m))
-        .map((row) => _ProductFocusRowControllers(
-              productFocus: TextEditingController(
-                  text: row['productFocus']?.toString() ?? ''),
-              targetMoveoutVolume: TextEditingController(
-                  text: row['targetMoveoutVolume']?.toString() ?? ''),
-              actualMoveoutVolume: TextEditingController(
-                  text: row['actualMoveoutVolume']?.toString() ?? ''),
-              targetMoveoutValuePf: TextEditingController(
-                  text: row['targetMoveoutValuePf']?.toString() ?? ''),
-              actualMoveoutValuePf: TextEditingController(
-                  text: row['actualMoveoutValuePf']?.toString() ?? ''),
-            ))
+        .map(
+          (row) => _ProductFocusRowControllers(
+            productFocus: TextEditingController(
+                text: row['productFocus']?.toString() ?? ''),
+            targetMoveoutVolume: TextEditingController(
+                text: row['targetMoveoutVolume']?.toString() ?? ''),
+            actualMoveoutVolume: TextEditingController(
+                text: row['actualMoveoutVolume']?.toString() ?? ''),
+            targetMoveoutValuePf: TextEditingController(
+                text: row['targetMoveoutValuePf']?.toString() ?? ''),
+            actualMoveoutValuePf: TextEditingController(
+                text: row['actualMoveoutValuePf']?.toString() ?? ''),
+          ),
+        )
         .toList();
+    _openPF.clear();
   }
 
   void _resetToOriginal() {
-    // dispose old controllers and recreate from original data
     _agronomistCtrl.dispose();
     _areaCtrl.dispose();
     _cropFocusCtrl.dispose();
@@ -199,7 +204,6 @@ class _AbrFormReadonlyPageState extends State<AbrFormReadonlyPage> {
     });
 
     try {
-      // Rebuild productFocusRows list from controllers
       final List<Map<String, dynamic>> productFocusRows =
           _productFocusControllers.map((p) {
         return {
@@ -250,7 +254,6 @@ class _AbrFormReadonlyPageState extends State<AbrFormReadonlyPage> {
           .doc(widget.docId)
           .update(updateData);
 
-      // Update local original copy so cancel will revert to latest saved state next time
       _originalFormData.addAll(updateData);
 
       setState(() {
@@ -275,334 +278,523 @@ class _AbrFormReadonlyPageState extends State<AbrFormReadonlyPage> {
 
   @override
   Widget build(BuildContext context) {
+    const surfaceColor = Color(0xFFF9F5FF);
+    const maxWidth = 760.0;
+
+    final agronomistName =
+        _agronomistCtrl.text.isNotEmpty ? _agronomistCtrl.text : 'Activity Budget Request';
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('ABR Form Detail'),
-        backgroundColor: const Color(0xFF5958b2),
-        actions: [
-          if (_isEditMode)
-            IconButton(
-              icon: const Icon(Icons.close),
-              tooltip: 'Cancel edit',
-              onPressed: () {
-                setState(() {
-                  _resetToOriginal();
-                  _isEditMode = false;
-                });
-              },
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.edit),
-              tooltip: 'Edit',
-              onPressed: () {
-                setState(() {
-                  _isEditMode = true;
-                });
-              },
-            ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Core budget request info
-            Card(
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
+      backgroundColor: surfaceColor,
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(68),
+        child: AppBar(
+          automaticallyImplyLeading: false,
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          flexibleSpace: Container(
+            decoration: const BoxDecoration(
+              borderRadius: BorderRadius.vertical(
+                bottom: Radius.circular(22),
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(18.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Create Budget Request',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF5958b2),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    _buildField(
-                      label: 'Agronomist',
-                      controller: _agronomistCtrl,
-                    ),
-                    _buildField(
-                      label: 'Area',
-                      controller: _areaCtrl,
-                    ),
-                    _buildField(
-                      label: 'Crop Focus',
-                      controller: _cropFocusCtrl,
-                    ),
-                    _buildField(
-                      label: 'Activity Type',
-                      controller: _activityTypeCtrl,
-                    ),
-                    _buildField(
-                      label:
-                          'Planned Activity Location (Brgy, Municipality, Province)',
-                      controller: _plannedLocationCtrl,
-                    ),
-                    _buildField(
-                      label:
-                          'Actual Activity Location (Brgy, Municipality, Province)',
-                      controller: _actualLocationCtrl,
-                    ),
-                    _buildField(
-                      label: 'Planned Activity Date',
-                      controller: _plannedActivityDateCtrl,
-                    ),
-                    _buildField(
-                      label: 'Actual Activity Date',
-                      controller: _actualActivityDateCtrl,
-                    ),
-                    _buildField(
-                      label: 'Target Number of Attendees',
-                      controller: _targetAttendeesCtrl,
-                      keyboardType: TextInputType.number,
-                    ),
-                    _buildField(
-                      label: 'Actual Number of Attendees',
-                      controller: _actualAttendeesCtrl,
-                      keyboardType: TextInputType.number,
-                    ),
-                    _buildField(
-                      label: 'Budget per Attendee',
-                      controller: _budgetPerAttendeeCtrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                    _buildField(
-                      label: 'Standard Budget Requirement',
-                      controller: _standardBudgetRequirementCtrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                    _buildField(
-                      label: 'Additional Budget Request',
-                      controller: _additionalBudgetRequestCtrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                    _buildField(
-                      label: 'Justification for Additional Budget',
-                      controller: _justificationForAdditionalBudgetCtrl,
-                      maxLines: 3,
-                    ),
-                    _buildField(
-                      label: 'Total Budget Requested',
-                      controller: _totalBudgetRequestedCtrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                    _buildField(
-                      label: 'Actual Budget Spent',
-                      controller: _actualBudgetSpentCtrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                  ],
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF4A2371),
+                  Color(0xFF4A2371),
+                  Color(0xFF5958B2),
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Color.fromRGBO(76, 29, 149, 0.3),
+                  blurRadius: 28,
+                  offset: Offset(0, 6),
                 ),
-              ),
+              ],
             ),
-            const SizedBox(height: 24),
-            // Product Focus + moveout info
-            Card(
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(18.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Product Focus',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF5958b2),
-                      ),
+          ),
+          titleSpacing: 0,
+          title: Padding(
+            padding: const EdgeInsets.only(left: 12, right: 10, top: 2),
+            child: Row(
+              children: [
+                IconButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    size: 18,
+                    color: Colors.white,
+                  ),
+                  padding: EdgeInsets.zero,
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.white.withOpacity(0.18),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9),
                     ),
-                    const SizedBox(height: 12),
-                    if (_productFocusControllers.isNotEmpty)
-                      Column(
-                        children:
-                            _productFocusControllers.asMap().entries.map((e) {
-                          final index = e.key;
-                          final row = e.value;
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildField(
-                                  label:
-                                      'Product Focus (1,2,3,etc.) #${index + 1}',
-                                  controller: row.productFocus,
-                                ),
-                                _buildField(
-                                  label:
-                                      'Target Moveout Volume (in packs or bottles)',
-                                  controller: row.targetMoveoutVolume,
-                                  keyboardType: TextInputType.number,
-                                ),
-                                _buildField(
-                                  label:
-                                      'Actual Moveout Volume (in packs or bottles)',
-                                  controller: row.actualMoveoutVolume,
-                                  keyboardType: TextInputType.number,
-                                ),
-                                _buildField(
-                                  label: 'Target Moveout Value PF',
-                                  controller: row.targetMoveoutValuePf,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                          decimal: true),
-                                ),
-                                _buildField(
-                                  label: 'Actual Moveout Value PF',
-                                  controller: row.actualMoveoutValuePf,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                          decimal: true),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    _buildField(
-                      label: 'Total Target Moveout Value',
-                      controller: _totalTargetMoveoutValueCtrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                    _buildField(
-                      label: 'Total Actual Moveout Value',
-                      controller: _totalActualMoveoutValueCtrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                    _buildField(
-                      label: 'Remarks on Activity Output',
-                      controller: _remarksOnActivityOutputCtrl,
-                      maxLines: 3,
-                    ),
-                    _buildField(
-                      label: 'Other Products Sold or Booked',
-                      controller: _otherProductsSoldOrBookedCtrl,
-                      maxLines: 2,
-                    ),
-                    _buildField(
-                      label: 'Value of other Products Sold or Booked',
-                      controller: _valueOfOtherProductsSoldOrBookedCtrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                    _buildField(
-                      label: 'Products delivered to Dealers',
-                      controller: _productsDeliveredToDealersCtrl,
-                      maxLines: 2,
-                    ),
-                    _buildField(
-                      label: 'Value of products delivered to Dealers',
-                      controller: _valueOfProductsDeliveredToDealersCtrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                  ],
+                    minimumSize: const Size(34, 34),
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (_createdBy.isNotEmpty)
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  child: Row(
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.person,
-                          size: 20, color: Color(0xFF5958b2)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Created by: $_createdBy',
-                          style: const TextStyle(fontSize: 14),
+                      const Text(
+                        'Activity Budget Request',
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: Color.fromRGBO(255, 255, 255, 0.65),
                         ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        agronomistName,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: _isSaving
+                      ? null
+                      : () {
+                          if (_isEditMode) {
+                            setState(() {
+                              _resetToOriginal();
+                              _isEditMode = false;
+                            });
+                          } else {
+                            setState(() {
+                              _isEditMode = true;
+                            });
+                          }
+                        },
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.white.withOpacity(0.22),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  child: Text(
+                    _isEditMode ? 'Cancel' : 'Edit',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight:
+                          _isEditMode ? FontWeight.w600 : FontWeight.w700,
+                      color: _isEditMode
+                          ? const Color.fromRGBO(255, 255, 255, 0.65)
+                          : Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      body: SingleChildScrollView(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: maxWidth),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 90),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _SectionLabel('General Information', first: true),
+                  _buildGeneralInfoCard(),
+                  const _SectionLabel('Budget Information'),
+                  _buildBudgetCard(),
+                  const _SectionLabel('Product Focus'),
+                  _buildProductFocusSection(),
+                  const _SectionLabel('Moveout Summary'),
+                  _buildMoveoutCard(),
+                  const _SectionLabel('Other Sales & Deliveries'),
+                  _buildOtherSalesCard(),
+                  if (_createdBy.isNotEmpty) const SizedBox(height: 12),
+                  if (_createdBy.isNotEmpty) _buildCreatedByCard(),
+                ],
               ),
-            const SizedBox(height: 80), // extra space so FAB doesn't cover content
-          ],
+            ),
+          ),
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: _isEditMode
           ? SizedBox(
-              width: MediaQuery.of(context).size.width * 0.6,
-              height: 48,
+              width: MediaQuery.of(context).size.width * 0.7,
+              height: 52,
               child: ElevatedButton(
                 onPressed: _isSaving ? null : _saveChanges,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF5958b2),
+                  elevation: 8,
+                  padding: EdgeInsets.zero,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  backgroundColor: Colors.transparent,
+                  shadowColor: const Color.fromRGBO(107, 33, 200, 0.44),
+                ).copyWith(
+                  backgroundColor:
+                      MaterialStateProperty.all(Colors.transparent),
+                ),
+                child: Ink(
+                  decoration: const BoxDecoration(
+                    borderRadius: BorderRadius.all(Radius.circular(15)),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFF4A2371),
+                        Color(0xFF4A2371),
+                        Color(0xFF5958B2),
+                      ],
+                    ),
+                  ),
+                  child: Center(
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Update Form',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
                   ),
                 ),
-                child: _isSaving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text(
-                        'Update',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
               ),
             )
           : null,
     );
   }
 
-  Widget _buildField({
-    required String label,
-    required TextEditingController controller,
+  Widget _buildGeneralInfoCard() {
+    return _FormCard(
+      child: Column(
+        children: [
+          _twoColRow(
+            _field('Agronomist', _agronomistCtrl),
+            _field('Area', _areaCtrl),
+          ),
+          _twoColRow(
+            _field('Crop Focus', _cropFocusCtrl),
+            _field('Activity Type', _activityTypeCtrl),
+          ),
+          _field('Planned Activity Location', _plannedLocationCtrl),
+          _field('Actual Activity Location', _actualLocationCtrl),
+          _twoColRow(
+            _field('Planned Activity Date', _plannedActivityDateCtrl),
+            _field('Actual Activity Date', _actualActivityDateCtrl),
+          ),
+          _twoColRow(
+            _field('Target No. of Attendees', _targetAttendeesCtrl,
+                keyboardType: TextInputType.number),
+            _field('Actual No. of Attendees', _actualAttendeesCtrl,
+                keyboardType: TextInputType.number),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBudgetCard() {
+    return _FormCard(
+      child: Column(
+        children: [
+          _pesoField('Budget per Attendee', _budgetPerAttendeeCtrl),
+          _pesoField('Standard Budget Requirement',
+              _standardBudgetRequirementCtrl),
+          _pesoField('Additional Budget Request',
+              _additionalBudgetRequestCtrl),
+          _field('Justification for Additional Budget',
+              _justificationForAdditionalBudgetCtrl,
+              maxLines: 3),
+          _twoColRow(
+            _pesoField('Total Budget Requested', _totalBudgetRequestedCtrl),
+            _pesoField('Actual Budget Spent', _actualBudgetSpentCtrl),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductFocusSection() {
+    if (_productFocusControllers.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Text(
+          'No product focus entries recorded.',
+          style: TextStyle(fontSize: 14, color: Color(0xFF9CA3AF)),
+        ),
+      );
+    }
+
+    return Column(
+      children: _productFocusControllers.asMap().entries.map((entry) {
+        final index = entry.key;
+        final row = entry.value;
+        final isOpen = _openPF.contains(index);
+        final title =
+            row.productFocus.text.isNotEmpty ? row.productFocus.text : 'Product Focus ${index + 1}';
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          child: Card(
+            color: Colors.white,
+            elevation: 3,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            shadowColor: Colors.black.withOpacity(0.06),
+            child: Column(
+              children: [
+                InkWell(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(18),
+                  ),
+                  onTap: () {
+                    setState(() {
+                      if (isOpen) {
+                        _openPF.remove(index);
+                      } else {
+                        _openPF.add(index);
+                      }
+                    });
+                  },
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: const BoxDecoration(
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(18),
+                      ),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color.fromRGBO(107, 33, 200, 0.07),
+                          Color.fromRGBO(156, 64, 255, 0.03),
+                        ],
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                              colors: [
+                                Color(0xFF4A2371),
+                                Color(0xFF5958B2),
+                              ],
+                            ),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            '${index + 1}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF5958B2),
+                            ),
+                          ),
+                        ),
+                        AnimatedRotation(
+                          turns: isOpen ? 0.5 : 0.0,
+                          duration: const Duration(milliseconds: 200),
+                          child: const Icon(
+                            Icons.expand_more,
+                            size: 20,
+                            color: Color(0xFF5958B2),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (isOpen)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                    child: Column(
+                      children: [
+                        _field('Product Focus', row.productFocus),
+                        _twoColRow(
+                          _field('Target Moveout Volume',
+                              row.targetMoveoutVolume,
+                              keyboardType: TextInputType.number),
+                          _field('Actual Moveout Volume',
+                              row.actualMoveoutVolume,
+                              keyboardType: TextInputType.number),
+                        ),
+                        _twoColRow(
+                          _pesoField('Target Moveout Value PF',
+                              row.targetMoveoutValuePf),
+                          _pesoField('Actual Moveout Value PF',
+                              row.actualMoveoutValuePf),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildMoveoutCard() {
+    return _FormCard(
+      child: Column(
+        children: [
+          _twoColRow(
+            _pesoField('Total Target Moveout Value',
+                _totalTargetMoveoutValueCtrl),
+            _pesoField(
+                'Total Actual Moveout Value', _totalActualMoveoutValueCtrl),
+          ),
+          _field('Remarks on Activity Output',
+              _remarksOnActivityOutputCtrl,
+              maxLines: 3),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOtherSalesCard() {
+    return _FormCard(
+      child: Column(
+        children: [
+          _twoColRow(
+            _field('Other Products Sold / Booked',
+                _otherProductsSoldOrBookedCtrl,
+                maxLines: 2),
+            _field('Products Delivered to Dealers',
+                _productsDeliveredToDealersCtrl,
+                maxLines: 2),
+          ),
+          _twoColRow(
+            _pesoField('Value of Other Products',
+                _valueOfOtherProductsSoldOrBookedCtrl),
+            _pesoField('Value of Delivered Products',
+                _valueOfProductsDeliveredToDealersCtrl),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCreatedByCard() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.person, size: 20, color: Color(0xFF5958B2)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Created by: $_createdBy',
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Helpers
+
+  Widget _twoColRow(Widget left, Widget right) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 520) {
+          return Column(
+            children: [
+              left,
+              right,
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: left),
+            const SizedBox(width: 10),
+            Expanded(child: right),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _field(
+    String label,
+    TextEditingController controller, {
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
   }) {
     if (!_isEditMode) {
-      final value = controller.text;
+      final value = controller.text.trim();
       if (value.isEmpty) return const SizedBox.shrink();
       return _readonlyField(label, value);
     }
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14.0),
+      padding: const EdgeInsets.only(bottom: 12.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF2B2B2B),
+              letterSpacing: 0.5,
+            ),
+          ),
           const SizedBox(height: 4),
           TextFormField(
             controller: controller,
@@ -610,12 +802,101 @@ class _AbrFormReadonlyPageState extends State<AbrFormReadonlyPage> {
             maxLines: maxLines,
             decoration: InputDecoration(
               filled: true,
-              fillColor: Colors.cyan.shade50,
+              fillColor: const Color.fromRGBO(107, 33, 200, 0.04),
               contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(9),
+                borderSide: const BorderSide(
+                  color: Color.fromRGBO(107, 33, 200, 0.25),
+                  width: 1.5,
+                ),
               ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(9),
+                borderSide: const BorderSide(
+                  color: Color.fromRGBO(107, 33, 200, 0.25),
+                  width: 1.5,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(9),
+                borderSide:
+                    const BorderSide(color: Color(0xFF5958B2), width: 1.6),
+              ),
+            ),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF000000),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pesoField(String label, TextEditingController controller) {
+    if (!_isEditMode) {
+      final value = controller.text.trim();
+      if (value.isEmpty) return const SizedBox.shrink();
+      return _readonlyField(label, '₱$value');
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF2B2B2B),
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          TextFormField(
+            controller: controller,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: const Color.fromRGBO(107, 33, 200, 0.04),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+              prefixText: '₱ ',
+              prefixStyle: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF2B2B2B),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(9),
+                borderSide: const BorderSide(
+                  color: Color.fromRGBO(107, 33, 200, 0.25),
+                  width: 1.5,
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(9),
+                borderSide: const BorderSide(
+                  color: Color.fromRGBO(107, 33, 200, 0.25),
+                  width: 1.5,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(9),
+                borderSide:
+                    const BorderSide(color: Color(0xFF5958B2), width: 1.6),
+              ),
+            ),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF000000),
             ),
           ),
         ],
@@ -624,24 +905,61 @@ class _AbrFormReadonlyPageState extends State<AbrFormReadonlyPage> {
   }
 
   Widget _readonlyField(String label, String value) {
+    final isPeso = value.startsWith('₱');
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14.0),
+      padding: const EdgeInsets.only(bottom: 12.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF2B2B2B),
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 3),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            margin: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.cyan.shade50,
+              color: const Color(0xFFF9F7FD),
               borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE9E3F5)),
             ),
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 16),
-            ),
+            child: isPeso
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '₱',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF2B2B2B),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        value.substring(1).trim(),
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF000000),
+                        ),
+                      ),
+                    ],
+                  )
+                : Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF000000),
+                    ),
+                  ),
           ),
         ],
       ),
@@ -673,287 +991,48 @@ class _ProductFocusRowControllers {
   }
 }
 
-// ----------------------------------------------------------------------
-// AbrFormTransactionsPage – unchanged from previous version
-// ----------------------------------------------------------------------
+class _FormCard extends StatelessWidget {
+  final Widget child;
 
-class AbrFormTransactionsPage extends StatefulWidget {
-  const AbrFormTransactionsPage({Key? key}) : super(key: key);
-
-  @override
-  State<AbrFormTransactionsPage> createState() =>
-      _AbrFormTransactionsPageState();
-}
-
-class _AbrFormTransactionsPageState extends State<AbrFormTransactionsPage> {
-  String userKey = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadEmailKey();
-  }
-
-  Future<void> _loadEmailKey() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userEmail = prefs.getString('userEmail') ?? '';
-    setState(() {
-      userKey = userEmail.replaceAll(RegExp(r'[.#\$\\\[\]/]'), '_');
-    });
-  }
-
-  Future<void> _navigateToAbrFormPage(BuildContext context) async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const AbrFormPage(),
-      ),
-    );
-    if (result == true) {
-      setState(() {});
-    }
-  }
-
-  void _openDetail(
-    BuildContext context,
-    Map<String, dynamic> formData,
-    String docId,
-  ) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AbrFormReadonlyPage(
-          formData: formData,
-          docId: docId,
-          userKey: userKey,
-        ),
-      ),
-    );
-  }
-
-  String _formatTimestamp(dynamic ts, String fallback) {
-    if (ts is Timestamp) {
-      final dt = ts.toDate();
-      final y = dt.year.toString().padLeft(4, '0');
-      final m = dt.month.toString().padLeft(2, '0');
-      final d = dt.day.toString().padLeft(2, '0');
-      return '$y-$m-$d';
-    }
-    return fallback;
-  }
+  const _FormCard({Key? key, required this.child}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final double cardWidth = (MediaQuery.of(context).size.width - 48) / 2;
-    final double cardHeight = 170.0;
+    return Card(
+      color: const Color(0xFFFFFFFF),
+      elevation: 3,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+      ),
+      shadowColor: Colors.black.withOpacity(0.06),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: child,
+      ),
+    );
+  }
+}
 
-    return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(60),
-        child: AppBar(
-          elevation: 4,
-          backgroundColor: Colors.transparent,
-          automaticallyImplyLeading: true,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(
-              bottom: Radius.circular(24),
-            ),
-          ),
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              borderRadius: BorderRadius.vertical(
-                bottom: Radius.circular(24),
-              ),
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFF5e1398),
-                  Color(0xFF6d16b1),
-                  Color(0xFF7d19ca),
-                  Color(0xFF8c1ce4),
-                  Color(0xFF9c1ffd),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-          ),
-          title: const Text('Activity Budget Request Form'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.add),
-              tooltip: 'Add Activity Budget Request',
-              onPressed: () => _navigateToAbrFormPage(context),
-            ),
-          ],
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  final bool first;
+
+  const _SectionLabel(this.text, {Key? key, this.first = false})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(8, first ? 4 : 20, 0, 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF5958B2),
+          letterSpacing: 0.4,
         ),
       ),
-      backgroundColor: Colors.white,
-      body: userKey.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('flowDB')
-                  .doc('users')
-                  .collection(userKey)
-                  .doc('abr_forms')
-                  .collection('abr_forms')
-                  .orderBy('timestamp', descending: true)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final docs = snapshot.data!.docs;
-                if (docs.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'No ABR forms yet. Tap + to create a new.',
-                      style: TextStyle(fontSize: 16),
-                      textAlign: TextAlign.center,
-                    ),
-                  );
-                }
-
-                return Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                  child: GridView.builder(
-                    itemCount: docs.length,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: cardWidth / cardHeight,
-                    ),
-                    itemBuilder: (context, idx) {
-                      final doc = docs[idx];
-                      final data = doc.data() as Map<String, dynamic>;
-
-                      final String activityName =
-                          (data['agronomist'] as String?) ??
-                              'No agronomist';
-
-                      final dynamic ts = data['timestamp'];
-                      final String plannedDate =
-                          (data['plannedDate'] as String?) ??
-                              (data['plannedActivityDate'] as String?) ??
-                              '';
-                      final String date = _formatTimestamp(
-                          ts, plannedDate.isEmpty ? '-' : plannedDate);
-
-                      final String location =
-                          (data['plannedLocation'] as String?) ??
-                              (data['plannedActivityLocation'] as String?) ??
-                              (data['location'] as String?) ??
-                              '';
-
-                      final transactionNumber = docs.length - idx;
-                      final transactionLabel = 'ABR #$transactionNumber';
-
-                      return SizedBox(
-                        width: cardWidth,
-                        height: cardHeight,
-                        child: Card(
-                          elevation: 3,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: InkWell(
-                            onTap: () => _openDetail(context, data, doc.id),
-                            child: Container(
-                              decoration: const BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    Color(0xFF54479d),
-                                    Color(0xFF826ca4),
-                                  ],
-                                ),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.center,
-                                      children: [
-                                        const Icon(
-                                          Icons.request_page_outlined,
-                                          color: Colors.white,
-                                          size: 30,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            transactionLabel,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    Expanded(
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            activityName,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 18,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          if (location.isNotEmpty)
-                                            Text(
-                                              'Location: $location',
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                color: Colors.white70,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          Text(
-                                            'Date: $date',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
     );
   }
 }

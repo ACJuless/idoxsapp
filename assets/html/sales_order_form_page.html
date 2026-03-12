@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sales Order Form</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      background-color: #ffffff;
+      margin: 0;
+      padding: 14px;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 24px;
+      text-align: center;
+      color: #5958b2;
+      margin: 0 0 12px;
+    }
+
+    .card {
+      background-color: #ffffff;
+      border-radius: 18px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+      padding: 16px 16px 20px;
+      margin-bottom: 14px;
+    }
+
+    label {
+      font-size: 13px;
+      display: block;
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+
+    .input,
+    .select,
+    .textarea {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid #cfd8dc;
+      background-color: #e0f7fa;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+
+    .field {
+      margin-bottom: 10px;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .col {
+      flex: 1 1 260px;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      margin-top: 8px;
+    }
+
+    .header-row,
+    .data-row {
+      display: flex;
+      min-width: 800px;
+    }
+
+    .cell,
+    .cell-header {
+      width: 120px;
+      padding: 8px 6px;
+      border: 1px solid #b0bec5;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .cell-header {
+      background-color: #b2ebf2;
+      font-size: 11px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .quantity-cell {
+      width: 130px;
+      padding: 0;
+      border: 1px solid #b0bec5;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+    }
+
+    .quantity-top {
+      padding: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background-color: #b2ebf2;
+      text-align: center;
+    }
+
+    .quantity-bottom {
+      display: flex;
+      border-top: 1px solid #b0bec5;
+    }
+
+    .quantity-input {
+      border: none;
+      width: 100%;
+      padding: 4px 0;
+      text-align: center;
+      font-size: 13px;
+      background-color: #ffffff;
+      outline: none;
+    }
+
+    .cell-input {
+      width: 100%;
+      border: none;
+      background: transparent;
+      text-align: center;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .section-bar {
+      display: flex;
+      align-items: center;
+      margin-top: 8px;
+      margin-bottom: 4px;
+    }
+
+    .add-btn {
+      min-width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: none;
+      background-color: #81c784;
+      color: #000000;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .section-label {
+      margin-left: 8px;
+      padding: 8px;
+      background-color: #fff9c4;
+      border-radius: 8px;
+      border: 1px solid #fdd835;
+      flex: 1;
+      text-align: center;
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .footer-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .footer-amount {
+      flex: 1 1 30%;
+    }
+
+    .amount-box-label {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .amount-box {
+      padding: 8px 10px;
+      border-radius: 7px;
+      background-color: #b2ebf2;
+      border: 1px solid #90caf9;
+      font-size: 18px;
+    }
+
+    .footer-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 14px;
+      margin: 16px 0 6px;
+    }
+
+    .btn {
+      min-width: 140px;
+      padding: 10px 16px;
+      border-radius: 12px;
+      border: none;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .btn-reset {
+      background-color: #eeeeee;
+      color: #000;
+    }
+
+    .btn-submit {
+      background-color: #2196f3;
+      color: #ffffff;
+    }
+
+    .snackbar {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      background-color: #323232;
+      color: #ffffff;
+      padding: 10px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease-in-out, transform 0.25s ease-in-out;
+      z-index: 1000;
+    }
+
+    .snackbar.show {
+      opacity: 0.96;
+      transform: translateX(-50%) translateY(-4px);
+      pointer-events: auto;
+    }
+
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Sales Order Form</h1>
+
+    <div class="card">
+      <form id="soForm" onsubmit="return false;">
+        <div class="row">
+          <div class="col field">
+            <label for="mrName">Name</label>
+            <input id="mrName" class="input" type="text" />
+          </div>
+          <div class="col field">
+            <label for="soldTo">Sold To</label>
+            <input id="soldTo" class="input" type="text" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col field">
+            <label for="dateOfOrder">Date of Order</label>
+            <input id="dateOfOrder" class="input" type="date" />
+          </div>
+          <div class="col field">
+            <label for="salesOrderNo">Sales Order No.</label>
+            <input id="salesOrderNo" class="input" type="text" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col field">
+            <label for="address">Address</label>
+            <input id="address" class="input" type="text" />
+          </div>
+          <div class="col field">
+            <label for="shipTo">Ship To</label>
+            <input id="shipTo" class="input" type="text" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col field">
+            <label for="telNo">Tel No.</label>
+            <input id="telNo" class="input" type="text" />
+          </div>
+          <div class="col field">
+            <label for="terms">Terms</label>
+            <select id="terms" class="select">
+              <option value="">Select Terms</option>
+              <option value="COD CASH">COD CASH</option>
+              <option value="COD-CHECK">COD-CHECK</option>
+              <option value="I.S. 60DAYS">I.S. 60DAYS</option>
+              <option value="NET 30 DAYS">NET 30 DAYS</option>
+              <option value="PDC 30 DAYS">PDC 30 DAYS</option>
+              <option value="PDC 60 DAYS">PDC 60 DAYS</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="specialNote">Special Notes on Invoice</label>
+          <textarea id="specialNote" class="textarea"></textarea>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="table-wrapper">
+        <div class="header-row">
+          <div class="cell-header">Product Code</div>
+          <div class="cell-header">Product Description</div>
+          <div class="cell-header">Active Ingredient</div>
+          <div class="cell-header">Pack Size</div>
+          <div class="quantity-cell">
+            <div class="quantity-top">Quantity</div>
+            <div class="quantity-bottom">
+              <div class="cell" style="border:none; border-right:1px solid #b0bec5;">
+                <span style="font-size:12px;">Reg</span>
+              </div>
+              <div class="cell" style="border:none;">
+                <span style="font-size:12px;">Free</span>
+              </div>
+            </div>
+          </div>
+          <div class="cell-header">Unit Price</div>
+          <div class="cell-header">Amount</div>
+        </div>
+
+        <div class="section-bar">
+          <button
+            type="button"
+            class="add-btn"
+            onclick="addPharmaRow()"
+          >
+            +
+          </button>
+          <div class="section-label">Fungicides</div>
+        </div>
+
+        <div id="pharmaRowsContainer"></div>
+
+        <div class="section-bar">
+          <button
+            type="button"
+            class="add-btn"
+            onclick="addDermaRow()"
+          >
+            +
+          </button>
+          <div class="section-label">Herbicides</div>
+        </div>
+
+        <div id="dermaRowsContainer"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="footer-row">
+        <div class="footer-amount">
+          <div class="amount-box-label">Gross Amount</div>
+          <div id="grossAmountBox" class="amount-box">0.00</div>
+        </div>
+
+        <div class="footer-amount">
+          <label for="discount">Discount (%)</label>
+          <input
+            id="discount"
+            class="input"
+            type="number"
+            inputmode="decimal"
+            step="0.01"
+          />
+        </div>
+
+        <div class="footer-amount">
+          <div class="amount-box-label" style="color:#b71c1c;">
+            Net Amount
+          </div>
+          <div
+            id="netAmountBox"
+            class="amount-box"
+            style="color:#b71c1c;"
+          >
+            0.00
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-row" style="margin-top:12px;">
+        <div class="col field">
+          <label for="notedBy1">Noted By</label>
+          <input id="notedBy1" class="input" type="text" />
+        </div>
+        <div class="col field">
+          <label for="specialInstruction">Special Instructions</label>
+          <input id="specialInstruction" class="input" type="text" />
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-buttons">
+      <button
+        type="button"
+        class="btn btn-reset"
+        onclick="resetForm()"
+      >
+        Reset
+      </button>
+      <button
+        type="button"
+        class="btn btn-submit"
+        onclick="submitForm()"
+      >
+        Submit
+      </button>
+    </div>
+  </div>
+
+  <div id="snackbar" class="snackbar"></div>
+
+  <script>
+    // Basic product catalogs (subset of your mappings, can be extended)
+    const pharmaMapping = {
+      "Indofil 800 WP": ["800WP", "Vitamin B1 + B6 + B12", "1 kg", "1500.00"],
+      "Indofil 600 OS": ["600 OS", "Vitamin B1 + B6 + B12", "60L Drum", "2500.00"],
+      "Indofil 455 F": ["455 F", "Mancozeb 455 g/L", "100L Drum", "3500.00"],
+      "Indofil 750 WDG": ["750 WDG", "Mancozeb 750g/Kg", "25Kg bag", "1500.00"],
+      "Proviso 250 EC": [
+        "250 EC",
+        "Propiconazole 250 g/L",
+        "100 L Drum",
+        "3500.00",
+      ],
+      "Moximate 505 WP": [
+        "505 WP",
+        "Cymoxanil 40 g/Kg + Mancozeb 465 g/Kg",
+        "500 g and 1 kg pouch",
+        "2500.00",
+      ],
+      "Matco 720 WP": [
+        "720 WP",
+        "Metalaxyl 80 g/Kg + Mancozeb 640 g/Kg WP",
+        "100 g pouch and 25 Kg bag",
+        "1500.00",
+      ],
+      "Nexa 250 EC": [
+        "250 EC",
+        "Difenoconazole 250 g/L",
+        "250 ml & 500 ml bottle and 200 L drum",
+        "1500.00",
+      ],
+      "Grifon SC": [
+        "SC",
+        "Copper hydroxide 223 g/L + Copper oxychloride 239 g/L",
+        "500 ml Bottle",
+        "2500.00",
+      ],
+    };
+
+    const dermaMapping = {
+      "Akostar 480 SL": [
+        "480 SL",
+        "Glyphosate as Isopropylamine salt 480 g/L",
+        "200mL",
+        "1350.00",
+      ],
+      "Glowstar 150 SL": [
+        "150 SL",
+        "Glufosinate ammonium 150 g/L",
+        "1 L and 4 L bottle and 200 L drum",
+        "3350.00",
+      ],
+    };
+
+    const pharmaRows = [];
+    const dermaRows = [];
+
+    function showSnackbar(message) {
+      const bar = document.getElementById("snackbar");
+      bar.textContent = message;
+      bar.classList.add("show");
+      setTimeout(() => bar.classList.remove("show"), 2500);
+    }
+
+    function initDate() {
+      const input = document.getElementById("dateOfOrder");
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      input.value = `${yyyy}-${mm}-${dd}`;
+    }
+
+    function createProductRow(rowList, containerId, catalog, typeTag) {
+      const container = document.getElementById(containerId);
+      const rowIndex = rowList.length;
+
+      // Default product: first key from mapping
+      const firstKey = Object.keys(catalog)[0];
+      const meta = catalog[firstKey];
+      const rowObj = {
+        desc: firstKey,
+        code: meta[0],
+        generic: meta[1],
+        pack: meta[2],
+        reg: 0,
+        free: 0,
+        price: meta[3],
+        amount: 0.0,
+        type: typeTag,
+      };
+      rowList.push(rowObj);
+
+      const rowDiv = document.createElement("div");
+      rowDiv.className = "data-row";
+
+      // Code
+      const codeCell = document.createElement("div");
+      codeCell.className = "cell";
+      const codeInput = document.createElement("input");
+      codeInput.className = "cell-input";
+      codeInput.readOnly = true;
+      codeInput.value = rowObj.code;
+      codeCell.appendChild(codeInput);
+      rowDiv.appendChild(codeCell);
+
+      // Description (select)
+      const descCell = document.createElement("div");
+      descCell.className = "cell";
+      const descSelect = document.createElement("select");
+      descSelect.style.width = "100%";
+      descSelect.style.border = "none";
+      descSelect.style.background = "transparent";
+      descSelect.style.textAlignLast = "center";
+      Object.keys(catalog).forEach((k) => {
+        const opt = document.createElement("option");
+        opt.value = k;
+        opt.textContent = k;
+        descSelect.appendChild(opt);
+      });
+      descSelect.value = firstKey;
+      descSelect.addEventListener("change", () => {
+        const meta = catalog[descSelect.value];
+        rowObj.desc = descSelect.value;
+        rowObj.code = meta[0];
+        rowObj.generic = meta[1];
+        rowObj.pack = meta[2];
+        rowObj.price = meta[3];
+        codeInput.value = rowObj.code;
+        genericInput.value = rowObj.generic;
+        packInput.value = rowObj.pack;
+        priceInput.value = rowObj.price;
+        recalcAll();
+      });
+      descCell.appendChild(descSelect);
+      rowDiv.appendChild(descCell);
+
+      // Generic
+      const genericCell = document.createElement("div");
+      genericCell.className = "cell";
+      const genericInput = document.createElement("input");
+      genericInput.className = "cell-input";
+      genericInput.readOnly = true;
+      genericInput.value = rowObj.generic;
+      genericCell.appendChild(genericInput);
+      rowDiv.appendChild(genericCell);
+
+      // Pack
+      const packCell = document.createElement("div");
+      packCell.className = "cell";
+      const packInput = document.createElement("input");
+      packInput.className = "cell-input";
+      packInput.readOnly = true;
+      packInput.value = rowObj.pack;
+      packCell.appendChild(packInput);
+      rowDiv.appendChild(packCell);
+
+      // Quantity
+      const qtyCell = document.createElement("div");
+      qtyCell.className = "quantity-cell";
+      const qtyTop = document.createElement("div");
+      qtyTop.className = "quantity-top";
+      qtyTop.textContent = "";
+      const qtyBottom = document.createElement("div");
+      qtyBottom.className = "quantity-bottom";
+
+      const regInput = document.createElement("input");
+      regInput.className = "quantity-input";
+      regInput.type = "number";
+      regInput.inputMode = "numeric";
+      regInput.value = rowObj.reg;
+      regInput.addEventListener("input", () => {
+        rowObj.reg = parseInt(regInput.value || "0", 10);
+        recalcAll();
+      });
+
+      const freeInput = document.createElement("input");
+      freeInput.className = "quantity-input";
+      freeInput.type = "number";
+      freeInput.inputMode = "numeric";
+      freeInput.value = rowObj.free;
+      freeInput.addEventListener("input", () => {
+        rowObj.free = parseInt(freeInput.value || "0", 10);
+      });
+
+      const regWrap = document.createElement("div");
+      regWrap.className = "cell";
+      regWrap.style.border = "none";
+      regWrap.style.borderRight = "1px solid #b0bec5";
+      regWrap.appendChild(regInput);
+
+      const freeWrap = document.createElement("div");
+      freeWrap.className = "cell";
+      freeWrap.style.border = "none";
+      freeWrap.appendChild(freeInput);
+
+      qtyBottom.appendChild(regWrap);
+      qtyBottom.appendChild(freeWrap);
+      qtyCell.appendChild(qtyTop);
+      qtyCell.appendChild(qtyBottom);
+      rowDiv.appendChild(qtyCell);
+
+      // Unit price
+      const priceCell = document.createElement("div");
+      priceCell.className = "cell";
+      const priceInput = document.createElement("input");
+      priceInput.className = "cell-input";
+      priceInput.type = "number";
+      priceInput.step = "0.01";
+      priceInput.value = rowObj.price;
+      priceInput.addEventListener("input", () => {
+        rowObj.price = priceInput.value;
+        recalcAll();
+      });
+      priceCell.appendChild(priceInput);
+      rowDiv.appendChild(priceCell);
+
+      // Amount
+      const amountCell = document.createElement("div");
+      amountCell.className = "cell";
+      const amountDisplay = document.createElement("span");
+      amountDisplay.textContent = "0.00";
+      amountCell.appendChild(amountDisplay);
+      rowDiv.appendChild(amountCell);
+
+      rowObj._amountDisplay = amountDisplay;
+      container.appendChild(rowDiv);
+
+      recalcAll();
+    }
+
+    function addPharmaRow() {
+      createProductRow(
+        pharmaRows,
+        "pharmaRowsContainer",
+        pharmaMapping,
+        "pharma"
+      );
+    }
+
+    function addDermaRow() {
+      createProductRow(
+        dermaRows,
+        "dermaRowsContainer",
+        dermaMapping,
+        "derma"
+      );
+    }
+
+    function recalcAll() {
+      let gross = 0.0;
+      const allRows = pharmaRows.concat(dermaRows);
+      allRows.forEach((row) => {
+        const reg = parseInt(row.reg || 0, 10);
+        const price = parseFloat(row.price || "0") || 0;
+        const amt = reg * price;
+        row.amount = amt;
+        if (row._amountDisplay) {
+          row._amountDisplay.textContent = amt.toFixed(2);
+        }
+        gross += amt;
+      });
+
+      const grossBox = document.getElementById("grossAmountBox");
+      grossBox.textContent = gross.toFixed(2);
+
+      const discountStr = document.getElementById("discount").value.trim();
+      const disc = parseFloat(discountStr || "0") || 0;
+      let net = gross;
+      if (disc !== 0) {
+        net = gross * (1 - disc / 100.0);
+      }
+      const netBox = document.getElementById("netAmountBox");
+      netBox.textContent = net.toFixed(2);
+    }
+
+    function resetForm() {
+      document.getElementById("soForm").reset();
+      initDate();
+      document.getElementById("specialNote").value = "";
+      document.getElementById("discount").value = "";
+      document.getElementById("notedBy1").value = "";
+      document.getElementById("specialInstruction").value = "";
+
+      pharmaRows.length = 0;
+      dermaRows.length = 0;
+      document.getElementById("pharmaRowsContainer").innerHTML = "";
+      document.getElementById("dermaRowsContainer").innerHTML = "";
+
+      document.getElementById("grossAmountBox").textContent = "0.00";
+      document.getElementById("netAmountBox").textContent = "0.00";
+      showSnackbar("Form cleared");
+    }
+
+    function buildRowPayload(rows) {
+      return rows.map((row) => ({
+        desc: row.desc,
+        code: row.code,
+        generic: row.generic,
+        pack: row.pack,
+        reg: row.reg,
+        free: row.free,
+        price: row.price,
+        amount: row.amount || 0.0,
+      }));
+    }
+
+    function submitForm() {
+      recalcAll();
+
+      const mrName = document.getElementById("mrName").value.trim();
+      const soldTo = document.getElementById("soldTo").value.trim();
+      const dateOfOrder =
+        document.getElementById("dateOfOrder").value.trim() || "";
+      const salesOrderNo = document
+        .getElementById("salesOrderNo")
+        .value.trim();
+      const address = document.getElementById("address").value.trim();
+      const shipTo = document.getElementById("shipTo").value.trim();
+      const telNo = document.getElementById("telNo").value.trim();
+      const terms = document.getElementById("terms").value.trim();
+      const specialNote = document
+        .getElementById("specialNote")
+        .value.trim();
+      const discountStr = document
+        .getElementById("discount")
+        .value.trim();
+      const notedBy1 = document.getElementById("notedBy1").value.trim();
+      const specialInstruction = document
+        .getElementById("specialInstruction")
+        .value.trim();
+
+      const grossAmount = parseFloat(
+        document.getElementById("grossAmountBox").textContent || "0"
+      );
+      const netAmount = parseFloat(
+        document.getElementById("netAmountBox").textContent || "0"
+      );
+
+      const payload = {
+        mrName,
+        soldTo,
+        dateOfOrder,
+        salesOrderNo,
+        address,
+        shipTo,
+        telNo,
+        terms,
+        specialNote,
+        specialInstruction,
+        notedBy1,
+        notedBy2: "", // not exposed in HTML, keep empty
+        discount: discountStr,
+        pharmaRows: buildRowPayload(pharmaRows),
+        dermaRows: buildRowPayload(dermaRows),
+        grossAmount,
+        netAmount,
+        timestamp: new Date().toISOString(),
+      };
+
+      try {
+        if (
+          window.SalesOrderBridge &&
+          typeof window.SalesOrderBridge.postMessage === "function"
+        ) {
+          window.SalesOrderBridge.postMessage(JSON.stringify(payload));
+          showSnackbar("Sales Order Form submitted.");
+        } else if (
+          typeof SalesOrderBridge !== "undefined" &&
+          SalesOrderBridge.postMessage
+        ) {
+          SalesOrderBridge.postMessage(JSON.stringify(payload));
+          showSnackbar("Sales Order Form submitted.");
+        } else {
+          console.warn("SalesOrderBridge is not available.");
+          showSnackbar("Unable to send form to app. Please try again.");
+        }
+      } catch (e) {
+        console.error("Error sending Sales Order payload to Flutter:", e);
+        showSnackbar("Error sending form. Please try again.");
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      initDate();
+      document
+        .getElementById("discount")
+        .addEventListener("input", recalcAll);
+    });
+  </script>
+</body>
+</html>

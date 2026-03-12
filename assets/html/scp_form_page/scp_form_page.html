@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sample Crop Prescription Form</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      background-color: #f5f5f5;
+      margin: 0;
+      padding: 16px;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+      text-align: center;
+      color: #5e1398;
+    }
+
+    h2 {
+      font-size: 18px;
+      margin: 12px 0 6px;
+      text-align: center;
+      font-weight: 700;
+    }
+
+    .card {
+      background-color: #ffffff;
+      border-radius: 18px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+      padding: 18px 18px 24px;
+      margin-bottom: 16px;
+    }
+
+    label {
+      font-size: 13px;
+      display: block;
+      margin-bottom: 3px;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    .input,
+    .textarea,
+    .select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #c2dfe8;
+      background-color: #ffffff;
+      font-size: 14px;
+      outline: none;
+      text-align: center;
+    }
+
+    .textarea {
+      min-height: 60px;
+      resize: vertical;
+    }
+
+    .field {
+      margin-bottom: 8px;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .col {
+      flex: 1 1 220px;
+    }
+
+    .section-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 10px 0 4px;
+      text-align: center;
+    }
+
+    .required {
+      color: #d32f2f;
+      font-size: 11px;
+      text-align: center;
+      margin-top: 2px;
+    }
+
+    .advisory-row,
+    .product-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .advisory-row .col,
+    .product-row .col {
+      flex: 1 1 0;
+    }
+
+    .small-text {
+      font-size: 11px;
+      color: #777;
+      text-align: center;
+    }
+
+    .add-btn {
+      background-color: #2e7d32;
+      border: none;
+      border-radius: 6px;
+      width: 26px;
+      height: 26px;
+      font-size: 18px;
+      color: #fff;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 6px;
+    }
+
+    .section-header-with-add {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      margin-bottom: 4px;
+    }
+
+    .signature-wrapper {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: flex-start;
+      margin-top: 8px;
+    }
+
+    .signature-pad-container {
+      width: 180px;
+    }
+
+    canvas {
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      background-color: #ffffff;
+      width: 100%;
+      height: 80px;
+      touch-action: none;
+    }
+
+    .sig-clear-btn {
+      margin-top: 4px;
+      width: 100px;
+      height: 28px;
+      border-radius: 6px;
+      border: none;
+      background-color: #ffcdd2;
+      color: #b71c1c;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .footer-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 18px;
+    }
+
+    .btn {
+      min-width: 140px;
+      padding: 10px 16px;
+      border-radius: 12px;
+      border: none;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .btn-reset {
+      background-color: #e0e0e0;
+      color: #000;
+    }
+
+    .btn-submit {
+      background-color: #5958b2;
+      color: #fff;
+    }
+
+    .snackbar {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      background-color: #323232;
+      color: #ffffff;
+      padding: 10px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease-in-out, transform 0.25s ease-in-out;
+      z-index: 1000;
+    }
+
+    .snackbar.show {
+      opacity: 0.96;
+      transform: translateX(-50%) translateY(-4px);
+      pointer-events: auto;
+    }
+
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 20px;
+      }
+      .section-title {
+        font-size: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Sample Crop Prescription Form</h1>
+    <div class="card">
+      <h2>Customer Success Meeting Form</h2>
+
+      <form id="scpForm" onsubmit="return false;">
+        <!-- Farmer & Event basic info -->
+        <div class="row">
+          <div class="col field">
+            <label>Name of Farmer</label>
+            <input id="farmerName" class="input" type="text" />
+            <div class="required">Required</div>
+          </div>
+          <div class="col field">
+            <label>Date of Event</label>
+            <input
+              id="dateOfEvent"
+              class="input"
+              type="date"
+              style="text-align:left; padding-right:0;"
+            />
+            <div class="required">Required</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col field">
+            <label>Farm Address</label>
+            <input id="farmAddress" class="input" type="text" />
+            <div class="required">Required</div>
+          </div>
+          <div class="col field">
+            <label>Type of Event</label>
+            <input id="typeOfEvent" class="input" type="text" />
+            <div class="required">Required</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col field">
+            <label>Cellphone Number</label>
+            <input
+              id="cellphoneNumber"
+              class="input"
+              type="tel"
+              inputmode="numeric"
+              pattern="[0-9]*"
+            />
+            <div class="required">Required</div>
+          </div>
+          <div class="col field">
+            <label>Venue of Event</label>
+            <input id="venueOfEvent" class="input" type="text" />
+            <div class="required">Required</div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Crops Planted</label>
+          <input id="cropsPlanted" class="input" type="text" />
+          <div class="required">Required</div>
+        </div>
+
+        <!-- Advisory Details -->
+        <div class="section-header-with-add">
+          <div class="section-title">Advisory Details</div>
+          <button type="button" class="add-btn" onclick="addAdvisoryRow()">+</button>
+        </div>
+        <div class="small-text">
+          Provide at least one Key Concern and Product Recommendation.
+        </div>
+
+        <div id="advisoryRowsContainer"></div>
+
+        <!-- Crop advisor info -->
+        <div class="row" style="margin-top: 10px;">
+          <div class="col field">
+            <label>Name of Crop Advisor</label>
+            <input id="cropAdvisorName" class="input" type="text" />
+            <div class="required">Required</div>
+          </div>
+          <div class="col field">
+            <label>Crop Advisor Contact Number</label>
+            <input
+              id="cropAdvisorContact"
+              class="input"
+              type="tel"
+              inputmode="numeric"
+              pattern="[0-9]*"
+            />
+            <div class="required">Required</div>
+          </div>
+        </div>
+
+        <!-- Products Section -->
+        <div class="section-header-with-add" style="margin-top: 14px;">
+          <div class="section-title">Indofil Crop Solutions and Technologies</div>
+          <button type="button" class="add-btn" onclick="addProductRow()">+</button>
+        </div>
+        <div class="small-text">
+          Provide at least one Product (Name, Quantity, Packaging).
+        </div>
+
+        <div id="productRowsContainer"></div>
+
+        <!-- Farmer signature & name -->
+        <div class="signature-wrapper">
+          <div class="col field">
+            <label>Name of Farmer</label>
+            <input id="farmerNameSecond" class="input" type="text" />
+            <div class="required">Required (or signature)</div>
+          </div>
+
+          <div class="signature-pad-container">
+            <label>Signature of Farmer</label>
+            <canvas id="signaturePad"></canvas>
+            <button
+              type="button"
+              class="sig-clear-btn"
+              onclick="clearSignature()"
+            >
+              Clear
+            </button>
+            <div class="small-text">
+              Name or signature must be present; preferably both.
+            </div>
+          </div>
+        </div>
+
+        <!-- Date needed & preferred dealer -->
+        <div class="row" style="margin-top: 10px;">
+          <div class="col field">
+            <label>Date Needed</label>
+            <input
+              id="dateNeeded"
+              class="input"
+              type="date"
+              style="text-align:left; padding-right:0;"
+            />
+            <div class="required">Required</div>
+          </div>
+          <div class="col field">
+            <label>Preferred Dealer</label>
+            <input id="preferredDealer" class="input" type="text" />
+            <div class="required">Required</div>
+          </div>
+        </div>
+
+        <!-- Buttons -->
+        <div class="footer-buttons">
+          <button type="button" class="btn btn-reset" onclick="resetForm()">
+            Reset
+          </button>
+          <button type="button" class="btn btn-submit" onclick="submitForm()">
+            Submit
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="snackbar" class="snackbar"></div>
+
+  <script>
+    // ---------- Snackbar helper ----------
+    function showSnackbar(message) {
+      const bar = document.getElementById("snackbar");
+      bar.textContent = message;
+      bar.classList.add("show");
+      setTimeout(() => bar.classList.remove("show"), 2500);
+    }
+
+    // ---------- Advisory rows ----------
+    const advisoryRows = [];
+
+    function addAdvisoryRow() {
+      const container = document.getElementById("advisoryRowsContainer");
+
+      const rowIndex = advisoryRows.length;
+      const rowObj = {
+        keyConcernId: `keyConcern_${rowIndex}`,
+        recommendationId: `productRecommendation_${rowIndex}`,
+      };
+      advisoryRows.push(rowObj);
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "advisory-row";
+
+      const leftDiv = document.createElement("div");
+      leftDiv.className = "col field";
+      const leftLabel = document.createElement("label");
+      leftLabel.textContent = rowIndex === 0 ? "Key Concerns" : "";
+      const leftInput = document.createElement("textarea");
+      leftInput.className = "textarea";
+      leftInput.id = rowObj.keyConcernId;
+      leftInput.rows = 2;
+      leftDiv.appendChild(leftLabel);
+      leftDiv.appendChild(leftInput);
+
+      const rightDiv = document.createElement("div");
+      rightDiv.className = "col field";
+      const rightLabel = document.createElement("label");
+      rightLabel.textContent =
+        rowIndex === 0 ? "Product Recommendation" : "";
+      const rightInput = document.createElement("textarea");
+      rightInput.className = "textarea";
+      rightInput.id = rowObj.recommendationId;
+      rightInput.rows = 2;
+      rightDiv.appendChild(rightLabel);
+      rightDiv.appendChild(rightInput);
+
+      wrapper.appendChild(leftDiv);
+      wrapper.appendChild(rightDiv);
+
+      container.appendChild(wrapper);
+    }
+
+    // ---------- Product rows ----------
+    const productRows = [];
+
+    function addProductRow() {
+      const container = document.getElementById("productRowsContainer");
+
+      const rowIndex = productRows.length;
+      const rowObj = {
+        productNameId: `productName_${rowIndex}`,
+        quantityId: `quantity_${rowIndex}`,
+        packagingId: `packaging_${rowIndex}`,
+      };
+      productRows.push(rowObj);
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "product-row";
+
+      const prodDiv = document.createElement("div");
+      prodDiv.className = "col field";
+      const prodLabel = document.createElement("label");
+      prodLabel.textContent = rowIndex === 0 ? "Product Name" : "";
+      const prodInput = document.createElement("input");
+      prodInput.className = "input";
+      prodInput.type = "text";
+      prodInput.id = rowObj.productNameId;
+      prodDiv.appendChild(prodLabel);
+      prodDiv.appendChild(prodInput);
+
+      const qtyDiv = document.createElement("div");
+      qtyDiv.className = "col field";
+      const qtyLabel = document.createElement("label");
+      qtyLabel.textContent = rowIndex === 0 ? "Quantity" : "";
+      const qtyInput = document.createElement("input");
+      qtyInput.className = "input";
+      qtyInput.type = "number";
+      qtyInput.id = rowObj.quantityId;
+      qtyDiv.appendChild(qtyLabel);
+      qtyDiv.appendChild(qtyInput);
+
+      const packDiv = document.createElement("div");
+      packDiv.className = "col field";
+      const packLabel = document.createElement("label");
+      packLabel.textContent = rowIndex === 0 ? "Packaging" : "";
+      const packInput = document.createElement("input");
+      packInput.className = "input";
+      packInput.type = "text";
+      packInput.id = rowObj.packagingId;
+      packDiv.appendChild(packLabel);
+      packDiv.appendChild(packInput);
+
+      wrapper.appendChild(prodDiv);
+      wrapper.appendChild(qtyDiv);
+      wrapper.appendChild(packDiv);
+
+      container.appendChild(wrapper);
+    }
+
+    // ---------- Signature Pad (points capture) ----------
+    const signaturePad = {
+      isDrawing: false,
+      points: [],
+      lastPoint: null,
+    };
+
+    function getCanvasAndCtx() {
+      const canvas = document.getElementById("signaturePad");
+      const rect = canvas.getBoundingClientRect();
+      const ctx = canvas.getContext("2d");
+      return { canvas, ctx, rect };
+    }
+
+    function canvasResizeForHiDPI() {
+      const { canvas } = getCanvasAndCtx();
+      const ratio = window.devicePixelRatio || 1;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      canvas.width = width * ratio;
+      canvas.height = height * ratio;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(ratio, ratio);
+    }
+
+    function addPoint(x, y, type, pressure) {
+      signaturePad.points.push({ x, y, type, pressure });
+      signaturePad.lastPoint = { x, y };
+    }
+
+    function drawLine(from, to) {
+      const { ctx } = getCanvasAndCtx();
+      if (!from) return;
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+    }
+
+    function handlePointerDown(e) {
+      e.preventDefault();
+      const { rect } = getCanvasAndCtx();
+      const pointer = e.touches ? e.touches[0] : e;
+      const x = pointer.clientX - rect.left;
+      const y = pointer.clientY - rect.top;
+      signaturePad.isDrawing = true;
+      const pressure = e.pressure || 1.0;
+      addPoint(x, y, "down", pressure);
+    }
+
+    function handlePointerMove(e) {
+      if (!signaturePad.isDrawing) return;
+      e.preventDefault();
+      const { rect } = getCanvasAndCtx();
+      const pointer = e.touches ? e.touches[0] : e;
+      const x = pointer.clientX - rect.left;
+      const y = pointer.clientY - rect.top;
+      const pressure = e.pressure || 1.0;
+      const newPoint = { x, y };
+      drawLine(signaturePad.lastPoint, newPoint);
+      addPoint(x, y, "move", pressure);
+    }
+
+    function handlePointerUp(e) {
+      if (!signaturePad.isDrawing) return;
+      e.preventDefault();
+      const { rect } = getCanvasAndCtx();
+      const pointer = e.changedTouches ? e.changedTouches[0] : e;
+      const x = pointer.clientX - rect.left;
+      const y = pointer.clientY - rect.top;
+      const pressure = e.pressure || 1.0;
+      addPoint(x, y, "up", pressure);
+      signaturePad.lastPoint = null;
+    }
+
+    function clearSignature() {
+      const { canvas, ctx } = getCanvasAndCtx();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      signaturePad.points = [];
+      signaturePad.lastPoint = null;
+    }
+
+    function signatureIsEmpty() {
+      return !signaturePad.points || signaturePad.points.length === 0;
+    }
+
+    function exportSignaturePoints() {
+      const name = document
+        .getElementById("farmerNameSecond")
+        .value.trim();
+      if (!name && signatureIsEmpty()) {
+        return null;
+      }
+      return {
+        name,
+        points: signaturePad.points.map((p) => ({
+          x: p.x,
+          y: p.y,
+          pressure: p.pressure ?? 1.0,
+          type: p.type,
+        })),
+      };
+    }
+
+    // ---------- Validation & submit ----------
+    function validateRequiredField(id, label) {
+      const value = document.getElementById(id).value.trim();
+      if (!value) {
+        showSnackbar(`${label} is required`);
+        return false;
+      }
+      return true;
+    }
+
+    function validateCoreFields() {
+      if (!validateRequiredField("farmerName", "Name of Farmer")) return false;
+      if (!validateRequiredField("dateOfEvent", "Date of Event")) return false;
+      if (!validateRequiredField("farmAddress", "Farm Address")) return false;
+      if (!validateRequiredField("typeOfEvent", "Type of Event")) return false;
+      if (!validateRequiredField("cellphoneNumber", "Cellphone Number"))
+        return false;
+      if (!validateRequiredField("venueOfEvent", "Venue of Event")) return false;
+      if (!validateRequiredField("cropsPlanted", "Crops Planted")) return false;
+      if (!validateRequiredField("cropAdvisorName", "Name of Crop Advisor"))
+        return false;
+      if (
+        !validateRequiredField(
+          "cropAdvisorContact",
+          "Crop Advisor Contact Number"
+        )
+      )
+        return false;
+      if (!validateRequiredField("dateNeeded", "Date Needed")) return false;
+      if (!validateRequiredField("preferredDealer", "Preferred Dealer"))
+        return false;
+      return true;
+    }
+
+    function validateSignature() {
+      const nameSecond = document
+        .getElementById("farmerNameSecond")
+        .value.trim();
+      if (!nameSecond && signatureIsEmpty()) {
+        showSnackbar("Name of Farmer or Signature is required.");
+        return false;
+      }
+      return true;
+    }
+
+    function validateAdvisoryRows() {
+      let hasAdvisory = false;
+      advisoryRows.forEach((row) => {
+        const kc = document
+          .getElementById(row.keyConcernId)
+          .value.trim();
+        const pr = document
+          .getElementById(row.recommendationId)
+          .value.trim();
+        if (kc || pr) {
+          hasAdvisory = true;
+        }
+      });
+      if (!hasAdvisory) {
+        showSnackbar(
+          "Please provide at least one Key Concern and Product Recommendation."
+        );
+        return false;
+      }
+      return true;
+    }
+
+    function validateProductRows() {
+      let hasProduct = false;
+      productRows.forEach((row) => {
+        const pn = document
+          .getElementById(row.productNameId)
+          .value.trim();
+        const q = document.getElementById(row.quantityId).value.trim();
+        const p = document.getElementById(row.packagingId).value.trim();
+        if (pn || q || p) {
+          hasProduct = true;
+        }
+      });
+      if (!hasProduct) {
+        showSnackbar(
+          "Please provide at least one Product (Name, Quantity, Packaging)."
+        );
+        return false;
+      }
+      return true;
+    }
+
+    function submitForm() {
+      if (!validateCoreFields()) return;
+      if (!validateSignature()) return;
+      if (!validateAdvisoryRows()) return;
+      if (!validateProductRows()) return;
+
+      const advisoryDetails = [];
+      advisoryRows.forEach((row) => {
+        const keyConcern = document
+          .getElementById(row.keyConcernId)
+          .value.trim();
+        const productRecommendation = document
+          .getElementById(row.recommendationId)
+          .value.trim();
+        if (!keyConcern && !productRecommendation) return;
+        advisoryDetails.push({ keyConcern, productRecommendation });
+      });
+
+      const products = [];
+      productRows.forEach((row) => {
+        const productName = document
+          .getElementById(row.productNameId)
+          .value.trim();
+        const quantity = document
+          .getElementById(row.quantityId)
+          .value.trim();
+        const packaging = document
+          .getElementById(row.packagingId)
+          .value.trim();
+        if (!productName && !quantity && !packaging) return;
+        products.push({ productName, quantity, packaging });
+      });
+
+      let farmerSignaturePoints = null;
+      try {
+        farmerSignaturePoints = exportSignaturePoints();
+      } catch (e) {
+        farmerSignaturePoints = null;
+      }
+
+      const payload = {
+        farmerName: document.getElementById("farmerName").value.trim(),
+        farmAddress: document.getElementById("farmAddress").value.trim(),
+        cellphoneNumber: document
+          .getElementById("cellphoneNumber")
+          .value.trim(),
+        dateOfEvent: document.getElementById("dateOfEvent").value.trim(),
+        typeOfEvent: document.getElementById("typeOfEvent").value.trim(),
+        venueOfEvent: document.getElementById("venueOfEvent").value.trim(),
+        cropsPlanted: document.getElementById("cropsPlanted").value.trim(),
+        advisoryDetails,
+        cropAdvisorName: document
+          .getElementById("cropAdvisorName")
+          .value.trim(),
+        cropAdvisorContact: document
+          .getElementById("cropAdvisorContact")
+          .value.trim(),
+        products,
+        farmerNameSecond: document
+          .getElementById("farmerNameSecond")
+          .value.trim(),
+        farmerSignaturePoints,
+        dateNeeded: document.getElementById("dateNeeded").value.trim(),
+        preferredDealer: document
+          .getElementById("preferredDealer")
+          .value.trim(),
+        createdBy: "",
+        timestamp: new Date().toISOString(),
+      };
+
+      try {
+        if (window.SCPBridge && typeof window.SCPBridge.postMessage === "function") {
+          window.SCPBridge.postMessage(JSON.stringify(payload));
+          showSnackbar("Sample Crop Prescription Form submitted.");
+        } else if (typeof SCPBridge !== "undefined" && SCPBridge.postMessage) {
+          // Some WebView implementations expose SCPBridge in global scope
+          SCPBridge.postMessage(JSON.stringify(payload));
+          showSnackbar("Sample Crop Prescription Form submitted.");
+        } else {
+          console.warn("SCPBridge is not available.");
+          showSnackbar("Unable to send form to app. Please try again.");
+        }
+      } catch (e) {
+        console.error("Error sending payload to Flutter:", e);
+        showSnackbar("Error sending form. Please try again.");
+      }
+
+      // Optionally reset the form after sending
+      // resetForm();
+    }
+
+    function resetForm() {
+      document.getElementById("scpForm").reset();
+      clearSignature();
+      advisoryRows.length = 0;
+      productRows.length = 0;
+      document.getElementById("advisoryRowsContainer").innerHTML = "";
+      document.getElementById("productRowsContainer").innerHTML = "";
+      addAdvisoryRow();
+      addProductRow();
+      showSnackbar("Form cleared");
+    }
+
+    // ---------- init ----------
+    window.addEventListener("DOMContentLoaded", () => {
+      addAdvisoryRow();
+      addProductRow();
+      canvasResizeForHiDPI();
+
+      const canvas = document.getElementById("signaturePad");
+      // Mouse events
+      canvas.addEventListener("mousedown", handlePointerDown);
+      canvas.addEventListener("mousemove", handlePointerMove);
+      canvas.addEventListener("mouseup", handlePointerUp);
+      canvas.addEventListener("mouseleave", handlePointerUp);
+      // Touch events
+      canvas.addEventListener("touchstart", handlePointerDown, { passive: false });
+      canvas.addEventListener("touchmove", handlePointerMove, { passive: false });
+      canvas.addEventListener("touchend", handlePointerUp, { passive: false });
+      canvas.addEventListener("touchcancel", handlePointerUp, { passive: false });
+
+      // Default dates: set today's date for dateOfEvent and dateNeeded if empty
+      const dateOfEvent = document.getElementById("dateOfEvent");
+      const dateNeeded = document.getElementById("dateNeeded");
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      const todayStr = `${yyyy}-${mm}-${dd}`;
+      dateOfEvent.value = todayStr;
+      dateNeeded.value = todayStr;
+    });
+
+    window.addEventListener("resize", () => {
+      canvasResizeForHiDPI();
+      // Redrawing lines from points is possible, but omitted for simplicity.
+    });
+  </script>
+</body>
+</html>
