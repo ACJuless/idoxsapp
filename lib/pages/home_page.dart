@@ -20,6 +20,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:geocoding/geocoding.dart' as geocoding;
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'login_page.dart';
 import 'dart:convert';
 import 'dart:ui';
@@ -407,6 +408,7 @@ final _contactNumberController = TextEditingController();
 final _emailController = TextEditingController();
 final _hospitalClinicController = TextEditingController();
 final _frequencyController = TextEditingController();
+final ScrollController _doctorsScrollController = ScrollController();
 
 // Gender dropdown state
 String? _selectedGender;
@@ -438,6 +440,7 @@ String? _selectedGender;
     for (final c in _unplannedQuantityControllers) {
       c.dispose();
     }
+    _doctorsScrollController.dispose();
 
     super.dispose();
   }
@@ -3750,459 +3753,479 @@ void _openCreateEFormDialog() {
         ),
       ),
       child: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return RefreshIndicator(
-              onRefresh: _refreshDashboard,
-              child: SingleChildScrollView(
-                physics: AlwaysScrollableScrollPhysics(),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight,
+        child: Column(
+          children: [
+            // STICKY
+            // APPBAR EXTENSION
+            // WRAP the whole gradient + card in AnimatedSize so the bar can collapse/expand
+            AnimatedSize(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeInOut,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [
+                      Color(0xFF4E3385),
+                      Color(0xFF514499),
+                      Color(0xFF5455AD),
+                      Color(0xFF5A6EC4),
+                      Color(0xFF6098D9),
+                      Color(0xFF67C6ED),                
+                    ],
+                    stops: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(50.0),
+                    bottomRight: Radius.circular(50.0),
+                  ),
+                ),
+                child: Card(
+                  color: Colors.transparent,
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Padding(
-                    padding: EdgeInsets.only(left: 0, right: 0),
-                    child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                    padding: const EdgeInsets.all(24.0),
+                    child: Stack(
+                      alignment: Alignment.centerRight,
                       children: [
-                        // APPBAR EXTENSION
-                        // WRAP the whole gradient + card in AnimatedSize so the bar can collapse/expand
-                        AnimatedSize(
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeInOut,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [
-                                  Color(0xFF4e3385),
-                                  Color(0xFF63afe0),
-                                  // Color(0xFF715999),
-                                  // Color(0xFF836da6),
-                                  // Color(0xFF9582b3),
-                                ],
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                              ),
-                              borderRadius: const BorderRadius.only(
-                                bottomLeft: Radius.circular(50.0),
-                                bottomRight: Radius.circular(50.0),
-                              ),
-                            ),
-                            child: Card(
-                              color: Colors.transparent,
-                              elevation: 4,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(24.0),
-                                child: Stack(
-                                  alignment: Alignment.centerRight,
-                                  children: [
-                                    Column(
-                                      mainAxisSize: MainAxisSize.min,
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // This part collapses (avatar + name/email + right icons)
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeInOut,
+                              child: _isHeaderCollapsed
+                                  ? const SizedBox.shrink()
+                                  : Row(
+                                      crossAxisAlignment: CrossAxisAlignment.center,
                                       children: [
-                                        // This part collapses (avatar + name/email + right icons)
-                                        AnimatedSize(
-                                          duration: const Duration(milliseconds: 250),
-                                          curve: Curves.easeInOut,
-                                          child: _isHeaderCollapsed
-                                              ? const SizedBox.shrink()
-                                              : Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                                  children: [
-                                                    InkWell(
-                                                      onTap: () {
-                                                        Navigator.push(
-                                                          context,
-                                                          MaterialPageRoute(
-                                                            builder: (context) => ProfileViewPage(
-                                                              userName: userName,
-                                                              userEmail: userEmail,
-                                                            ),
-                                                          ),
-                                                        );
-                                                      },
-                                                      borderRadius: BorderRadius.circular(30),
-                                                      child: CircleAvatar(
-                                                        radius: 30,
-                                                        backgroundColor: Colors.orange,
-                                                        child: _isLoading
-                                                            ? const CircularProgressIndicator(
-                                                                color: Colors.white,
-                                                              )
-                                                            : Text(
-                                                                userName.isNotEmpty
-                                                                    ? userName[0].toUpperCase()
-                                                                    : 'U',
-                                                                style: const TextStyle(
-                                                                  fontSize: 24,
-                                                                  fontWeight: FontWeight.bold,
-                                                                  color: Colors.white,
-                                                                ),
-                                                              ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 16),
+                                        const SizedBox(width: 16),
 
-                                                    // Name + email
-                                                    Column(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                        // Name + email
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              _isLoading ? 'Loading...' : userName,
+                                              style: const TextStyle(
+                                                fontSize: 24,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white70,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              _isLoading ? 'Loading...' : userEmail,
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                                color: Colors.white70,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ),
+                                        const Spacer(),
+
+                                        // Right-side icons (also hidden when collapsed)
+                                        if (_isOffline)
+                                          Padding(
+                                            padding: const EdgeInsets.only(right: 8.0),
+                                            child: Row(
+                                              children: const [
+                                                Icon(
+                                                  Icons.cloud_off,
+                                                  color: Colors.yellow,
+                                                  size: 18,
+                                                ),
+                                                SizedBox(width: 4),
+                                                Text(
+                                                  'Offline',
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
+                                        // Mail icon inside grey transparent container
+                                        InkWell(
+                                          onTap: () {
+                                            showDialog(
+                                              context: context,
+                                              barrierDismissible: true,
+                                              builder: (ctx) {
+                                                return Dialog(
+                                                  // 1) Make the whole dialog have rounded corners (all sides)
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius: BorderRadius.circular(16),
+                                                  ),
+                                                  insetPadding: const EdgeInsets.symmetric(
+                                                    horizontal: 16,
+                                                    vertical: 24,
+                                                  ),
+                                                  child: ConstrainedBox(
+                                                    constraints: BoxConstraints(
+                                                      maxHeight: MediaQuery.of(ctx).size.height * 0.8,
+                                                      maxWidth: MediaQuery.of(ctx).size.width * 0.9,
+                                                    ),
+                                                    child: Column(
                                                       mainAxisSize: MainAxisSize.min,
                                                       children: [
-                                                        Text(
-                                                          _isLoading ? 'Loading...' : userName,
-                                                          style: const TextStyle(
-                                                            fontSize: 24,
-                                                            fontWeight: FontWeight.bold,
-                                                            color: Colors.white70,
+                                                        // 2) Header no longer sets only top radii; it just uses same radius
+                                                        //    so the dialog's shape controls all corners (top & bottom).
+                                                        Container(
+                                                          width: double.infinity,
+                                                          padding: const EdgeInsets.symmetric(
+                                                            horizontal: 16,
+                                                            vertical: 16,
                                                           ),
-                                                          overflow: TextOverflow.ellipsis,
+                                                          decoration: const BoxDecoration(
+                                                            color: Color(0xFF4e2f80),
+                                                            borderRadius: BorderRadius.only(
+                                                              topLeft: Radius.circular(16),
+                                                              topRight: Radius.circular(16),
+                                                              bottomLeft: Radius.circular(16),
+                                                              bottomRight: Radius.circular(16),
+                                                            ),
+                                                          ),
+                                                          child: Row(
+                                                            children: [
+                                                              const Icon(
+                                                                Icons.mail_outline,
+                                                                color: Colors.white,
+                                                                size: 22,
+                                                              ),
+                                                              const SizedBox(width: 8),
+                                                              const Text(
+                                                                'Messages',
+                                                                style: TextStyle(
+                                                                  color: Colors.white,
+                                                                  fontSize: 18,
+                                                                  fontWeight: FontWeight.w600,
+                                                                ),
+                                                              ),
+                                                              const Spacer(),
+                                                              TextButton.icon(
+                                                                onPressed: () {
+                                                                  // TODO: hook to your "create new message" flow
+                                                                },
+                                                                style: TextButton.styleFrom(
+                                                                  foregroundColor: Colors.white,
+                                                                  backgroundColor: Colors.white.withOpacity(0.15),
+                                                                  padding: const EdgeInsets.symmetric(
+                                                                    horizontal: 10,
+                                                                    vertical: 6,
+                                                                  ),
+                                                                  shape: RoundedRectangleBorder(
+                                                                    borderRadius: BorderRadius.circular(8),
+                                                                  ),
+                                                                ),
+                                                                icon: const Icon(
+                                                                  Icons.add,
+                                                                  size: 18,
+                                                                  color: Colors.white,
+                                                                ),
+                                                                label: const Text(
+                                                                  'New Message',
+                                                                  style: TextStyle(
+                                                                    fontSize: 12,
+                                                                    color: Colors.white,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
                                                         ),
-                                                        const SizedBox(height: 6),
-                                                        Text(
-                                                          _isLoading ? 'Loading...' : userEmail,
-                                                          style: const TextStyle(
-                                                            fontSize: 16,
-                                                            color: Colors.white70,
-                                                          ),
-                                                          overflow: TextOverflow.ellipsis,
+
+                                                        // 3) Body – by default respects dialog radius at bottom
+                                                        const Expanded(
+                                                          child: MessagesPage(),
                                                         ),
                                                       ],
                                                     ),
-                                                    const Spacer(),
-
-                                                    // Right-side icons (also hidden when collapsed)
-                                                    if (_isOffline)
-                                                      Padding(
-                                                        padding: const EdgeInsets.only(right: 8.0),
-                                                        child: Row(
-                                                          children: const [
-                                                            Icon(
-                                                              Icons.cloud_off,
-                                                              color: Colors.yellow,
-                                                              size: 18,
-                                                            ),
-                                                            SizedBox(width: 4),
-                                                            Text(
-                                                              'Offline',
-                                                              style: TextStyle(
-                                                                color: Colors.white,
-                                                                fontSize: 12,
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-
-                                                    // Mail icon inside grey transparent container
-                                                    InkWell(
-                                                      onTap: () {
-                                                        showDialog(
-                                                          context: context,
-                                                          barrierDismissible: true,
-                                                          builder: (ctx) {
-                                                            return Dialog(
-                                                              // 1) Make the whole dialog have rounded corners (all sides)
-                                                              shape: RoundedRectangleBorder(
-                                                                borderRadius: BorderRadius.circular(16),
-                                                              ),
-                                                              insetPadding: const EdgeInsets.symmetric(
-                                                                horizontal: 16,
-                                                                vertical: 24,
-                                                              ),
-                                                              child: ConstrainedBox(
-                                                                constraints: BoxConstraints(
-                                                                  maxHeight: MediaQuery.of(ctx).size.height * 0.8,
-                                                                  maxWidth: MediaQuery.of(ctx).size.width * 0.9,
-                                                                ),
-                                                                child: Column(
-                                                                  mainAxisSize: MainAxisSize.min,
-                                                                  children: [
-                                                                    // 2) Header no longer sets only top radii; it just uses same radius
-                                                                    //    so the dialog's shape controls all corners (top & bottom).
-                                                                    Container(
-                                                                      width: double.infinity,
-                                                                      padding: const EdgeInsets.symmetric(
-                                                                        horizontal: 16,
-                                                                        vertical: 16,
-                                                                      ),
-                                                                      decoration: const BoxDecoration(
-                                                                        color: Color(0xFF4e2f80),
-                                                                        borderRadius: BorderRadius.only(
-                                                                          topLeft: Radius.circular(16),
-                                                                          topRight: Radius.circular(16),
-                                                                          bottomLeft: Radius.circular(16),
-                                                                          bottomRight: Radius.circular(16),
-                                                                        ),
-                                                                      ),
-                                                                      child: Row(
-                                                                        children: [
-                                                                          const Icon(
-                                                                            Icons.mail_outline,
-                                                                            color: Colors.white,
-                                                                            size: 22,
-                                                                          ),
-                                                                          const SizedBox(width: 8),
-                                                                          const Text(
-                                                                            'Messages',
-                                                                            style: TextStyle(
-                                                                              color: Colors.white,
-                                                                              fontSize: 18,
-                                                                              fontWeight: FontWeight.w600,
-                                                                            ),
-                                                                          ),
-                                                                          const Spacer(),
-                                                                          TextButton.icon(
-                                                                            onPressed: () {
-                                                                              // TODO: hook to your "create new message" flow
-                                                                            },
-                                                                            style: TextButton.styleFrom(
-                                                                              foregroundColor: Colors.white,
-                                                                              backgroundColor: Colors.white.withOpacity(0.15),
-                                                                              padding: const EdgeInsets.symmetric(
-                                                                                horizontal: 10,
-                                                                                vertical: 6,
-                                                                              ),
-                                                                              shape: RoundedRectangleBorder(
-                                                                                borderRadius: BorderRadius.circular(8),
-                                                                              ),
-                                                                            ),
-                                                                            icon: const Icon(
-                                                                              Icons.add,
-                                                                              size: 18,
-                                                                              color: Colors.white,
-                                                                            ),
-                                                                            label: const Text(
-                                                                              'New Message',
-                                                                              style: TextStyle(
-                                                                                fontSize: 12,
-                                                                                color: Colors.white,
-                                                                              ),
-                                                                            ),
-                                                                          ),
-                                                                        ],
-                                                                      ),
-                                                                    ),
-
-                                                                    // 3) Body – by default respects dialog radius at bottom
-                                                                    const Expanded(
-                                                                      child: MessagesPage(),
-                                                                    ),
-                                                                  ],
-                                                                ),
-                                                              ),
-                                                            );
-                                                          },
-                                                        );
-                                                      },
-                                                      borderRadius: BorderRadius.circular(18),
-                                                      child: Container(
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.grey.withOpacity(0.3),
-                                                          borderRadius: BorderRadius.circular(28),
-                                                        ),
-                                                        child: const Padding(
-                                                          padding: EdgeInsets.all(15.0),
-                                                          child: Icon(
-                                                            Icons.mail_outline,
-                                                            color: Colors.white,
-                                                            size: 24,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-
-                                                    const SizedBox(width: 6),
-
-                                                    // Notifications icon inside grey transparent container
-                                                    InkWell(
-                                                      onTap: () {
-                                                        showDialog(
-                                                          context: context,
-                                                          barrierDismissible: true, // tap outside to close
-                                                          builder: (context) => const NotifPageDialog(),
-                                                        );
-                                                      },
-                                                      borderRadius: BorderRadius.circular(18),
-                                                      child: Container(
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.grey.withOpacity(0.3),
-                                                          borderRadius: BorderRadius.circular(28),
-                                                        ),
-                                                        child: const Padding(
-                                                          padding: EdgeInsets.all(15.0),
-                                                          child: Icon(
-                                                            Icons.notifications_none,
-                                                            color: Colors.white,
-                                                            size: 24,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                        ),
-
-                                        const SizedBox(height: 8),
-
-                                        // "Time In" button (also hidden when header is collapsed)
-                                        AnimatedSize(
-                                          duration: const Duration(milliseconds: 250),
-                                          curve: Curves.easeInOut,
-                                          child: _isHeaderCollapsed
-                                              ? const SizedBox.shrink()
-                                              : Align(
-                                                  alignment: Alignment.center,
-                                                  child: InkWell(
-                                                    onTap: () async {
-                                                      if (!_isTimedIn) {
-                                                        // Currently not timed in -> open Time In dialog
-                                                        final bool? didTimeIn = await _openTimeInDialog();
-                                                        if (didTimeIn == true) {
-                                                          setState(() {
-                                                            _isTimedIn = true;
-                                                          });
-                                                        }
-                                                      } else {
-                                                        // Already timed in -> open Time Out dialog
-                                                        final bool? didTimeOut = await _openTimeOutDialog();
-                                                        if (didTimeOut == true) {
-                                                          setState(() {
-                                                            _isTimedIn = false;
-                                                          });
-                                                        }
-                                                      }
-                                                    },
-                                                    borderRadius: BorderRadius.circular(20),
-                                                    child: Container(
-                                                      padding: const EdgeInsets.symmetric(
-                                                        horizontal: 16,
-                                                        vertical: 8,
-                                                      ),
-                                                      decoration: BoxDecoration(
-                                                        color: _isTimedIn
-                                                            ? Colors.red.withOpacity(0.8) // Time Out state
-                                                            : Colors.grey.withOpacity(0.3), // Time In state
-                                                        borderRadius: BorderRadius.circular(20),
-                                                      ),
-                                                      child: Row(
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children: [
-                                                          Icon(
-                                                            Icons.access_time,
-                                                            color: Colors.white,
-                                                            size: 18,
-                                                          ),
-                                                          const SizedBox(width: 8),
-                                                          Text(
-                                                            _isTimedIn ? 'Time Out' : 'Time In',
-                                                            style: const TextStyle(
-                                                              color: Colors.white,
-                                                              fontSize: 14,
-                                                              fontWeight: FontWeight.w500,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
                                                   ),
-                                                ),
-                                        ),
-                                        /// Place this method inside the same State class as your button.
-                                        /// Assumes you already have:
-                                        /// - Position? position;
-                                        /// - SignatureController timeInSignatureController;
-                                        /// - bool _isSubmittingTimeIn = false;
-                                        /// - Future<Position?> _getCurrentLocation();
-                                        /// - Future<String> _getAddressFromCoordinates(Position position);
-                                        /// and you imported `package:signature/signature.dart`, `package:geolocator/geolocator.dart` etc.
-
-                                        const SizedBox(height: 8),
-
-                                        Align(
-                                          alignment: Alignment.center,
+                                                );
+                                              },
+                                            );
+                                          },
+                                          borderRadius: BorderRadius.circular(18),
                                           child: Container(
-                                            padding: const EdgeInsets.all(1), // even smaller padding
                                             decoration: BoxDecoration(
                                               color: Colors.grey.withOpacity(0.3),
-                                              borderRadius: BorderRadius.circular(14),
+                                              borderRadius: BorderRadius.circular(28),
                                             ),
-                                            child: SizedBox(
-                                              width: 26,
-                                              height: 26,
-                                              child: IconButton(
-                                                padding: EdgeInsets.zero,
-                                                constraints: const BoxConstraints(),
-                                                iconSize: 18,
-                                                icon: Icon(
-                                                  _isHeaderCollapsed
-                                                      ? Icons.keyboard_arrow_down
-                                                      : Icons.keyboard_arrow_up,
-                                                  color: Colors.white70,
-                                                ),
-                                                onPressed: () {
-                                                  setState(() {
-                                                    _isHeaderCollapsed = !_isHeaderCollapsed;
-                                                  });
-                                                },
+                                            child: const Padding(
+                                              padding: EdgeInsets.all(15.0),
+                                              child: Icon(
+                                                Icons.mail_outline,
+                                                color: Colors.white,
+                                                size: 24,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+
+                                        const SizedBox(width: 6),
+
+                                        // Notifications icon inside grey transparent container
+                                        InkWell(
+                                          onTap: () {
+                                            showDialog(
+                                              context: context,
+                                              barrierDismissible: true, // tap outside to close
+                                              builder: (context) => const NotifPageDialog(),
+                                            );
+                                          },
+                                          borderRadius: BorderRadius.circular(18),
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey.withOpacity(0.3),
+                                              borderRadius: BorderRadius.circular(28),
+                                            ),
+                                            child: const Padding(
+                                              padding: EdgeInsets.all(15.0),
+                                              child: Icon(
+                                                Icons.notifications_none,
+                                                color: Colors.white,
+                                                size: 24,
                                               ),
                                             ),
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ],
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            // "Time In" button (also hidden when header is collapsed)
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeInOut,
+                              child: _isHeaderCollapsed
+                                  ? const SizedBox.shrink()
+                                  : Align(
+                                      alignment: Alignment.center,
+                                      child: InkWell(
+                                        onTap: () async {
+                                          if (!_isTimedIn) {
+                                            // Currently not timed in -> open Time In dialog
+                                            final bool? didTimeIn = await _openTimeInDialog();
+                                            if (didTimeIn == true) {
+                                              setState(() {
+                                                _isTimedIn = true;
+                                              });
+                                            }
+                                          } else {
+                                            // Already timed in -> open Time Out dialog
+                                            final bool? didTimeOut = await _openTimeOutDialog();
+                                            if (didTimeOut == true) {
+                                              setState(() {
+                                                _isTimedIn = false;
+                                              });
+                                            }
+                                          }
+                                        },
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 8,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _isTimedIn
+                                                ? Colors.red.withOpacity(0.8) // Time Out state
+                                                : Colors.grey.withOpacity(0.3), // Time In state
+                                            borderRadius: BorderRadius.circular(20),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                Icons.access_time,
+                                                color: Colors.white,
+                                                size: 18,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                _isTimedIn ? 'Time Out' : 'Time In',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                            /// Place this method inside the same State class as your button.
+                            /// Assumes you already have:
+                            /// - Position? position;
+                            /// - SignatureController timeInSignatureController;
+                            /// - bool _isSubmittingTimeIn = false;
+                            /// - Future<Position?> _getCurrentLocation();
+                            /// - Future<String> _getAddressFromCoordinates(Position position);
+                            /// and you imported `package:signature/signature.dart`, `package:geolocator/geolocator.dart` etc.
+
+                            const SizedBox(height: 8),
+
+                            Align(
+                              alignment: Alignment.center,
+                              child: Container(
+                                padding: const EdgeInsets.all(1), // even smaller padding
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.withOpacity(0.3),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: SizedBox(
+                                  width: 26,
+                                  height: 26,
+                                  child: IconButton(
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    iconSize: 18,
+                                    icon: Icon(
+                                      _isHeaderCollapsed
+                                          ? Icons.keyboard_arrow_down
+                                          : Icons.keyboard_arrow_up,
+                                      color: Colors.white70,
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        _isHeaderCollapsed = !_isHeaderCollapsed;
+                                      });
+                                    },
+                                  ),
                                 ),
                               ),
                             ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // SCROLLABLE CONTENT
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _refreshDashboard,
+                child: SingleChildScrollView(
+                  physics: AlwaysScrollableScrollPhysics(),
+                  child: Padding(
+                    padding: EdgeInsets.only(left: 0, right: 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(height: 12),
+                        SizedBox(height: 4),
+
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 20.0),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final double availableWidth = constraints.maxWidth;
+                              return Row(
+                                // mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    flex: 6,                                    
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            "Scheduled Doctors for Today",
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: availableWidth < 360 
+                                                  ? 13 
+                                                  : 15,
+                                              color: Color(0xFFf7ad01),
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(height: 4),
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            todayStr,
+                                            style: TextStyle(
+                                              fontFamily: 'OpenSauce',
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: availableWidth < 360 
+                                                  ? 15 
+                                                  : 17,
+                                              color: Colors.black,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  const SizedBox(width: 12),
+
+                                  Expanded(
+                                    flex: 4,                                    
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerRight,
+                                          child: Text(
+                                            "Completed Visits",
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: availableWidth < 360 
+                                                  ? 13
+                                                  : 15,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          "0/X",
+                                          style: TextStyle(
+                                            fontFamily: 'OpenSauce',
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: availableWidth < 360 
+                                                  ? 15
+                                                  : 17,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
                           ),
                         ),
-                        
-                        SizedBox(height: 12),
 
-                        Row(
-  mainAxisAlignment: MainAxisAlignment.center,
-  children: [
-    Text(
-      'Dashboard',
-      style: TextStyle(
-        fontFamily: 'Lato',
-        fontSize: 14,
-        color: Colors.black,
-      ),
-    ),
-  ],
-),
-                        SizedBox(height: 4),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              todayStr,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 28,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: 4),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              "Scheduled Doctors for Today",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 20,
-                                color: Color(0xFFf7ad01),
-                              ),
-                            ),
-                          ],
-                        ),
                         SizedBox(height: 8),
 
                         Padding(
@@ -4332,198 +4355,7 @@ void _openCreateEFormDialog() {
                                       }
 
                                       final visitsForDay = visitsSnapshot.data!;
-
-                                      return SizedBox(
-                                        height: 160,
-                                        child: ListView.builder(
-                                          scrollDirection: Axis.horizontal,
-                                          itemCount: visitsForDay.length,
-                                          itemBuilder: (context, idx) {
-                                            final visit = visitsForDay[idx];
-                                            final visitData =
-                                                visit['visitData'] as Map<String, dynamic>;
-                                            final scheduledTime =
-                                                visit['scheduledTime'] ?? '';
-                                            final bool isSubmitted =
-                                                visitData['submitted'] == true;
-                                            final bool isSurprise =
-                                                visitData['surprise'] == true;
-
-                                            Color cardBorderColor = Colors.grey.shade300;
-                                            if (isSubmitted) {
-                                              cardBorderColor = Colors.green.shade400;
-                                            }
-                                            Color cardColor = Colors.white;
-                                            if (isSurprise) {
-                                              cardColor = Colors.yellow.shade100;
-                                            }
-
-                                            final String doctorName =
-                                                visit['doctorName'] ?? '-';
-                                            final String hospital =
-                                                visit['hospital'] ?? '';
-
-                                            return SizedBox(
-                                              width: 150,
-                                              height: 150,
-                                              child: Padding(
-                                                padding: const EdgeInsets.only(right: 6.0),
-                                                child: Stack(
-                                                  clipBehavior: Clip.none,
-                                                  children: [
-                                                    Container(
-                                                      width: 150,
-                                                      height: 150,
-                                                      decoration: BoxDecoration(
-                                                        color: cardColor,
-                                                        border: Border.all(
-                                                          color: cardBorderColor,
-                                                          width: isSubmitted ? 2.3 : 1.2,
-                                                        ),
-                                                        borderRadius: BorderRadius.circular(18),
-                                                        boxShadow: [
-                                                          BoxShadow(
-                                                            color: Colors.black12,
-                                                            blurRadius: 6,
-                                                            offset: Offset(2, 3),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                      child: InkWell(
-                                                        borderRadius: BorderRadius.circular(18),
-                                                        onTap: () {
-                                                          Navigator.push(
-                                                            context,
-                                                            MaterialPageRoute(
-                                                              builder: (context) => CallDetailPage(
-                                                                doctor:
-                                                                    visit['doctor'] as Map<String, dynamic>,
-                                                                scheduledVisitId: visit['visitId'],
-                                                              ),
-                                                            ),
-                                                          );
-                                                        },
-                                                        child: Padding(
-                                                          padding: const EdgeInsets.fromLTRB(
-                                                              12, 16, 12, 10),
-                                                          child: Column(
-                                                            crossAxisAlignment:
-                                                                CrossAxisAlignment.start,
-                                                            mainAxisSize: MainAxisSize.min,
-                                                            children: [
-                                                              SizedBox(height: 18),
-                                                              SizedBox(
-                                                                height: 20,
-                                                                child: SingleChildScrollView(
-                                                                  scrollDirection:
-                                                                      Axis.horizontal,
-                                                                  child: Text(
-                                                                    doctorName,
-                                                                    maxLines: 1,
-                                                                    overflow:
-                                                                        TextOverflow.visible,
-                                                                    softWrap: false,
-                                                                    style: TextStyle(
-                                                                      fontWeight:
-                                                                          FontWeight.bold,
-                                                                      fontSize: 14,
-                                                                    ),
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                              SizedBox(height: 4),
-                                                              SizedBox(
-                                                                height: 16,
-                                                                child: Text(
-                                                                  scheduledTime,
-                                                                  maxLines: 1,
-                                                                  overflow:
-                                                                      TextOverflow.ellipsis,
-                                                                  style: TextStyle(
-                                                                    fontSize: 12,
-                                                                    color:
-                                                                        Colors.grey.shade800,
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                              if (hospital.isNotEmpty) ...[
-                                                                SizedBox(height: 4),
-                                                                SizedBox(
-                                                                  height: 32,
-                                                                  child: Text(
-                                                                    hospital,
-                                                                    maxLines: 2,
-                                                                    overflow:
-                                                                        TextOverflow.ellipsis,
-                                                                    style: TextStyle(
-                                                                      fontSize: 12,
-                                                                      color:
-                                                                          Colors.grey.shade700,
-                                                                    ),
-                                                                  ),
-                                                                ),
-                                                              ],
-                                                            ],
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    Positioned(
-                                                      top: 10,
-                                                      left: 10,
-                                                      child: Container(
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.white,
-                                                          borderRadius:
-                                                              BorderRadius.circular(14),
-                                                          boxShadow: [
-                                                            BoxShadow(
-                                                              color: Colors.black12,
-                                                              blurRadius: 3,
-                                                              offset: Offset(1, 2),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                        padding: EdgeInsets.all(2),
-                                                        child: Icon(
-                                                          Icons.assignment,
-                                                          color: Colors.black,
-                                                          size: 20,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    if (isSubmitted)
-                                                      Positioned(
-                                                        top: -8,
-                                                        left: -8,
-                                                        child: Container(
-                                                          decoration: BoxDecoration(
-                                                            color: Colors.white,
-                                                            borderRadius:
-                                                                BorderRadius.circular(14),
-                                                            boxShadow: [
-                                                              BoxShadow(
-                                                                color: Colors.black12,
-                                                                blurRadius: 3,
-                                                                offset: Offset(0, 1),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                          padding: EdgeInsets.all(2),
-                                                          child: Icon(
-                                                            Icons.check_circle,
-                                                            color: Colors.green,
-                                                            size: 20,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                  ],
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      );
+                                      return _buildScheduledDoctorsRow(visitsForDay);                                      
                                     },
                                   );
                                 },
@@ -4544,198 +4376,61 @@ void _openCreateEFormDialog() {
                                 ),
                               ),
                               Padding(
-                                padding: EdgeInsets.only(left: 20, top: 12, right: 0, bottom: 8),
-                                child: ConstrainedBox(
-                                  constraints: BoxConstraints(maxWidth: 420),
-                                  child: FutureBuilder<List<Map<String, dynamic>>>(
-                                    future: getTodaySamplesFlat(emailKey, userName).timeout(
-                                      Duration(seconds: 10),
-                                      onTimeout: () {
-                                        print('Timeout loading samples');
-                                        return <Map<String, dynamic>>[];
-                                      },
-                                    ),
-                                    builder: (context, snapshot) {
-                                      if (snapshot.hasError) {
-                                        print('Error loading samples: ${snapshot.error}');
-                                        return Container(
-                                          padding: EdgeInsets.all(16),
-                                          child: Column(
-                                            children: [
-                                              Icon(Icons.error_outline, color: Colors.red, size: 30),
-                                              SizedBox(height: 8),
-                                              Text(
-                                                'Error loading samples\n${snapshot.error}',
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(color: Colors.red, fontSize: 12),
-                                              ),
-                                              TextButton(
-                                                onPressed: () {
-                                                  setState(() {});
-                                                },
-                                                child: Text('Retry'),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      }
-
-                                      if (snapshot.connectionState == ConnectionState.waiting &&
-                                          !snapshot.hasData) {
-                                        return Center(child: CircularProgressIndicator());
-                                      }
-
-                                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                                        return Text(
-                                          _isOffline
-                                              ? "Offline: showing cached samples (none cached for today)."
-                                              : "No scheduled samples to bring today.",
-                                          style: TextStyle(
-                                            color: Colors.grey[700],
-                                            fontSize: 14,
-                                          ),
-                                        );
-                                      }
-
-                                      final samplesList = snapshot.data!;
-
-                                      return StatefulBuilder(
-                                        builder: (context, setBoxState) {
-                                          bool allChecked = samplesList.isNotEmpty &&
-                                              samplesList
-                                                  .asMap()
-                                                  .keys
-                                                  .every((i) => checkedStates[i] ?? false);
-
-                                          return SingleChildScrollView(
-                                            scrollDirection: Axis.horizontal,
-                                            child: Row(
-                                              children: samplesList.asMap().entries.map((entry) {
-                                                int idx = entry.key;
-                                                var item = entry.value;
-
-                                                final bool isChecked = checkedStates[idx] ?? false;
-                                                final String promoName = item['sample'] ?? '';
-                                                final int qty = item['qty'] ?? 0;
-                                                final String doctorName = item['doctorName'] ?? '';
-
-                                                return Padding(
-                                                  padding: EdgeInsets.only(right: 12),
-                                                  child: GestureDetector(
-                                                    onTap: () {
-                                                      checkedStates[idx] = !(checkedStates[idx] ?? false);
-                                                      setBoxState(() {});
-                                                    },
-                                                    child: AnimatedContainer(
-                                                      duration: const Duration(milliseconds: 250),
-                                                      curve: Curves.easeInOut,
-                                                      width: 150,
-                                                      height: 190,
-                                                      padding: const EdgeInsets.fromLTRB(10, 32, 10, 12),
-                                                      decoration: BoxDecoration(
-                                                        color: isChecked
-                                                            ? Colors.green.shade50
-                                                            : Colors.white,
-                                                        borderRadius: BorderRadius.circular(18),
-                                                        border: Border.all(
-                                                          color: isChecked
-                                                              ? Colors.green
-                                                              : Colors.grey.shade300,
-                                                          width: isChecked ? 2 : 1,
-                                                        ),
-                                                        boxShadow: [
-                                                          BoxShadow(
-                                                            color: Colors.black.withOpacity(0.08),
-                                                            blurRadius: 8,
-                                                            offset: Offset(0, 4),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                      child: Stack(
-                                                        clipBehavior: Clip.none,
-                                                        children: [
-                                                          // main card content
-                                                          Column(
-                                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                                            mainAxisSize: MainAxisSize.max,
-                                                            children: [
-                                                              // extra spacer to push content lower
-                                                              SizedBox(height: 38),
-                                                              // Promo material (now above doctor name)
-                                                              Text(
-                                                                promoName,
-                                                                maxLines: 2,
-                                                                overflow: TextOverflow.ellipsis,
-                                                                style: TextStyle(
-                                                                  fontSize: 13,
-                                                                  color: Colors.black,
-                                                                ),
-                                                              ),
-                                                              SizedBox(height: 10),
-                                                              // Doctor name LOWER
-                                                              Text(
-                                                                doctorName,
-                                                                maxLines: 1,
-                                                                overflow: TextOverflow.ellipsis,
-                                                                style: TextStyle(
-                                                                  fontWeight: FontWeight.bold,
-                                                                  fontSize: 13,
-                                                                  color: Colors.black87,
-                                                                ),
-                                                              ),
-                                                              SizedBox(height: 10),
-                                                              // Quantity
-                                                              Text(
-                                                                'Qty: $qty',
-                                                                style: TextStyle(
-                                                                  fontSize: 12,
-                                                                  fontWeight: FontWeight.w600,
-                                                                  color: Colors.grey.shade800,
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
-
-                                                          // top-center icon badge
-                                                          Positioned(
-                                                            top: -18,
-                                                            left: 0,
-                                                            right: 0,
-                                                            child: Center(
-                                                              child: Container(
-                                                                width: 45,
-                                                                height: 45,
-                                                                decoration: BoxDecoration(
-                                                                  color: Colors.orange.shade50,
-                                                                  shape: BoxShape.circle,
-                                                                  boxShadow: [
-                                                                    BoxShadow(
-                                                                      color: Colors.black.withOpacity(0.1),
-                                                                      blurRadius: 4,
-                                                                      offset: Offset(0, 2),
-                                                                    ),
-                                                                  ],
-                                                                ),
-                                                                child: Icon(
-                                                                  Icons.inventory_2_rounded,
-                                                                  size: 38,
-                                                                  color: Colors.orange.shade700,
-                                                                ),
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ),
-                                                );
-                                              }).toList(),
-                                            ),
-                                          );
-                                        },
-                                      );
+                                padding: EdgeInsets.only(left: 1, top: 12, right: 0, bottom: 10),
+                                child: FutureBuilder<List<Map<String, dynamic>>>(
+                                  future: getTodaySamplesFlat(emailKey, userName).timeout(
+                                    Duration(seconds: 10),
+                                    onTimeout: () {
+                                      print('Timeout loading samples');
+                                      return <Map<String, dynamic>>[];
                                     },
                                   ),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasError) {
+                                      print('Error loading samples: ${snapshot.error}');
+                                      return Container(
+                                        padding: EdgeInsets.all(16),
+                                        child: Column(
+                                          children: [
+                                            Icon(Icons.error_outline, color: Colors.red, size: 30),
+                                            SizedBox(height: 8),
+                                            Text(
+                                              'Error loading samples\n${snapshot.error}',
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(color: Colors.red, fontSize: 12),
+                                            ),
+                                            TextButton(
+                                              onPressed: () {
+                                                setState(() {});
+                                              },
+                                              child: Text('Retry'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }
+                                
+                                    if (snapshot.connectionState == ConnectionState.waiting &&
+                                        !snapshot.hasData) {
+                                      return Center(child: CircularProgressIndicator());
+                                    }
+                                
+                                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                                      return Text(
+                                        _isOffline
+                                            ? "Offline: showing cached samples (none cached for today)."
+                                            : "No scheduled samples to bring today.",
+                                        style: TextStyle(
+                                          color: Colors.grey[700],
+                                          fontSize: 14,
+                                        ),
+                                      );
+                                    }
+                                
+                                    final samplesList = snapshot.data!;
+                                
+                                    return _buildSamplesToBringRow(samplesList);                                      
+                                  },
                                 ),
                               ),
 
@@ -5447,14 +5142,14 @@ void _openCreateEFormDialog() {
                         ),
 
                         // MARK MARK MARK
-                      
+
                       ],
                     ),
                   ),
                 ),
               ),
-            );
-          },
+            ),
+          ],
         ),
       ),
     );
@@ -5904,6 +5599,560 @@ Widget build(BuildContext context) {
           ),
         ),
       ),
+    );
+  }
+
+  // Scheduled doctors for today section
+  Widget _buildScheduledDoctorsRow(List<Map<String, dynamic>> visitsForDay) {
+    // Sort by time 
+    // Visited doctors are shown first
+    visitsForDay.sort((a, b) {
+      final aVisitData = a['visitData'] as Map<String, dynamic>;
+      final bVisitData = b['visitData'] as Map<String, dynamic>;
+
+      final aSig = aVisitData['signaturePoints'];
+      final bSig = bVisitData['signaturePoints'];
+
+      final bool aVisited = aSig != null && aSig is List && (aSig as List).isNotEmpty;
+      final bool bVisited = bSig != null && bSig is List && (bSig as List).isNotEmpty;
+
+      if (aVisited && !bVisited) return -1;
+      if (!aVisited && bVisited) return 1;
+
+      final aTime = a['scheduledTime'] as String? ?? '';
+      final bTime = b['scheduledTime'] as String? ?? '';
+      return aTime.compareTo(bTime);
+    });
+  
+    // Find the doctor to visit (purple card)
+    final int nextIdx = visitsForDay.indexWhere((v) {
+      final visitData = v['visitData'] as Map<String, dynamic>;
+      final signaturePoints = visitData['signaturePoints'];
+      return signaturePoints == null ||
+          (signaturePoints is List && signaturePoints.isEmpty);
+    });
+ 
+    // Auto-scroll to the next (purple) doctor card
+    if (nextIdx > 0) {
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (!_doctorsScrollController.hasClients) return;
+        if (!_doctorsScrollController.position.hasContentDimensions) return;
+
+        // Resize card width so that it is always longer than the longest doctor name
+        const double minCardWidth = 280.0;
+        const double maxCardWidth = 380.0;
+        const double charsPerLine = 18.0;
+        const double extraWidthPerChar = 7.0;
+        const double badgeOverflow = 10.0;
+        const double cardGap = 12.0;
+
+        // Find the doctor with the longest name among all displayed cards
+        // All card widths remain uniform
+        final String longestName = visitsForDay
+            .map((v) => (v['doctorName'] as String? ?? ''))
+            .reduce((a, b) => a.length > b.length ? a : b);
+
+        final double cardWidth = longestName.length > charsPerLine
+            ? (minCardWidth +
+                    (longestName.length - charsPerLine) * extraWidthPerChar)
+                .clamp(minCardWidth, maxCardWidth)
+            : minCardWidth;
+
+        final double itemStride = cardWidth + badgeOverflow + cardGap;
+        final double offset = (nextIdx * itemStride).clamp(
+          0.0,
+          _doctorsScrollController.position.maxScrollExtent,
+        );
+
+        _doctorsScrollController.animateTo(
+          offset,
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeInOut,
+        );
+      });
+    }
+  
+    const double badgeOverflow = 10.0;
+    const double shadowPadding = 12.0;
+    return SizedBox(
+      height: 220 + badgeOverflow + shadowPadding,
+      child: ListView.builder(
+        controller: _doctorsScrollController,
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.only(
+          left: 5, 
+          top: badgeOverflow, 
+          bottom: shadowPadding
+        ),
+        itemCount: visitsForDay.length,
+        itemBuilder: (context, idx) {
+          final visit = visitsForDay[idx];
+          final visitData = visit['visitData'] as Map<String, dynamic>;
+          final scheduledTime = visit['scheduledTime'] as String? ?? '';
+          final String doctorName = visit['doctorName'] as String? ?? '-';
+          final String hospital = visit['hospital'] as String? ?? '';
+          final String specialty = visit['specialty'] as String? ?? '';      
+          final bool isUnplanned = visitData['unplanned'] == true;          // Added these here because Dave's UI includes Planned/Unplanned labels
+          final String visitTypeLabel = isUnplanned                         // Not sure tho if backend for this has already been implemented
+              ? '(Unplanned)'
+              : '(Planned)';
+  
+          // Determineif visited or not yet
+          final signaturePoints = visitData['signaturePoints'];
+          final bool isVisited = signaturePoints != null &&
+              signaturePoints is List &&
+              (signaturePoints as List).isNotEmpty;
+  
+          // "Next to visit" is purple
+          final bool isNext = !isVisited && idx == nextIdx;
+  
+          // Card dimensions
+          const double visitedCardHeight = 200.0;
+          const double normalCardHeight = 212.0;
+          final double cardHeight = isVisited 
+              ? visitedCardHeight 
+              : normalCardHeight;
+
+          // Measure the longest doctor name and scale card width accordingly
+          const double minCardWidth = 280.0;
+          const double maxCardWidth = 380.0;
+          const double charsPerLine = 18.0;
+          const double extraWidthPerChar = 7.0;
+
+          final String longestName = visitsForDay
+              .map((v) => (v['doctorName'] as String? ?? ''))
+              .reduce((a, b) => a.length > b.length ? a : b);
+
+          final double dynamicWidth = longestName.length > charsPerLine
+              ? (minCardWidth + (longestName.length - charsPerLine) * extraWidthPerChar)
+                  .clamp(minCardWidth, maxCardWidth)
+              : minCardWidth;
+
+          final double cardWidth = dynamicWidth;
+
+          // Color constants
+          final Color cardBg = Colors.white;
+          final Color iconBoxBg = isNext
+              ? Colors.white.withValues(alpha: 0.18)
+              : const Color(0xFFF0F0F2);
+          final Color iconColor = isNext
+              ? Colors.white
+              : const Color(0xFF5A5A7A);
+          final Color titleColor = isNext 
+              ? Colors.white
+              : Colors.black87;
+          final Color subtitleColor = isNext 
+              ? Colors.white70
+              : Colors.grey.shade500;
+          final Color timeColor = isNext 
+              ? Colors.white70
+              : Colors.grey.shade700;
+          final Color hospitalColor = isNext 
+              ? Colors.white60 
+              : Colors.grey.shade600;
+  
+          // Card widget
+          return Padding(
+            padding: const EdgeInsets.only(right: 12.0),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: cardWidth + badgeOverflow,
+                height: cardHeight,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // Main card
+                    Positioned(
+                      left: badgeOverflow,
+                      top: 0,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        width: cardWidth,
+                        height: cardHeight,
+                        decoration: BoxDecoration(
+                          // Card colors depending on state (visited or not visited)
+                          color: isNext
+                              ? null
+                              : (isVisited 
+                                      ? Colors.white
+                                      : Colors.white),
+                          borderRadius: BorderRadius.circular(18),
+                          gradient: isNext
+                              ? const LinearGradient(                                
+                                  colors: [
+                                    Color(0xFF4A2371), 
+                                    Color(0xFF4A2371), 
+                                    Color(0xFF5958B2)],
+                                  stops: [0.0, 0.55, 1.0],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                )
+                              : null,
+                          border: isVisited
+                              ? Border.all(color: const Color(0xFF4CAF50), width: 2.2)
+                              : null,
+                          boxShadow: [
+                            BoxShadow(
+                              color: isNext
+                                  ? const Color(0xFF3B2A7E).withValues(alpha: 0.35)
+                                  : Colors.black.withValues(alpha: 0.07),
+                              blurRadius: isNext ? 16 : 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(18),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => CallDetailPage(
+                                  doctor: visit['doctor'] as Map<String, dynamic>,
+                                  scheduledVisitId: visit['visitId'] as String,
+                                ),
+                              ),
+                            );
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Icon, doctor's visit, planned/unplanned
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        color: iconBoxBg,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        Icons.assignment_outlined,
+                                        size: 26,
+                                        color: iconColor,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            "Doctor's Visit",
+                                            style: TextStyle(
+                                              fontFamily: 'OpenSauce',
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 12,                                              
+                                              color: titleColor,
+                                            ),
+                                          ),
+                                          Text(
+                                            visitTypeLabel,
+                                            style: TextStyle(
+                                              fontFamily: 'OpenSauce',
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 10,                                            
+                                              color: isNext
+                                                  ? Colors.white60
+                                                  : Colors.grey.shade500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                      
+                                const SizedBox(height: 10),
+                      
+                                // Doctor name
+                                Text(
+                                  doctorName,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: 'OpenSauce',
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                    color: titleColor,
+                                    height: 1.2,
+                                    shadows: isNext
+                                      ? [Shadow(color: Colors.white.withValues(alpha: 0.3), blurRadius: 0, offset: Offset(0.4, 0))]
+                                      : [Shadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 0, offset: Offset(0.4, 0))],
+                                  ),
+                                ),
+                      
+                                const SizedBox(height: 4),
+                      
+                                // Time
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      scheduledTime,
+                                      style: TextStyle(
+                                        fontFamily: 'OpenSauce',
+                                        fontWeight: FontWeight.w400,
+                                        fontSize: 14, 
+                                        color: timeColor),
+                                    ),
+                                    if (hospital.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        hospital,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontFamily: 'OpenSauce',
+                                          fontWeight: FontWeight.w400,
+                                          fontSize: 12, 
+                                          color: hospitalColor, 
+                                          height: 1.3),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+
+                                const Spacer(),
+
+                                // Start Call button (non-visited only)
+                                if (!isVisited)
+                                  Container(
+                                    width: double.infinity,
+                                    height: 34,
+                                    decoration: BoxDecoration(
+                                      gradient: isNext
+                                          ? const LinearGradient(
+                                              // colors: [Color(0xFF388E3C), Color(0xFF4CAF50)],
+                                              colors: [Color(0xFF4CAF50), Color(0xFF388E3C)],
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            )
+                                          : null,
+                                      color: isNext 
+                                          ? null
+                                          : const Color(0xFFE8F5E9),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => CallDetailPage(
+                                              doctor: visit['doctor']
+                                                  as Map<String, dynamic>,
+                                              scheduledVisitId:
+                                                  visit['visitId'] as String,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      icon: const Icon(
+                                        Icons.play_arrow,
+                                        size: 17,
+                                      ),
+                                      label: const Text(
+                                        'Start Call',
+                                        style: TextStyle(
+                                          fontFamily: 'OpenSauce',
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 13,                                          
+                                          letterSpacing: 0.3,
+                                        ),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.transparent,
+                                        foregroundColor: isNext
+                                            ? Colors.white
+                                            : const Color(0xFF2E7D32),
+                                        elevation: 0,
+                                        shadowColor: Colors.transparent,
+                                        padding:
+                                            const EdgeInsets.symmetric(horizontal: 8),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+  
+                    // Green check badge (visited)
+                    if (isVisited)
+                      Positioned(
+                        top: -4,
+                        left: -2,
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF4CAF50),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Color(0x334CAF50),
+                                blurRadius: 6,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.check,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSamplesToBringRow(List<Map<String, dynamic>> samplesList) {
+    return StatefulBuilder(
+      builder: (context, setBoxState) {
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.none, 
+          child: Row(
+            children: samplesList.asMap().entries.map((entry) {
+              int idx = entry.key;
+              var item = entry.value;              
+              final bool isChecked = checkedStates[idx] ?? false;
+              final String promoName = item['sample'] ?? '';
+              final int qty = item['qty'] ?? 0;
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: GestureDetector(
+                  onTap: () {
+                    checkedStates[idx] = !(checkedStates[idx] ?? false);
+                    setBoxState(() {});
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut,
+                    width: 160,
+                    height: 160,
+                    padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
+                    decoration: BoxDecoration(
+                      color: isChecked
+                          ? Colors.green.shade50
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isChecked
+                            ? Colors.green
+                            : Colors.grey.shade200,
+                        width: isChecked 
+                            ? 1.5 
+                            : 0.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isChecked
+                              ? Colors.green.withValues(alpha: 0.15)
+                              : Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 16,
+                          spreadRadius: 0,
+                          offset: const Offset(0, 6),
+                        ),
+                        BoxShadow(
+                          color: isChecked
+                              ? Colors.green.withValues(alpha: 0.06)
+                              : Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 6,
+                          spreadRadius: 0,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Icon
+                        Container(
+                          width: 55,
+                          height: 55,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEEEDFE),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            LucideIcons.package,
+                            size: 26,
+                            color: Color(0xFF4A2371)
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Product name
+                        Text(
+                          promoName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontFamily: 'OpenSauce',                            
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,                            
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+
+                        // Quantity
+                        RichText(
+                          text: TextSpan(
+                            style: const TextStyle(fontSize: 14),
+                            children: [
+                              TextSpan(
+                                text: 'Qty: ',
+                                style: TextStyle(
+                                  color: Colors.grey.shade800,
+                                ),
+                              ),
+                              TextSpan(
+                                text: '${qty}x',
+                                style: const TextStyle(
+                                  color: Color(0xFF4A2371),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
     );
   }
 }

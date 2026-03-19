@@ -57,7 +57,6 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
     _tabController.addListener(() {
       setState(() {});
     });
-    // Start in edit mode if requested
     _isEditing = widget.startInEditMode;
   }
 
@@ -586,7 +585,6 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                     children: [
                       infoRow('Frequency of Planned Visits',
                           widget.doctor?['freq']?.toString()),
-                      // Week 1–5 removed
                     ],
                   ),
                 ),
@@ -626,8 +624,6 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Clinic Schedule removed
-                      // Support Level removed
                       infoRow('PRC No.', widget.doctor?['prc_no']?.toString()),
                       _isEditing
                           ? _editableTextField(
@@ -636,7 +632,6 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                               'Email',
                               widget.doctor?['email']?.toString(),
                             ),
-                      // Product 1–5 removed
                     ],
                   ),
                 ),
@@ -664,11 +659,16 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
               const SizedBox(height: 80),
             ],
           ),
+
+          // CALL NOTES TAB
           CallNotesTab(docId: widget.doc_id, emailKey: emailKey!),
+
+          // VISITS TAB
           VisitsTab(
             docId: widget.doc_id,
             doctor: widget.doctor,
             emailKey: emailKey!,
+            monthId: null, // null = current month
           ),
         ],
       ),
@@ -805,22 +805,26 @@ class VisitsTab extends StatelessWidget {
   final Map<String, dynamic>? doctor;
   final String emailKey;
 
+  final String? monthId;
+
   const VisitsTab({
     Key? key,
     required this.docId,
     required this.doctor,
     required this.emailKey,
+    this.monthId,
   }) : super(key: key);
 
   String _currentMonthId() {
     final now = DateTime.now();
-    return DateFormat('yyyy-MM').format(now); // e.g. 2026-03
+    return DateFormat('yyyy-MM').format(now);
   }
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final currentMonthId = _currentMonthId();
+
+    final effectiveMonthId = monthId ?? _currentMonthId();
 
     final monthDocRef = FirebaseFirestore.instance
         .collection('flowDB')
@@ -832,7 +836,7 @@ class VisitsTab extends StatelessWidget {
         .collection('scheduledVisits')
         .doc('months')
         .collection('months')
-        .doc(currentMonthId);
+        .doc(effectiveMonthId);
 
     return Padding(
       padding: const EdgeInsets.only(top: 8.0),

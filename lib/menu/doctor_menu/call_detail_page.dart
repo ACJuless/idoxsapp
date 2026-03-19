@@ -49,11 +49,8 @@ class _CallDetailPageState extends State<CallDetailPage> {
           backgroundColor: Color(0xFF5958b2),
           bottom: TabBar(
             isScrollable: false,
-            // Selected tab label color (gold)
             labelColor: Colors.amber,
-            // Unselected tab label color (white)
             unselectedLabelColor: Colors.white,
-            // Keep indicator white or change to gold if you prefer
             indicatorColor: Colors.amber,
             tabs: const [
               Tab(text: "Pre-Call"),
@@ -78,21 +75,14 @@ class _CallDetailPageState extends State<CallDetailPage> {
               doctorId: doctorId,
               scheduledVisitId: widget.scheduledVisitId,
             ),
-            // CallPostCallPage(
-            //   doctorId: doctorId,
-            //   scheduledVisitId: widget.scheduledVisitId,
-            // ),
           ],
         ),
         floatingActionButton: Builder(
           builder: (context) {
-            // Only show FAB when on PreCallTab (first tab)
             final tabController = DefaultTabController.of(context);
             return StreamBuilder<Object>(
               stream: null,
               builder: (context, snapshot) {
-                // You can customize to check if current tab index == 0 to conditionally show FAB
-                // For now, always show FAB as per original layout
                 return FloatingActionButton(
                   onPressed: () async {
                     final doctorId = widget.doctor['doc_id'] ?? '';
@@ -139,13 +129,9 @@ class PreCallTab extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
-                children: [
-                  // Removed the "Add Pre-Call Note" ElevatedButton here as per request
-                  // SizedBox(width: 30),
-                ],
+                children: [],
               ),
               SizedBox(height: 18),
-              // Row removed so Pre-Call Plans can be centered
               Expanded(
                 child: Center(
                   child: ConstrainedBox(
@@ -201,68 +187,12 @@ class _DeductionListUserScopedState extends State<DeductionListUserScoped> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Text("Target Deductions", textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.black)),
-        // SizedBox(height: 6),
-        // Expanded(
-        //   child: StreamBuilder<QuerySnapshot>(
-        //     stream: FirebaseFirestore.instance
-        //         .collection('flowDB')
-        //         .doc('users')
-        //         .collection(emailKey!)
-        //         .doc('doctors')
-        //         .collection('doctors')
-        //         .doc(widget.doctorId)
-        //         .collection('scheduledVisits')
-        //         .doc(widget.scheduledVisitId)
-        //         .collection('targetDeductions')
-        //         .orderBy('timestamp', descending: true)
-        //         .snapshots(),
-        //     builder: (context, snapshot) {
-        //       if (!snapshot.hasData) return Center(child: CircularProgressIndicator());
-        //       final docs = snapshot.data!.docs;
-        //       if (docs.isEmpty) return Center(child: Text("No Target Deductions..."));
-        //       return ListView.builder(
-        //         itemCount: docs.length,
-        //         itemBuilder: (context, idx) {
-        //             final data = docs[idx].data() as Map<String, dynamic>;
-        //             final ts = data['timestamp'] as Timestamp?;
-        //             final dt = ts != null ? ts.toDate() : DateTime.now();
-        //             return Card(
-        //               margin: EdgeInsets.symmetric(vertical: 6, horizontal: 5),
-        //               elevation: 2,
-        //               child: Padding(
-        //                 padding: const EdgeInsets.all(12.0),
-        //                 child: Column(
-        //                   crossAxisAlignment: CrossAxisAlignment.start,
-        //                   children: [
-        //                     Text(data['option'] ?? "Target Deduction", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-        //                     Padding(
-        //                       padding: const EdgeInsets.only(top: 3),
-        //                       child: Text(
-        //                         "${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} "
-        //                         "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}",
-        //                         style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 13),
-        //                       ),
-        //                     ),
-        //                     Padding(
-        //                       padding: EdgeInsets.only(top: 3),
-        //                       child: Text("Half-Day: ${data['halfDay'] == true ? 'Yes' : 'No'}", style: TextStyle(fontSize: 13)),
-        //                     )
-        //                   ],
-        //                 ),
-        //               ),
-        //             );
-        //         },
-        //       );
-        //     },
-        //   ),
-        // ),
+        // Target deductions UI commented out
       ],
     );
   }
 }
 
-/// User-aware "Call Notes" list for Pre-Call Plans
 class _PreCallNotesListUserScoped extends StatefulWidget {
   final String doctorId;
   final String scheduledVisitId;

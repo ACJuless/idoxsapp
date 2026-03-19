@@ -29,6 +29,8 @@ class _ItineraryPageState extends State<ItineraryPage> {
   int _selectedViewIndex = 2;
 
   bool _isOffline = false;
+  
+  final ScrollController _doctorsScrollController = ScrollController();
 
   @override
   void initState() {
@@ -36,11 +38,17 @@ class _ItineraryPageState extends State<ItineraryPage> {
     _loadUserEmail();
   }
 
+  @override
+  void dispose() {
+    _doctorsScrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadUserEmail() async {
     final prefs = await SharedPreferences.getInstance();
     final userEmail = prefs.getString('userEmail') ?? '';
     setState(() {
-      emailKey = userEmail.replaceAll(RegExp(r'[.#$\[\\]/]'), '_');
+      emailKey = userEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
     });
     if (emailKey.isNotEmpty) {
       await _fetchScheduledCallsCount(_focusedDay);
@@ -143,7 +151,9 @@ class _ItineraryPageState extends State<ItineraryPage> {
                 if (offFieldValue != null &&
                     offFieldValue.toString().trim().isNotEmpty) {
                   offFieldReasons.putIfAbsent(
-                      visitDateString, () => offFieldValue.toString().trim());
+                    visitDateString,
+                    () => offFieldValue.toString().trim(),
+                  );
                 }
               }
             }
@@ -162,9 +172,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
     });
   }
 
-  /// Get all scheduled visits across all doctors for the selected day.
-  /// Mirrors the Firestore path from VisitsTab in doctor_detail_page.dart:
-  /// scheduledVisits/months/months/{yyyy-MM}/dates, and filters scheduledDate == yyyy-MM-dd.
+  /// Generalized version: returns all visits for the given selectedDay.
   Future<List<Map<String, dynamic>>> getAllScheduledVisitsForSelectedDay(
     List<QueryDocumentSnapshot> doctorDocs,
     DateTime selectedDay,
@@ -194,10 +202,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
           .collection('months')
           .doc(monthId);
 
-      final datesSnap = await monthDocRef
-          .collection('dates')
-          .orderBy('scheduledDate')
-          .get();
+      final datesSnap = await monthDocRef.collection('dates').get();
 
       for (var v in datesSnap.docs) {
         final visitData = v.data() as Map<String, dynamic>;
@@ -526,8 +531,9 @@ class _ItineraryPageState extends State<ItineraryPage> {
                           formatButtonVisible: false,
                           titleCentered: true,
                           titleTextStyle: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold),
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         rowHeight: 105,
                         daysOfWeekHeight: 40,
@@ -716,7 +722,6 @@ class _ItineraryPageState extends State<ItineraryPage> {
                         ),
                       ),
                     ),
-                    if (_selectedDay != null) _buildDayHeader(),
                     if (selectedOffFieldReason != null &&
                         selectedOffFieldReason.isNotEmpty)
                       Padding(
@@ -743,8 +748,8 @@ class _ItineraryPageState extends State<ItineraryPage> {
                                         style: TextStyle(
                                           fontWeight:
                                               FontWeight.bold,
-                                          color: Colors
-                                              .red.shade800,
+                                          color:
+                                              Colors.red.shade800,
                                           fontSize: 15,
                                         ),
                                       ),
@@ -752,8 +757,8 @@ class _ItineraryPageState extends State<ItineraryPage> {
                                       Text(
                                         selectedOffFieldReason,
                                         style: TextStyle(
-                                          color: Colors
-                                              .red.shade900,
+                                          color:
+                                              Colors.red.shade900,
                                           fontSize: 14,
                                         ),
                                       ),
@@ -786,7 +791,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
               EdgeInsets.only(left: 6, bottom: 8, top: 8),
           child: Center(
             child: Text(
-              "Upcoming Visits",
+              "Scheduled Visits",
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.bold,
@@ -875,6 +880,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
 
               final doctorDocs = doctorSnapshot.data!.docs;
 
+              // use selected day (fallback to today)
               final selectedDayForVisits =
                   _selectedDay ?? DateTime.now();
 
@@ -945,235 +951,8 @@ class _ItineraryPageState extends State<ItineraryPage> {
                   }
 
                   final visitsForDay = visitsSnapshot.data!;
-
-                  return SizedBox(
-                    height: 160,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding:
-                          const EdgeInsets.only(left: 20, right: 0),
-                      itemCount: visitsForDay.length,
-                      itemBuilder: (context, idx) {
-                        final visit = visitsForDay[idx];
-                        final visitData =
-                            visit['visitData'] as Map<String, dynamic>;
-                        final scheduledTime =
-                            visit['scheduledTime'] ?? '';
-                        final bool isSubmitted =
-                            visitData['submitted'] == true;
-                        final bool isSurprise =
-                            visitData['surprise'] == true;
-
-                        Color cardBorderColor =
-                            Colors.grey.shade300;
-                        if (isSubmitted) {
-                          cardBorderColor =
-                              Colors.green.shade400;
-                        }
-                        Color cardColor = Colors.white;
-                        if (isSurprise) {
-                          cardColor =
-                              Colors.yellow.shade100;
-                        }
-
-                        final String doctorName =
-                            visit['doctorName'] ?? '-';
-                        final String hospital =
-                            visit['hospital'] ?? '';
-
-                        return SizedBox(
-                          width: 150,
-                          height: 150,
-                          child: Padding(
-                            padding:
-                                const EdgeInsets.only(right: 6.0),
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Container(
-                                  width: 150,
-                                  height: 150,
-                                  decoration: BoxDecoration(
-                                    color: cardColor,
-                                    border: Border.all(
-                                      color: cardBorderColor,
-                                      width:
-                                          isSubmitted ? 2.3 : 1.2,
-                                    ),
-                                    borderRadius:
-                                        BorderRadius.circular(18),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Colors.black12,
-                                        blurRadius: 6,
-                                        offset: Offset(2, 3),
-                                      ),
-                                    ],
-                                  ),
-                                  child: InkWell(
-                                    borderRadius:
-                                        BorderRadius.circular(18),
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) =>
-                                              CallDetailPage(
-                                            doctor: visit['doctor']
-                                                as Map<String,
-                                                    dynamic>,
-                                            scheduledVisitId:
-                                                visit['visitId'],
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    child: Padding(
-                                      padding:
-                                          const EdgeInsets.fromLTRB(
-                                              12, 16, 12, 10),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment
-                                                .start,
-                                        mainAxisSize:
-                                            MainAxisSize.min,
-                                        children: [
-                                          const SizedBox(
-                                              height: 18),
-                                          SizedBox(
-                                            height: 20,
-                                            child:
-                                                SingleChildScrollView(
-                                              scrollDirection:
-                                                  Axis.horizontal,
-                                              child: Text(
-                                                doctorName,
-                                                maxLines: 1,
-                                                overflow:
-                                                    TextOverflow
-                                                        .visible,
-                                                softWrap: false,
-                                                style:
-                                                    const TextStyle(
-                                                  fontWeight:
-                                                      FontWeight
-                                                          .bold,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(
-                                              height: 4),
-                                          SizedBox(
-                                            height: 16,
-                                            child: Text(
-                                              scheduledTime,
-                                              maxLines: 1,
-                                              overflow:
-                                                  TextOverflow
-                                                      .ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors
-                                                    .grey
-                                                    .shade800,
-                                              ),
-                                            ),
-                                          ),
-                                          if (hospital
-                                              .isNotEmpty) ...[
-                                            const SizedBox(
-                                                height: 4),
-                                            SizedBox(
-                                              height: 32,
-                                              child: Text(
-                                                hospital,
-                                                maxLines: 2,
-                                                overflow:
-                                                    TextOverflow
-                                                        .ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors
-                                                      .grey
-                                                      .shade700,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 10,
-                                  left: 10,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius:
-                                          BorderRadius.circular(
-                                              14),
-                                      boxShadow: const [
-                                        BoxShadow(
-                                          color: Colors
-                                              .black12,
-                                          blurRadius: 3,
-                                          offset:
-                                              Offset(1, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    padding:
-                                        const EdgeInsets.all(2),
-                                    child: const Icon(
-                                      Icons.assignment,
-                                      color: Colors.black,
-                                      size: 20,
-                                    ),
-                                  ),
-                                ),
-                                if (isSubmitted)
-                                  Positioned(
-                                    top: -8,
-                                    left: -8,
-                                    child: Container(
-                                      decoration:
-                                          BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius:
-                                            BorderRadius
-                                                .circular(14),
-                                        boxShadow: const [
-                                          BoxShadow(
-                                            color: Colors
-                                                .black12,
-                                            blurRadius: 3,
-                                            offset: Offset(
-                                                0, 1),
-                                          ),
-                                        ],
-                                      ),
-                                      padding:
-                                          const EdgeInsets.all(
-                                              2),
-                                      child: const Icon(
-                                        Icons.check_circle,
-                                        color: Colors.green,
-                                        size: 20,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  );
+                  
+                  return _buildScheduledDoctorsRow(visitsForDay);
                 },
               );
             },
@@ -1699,6 +1478,235 @@ class _ItineraryPageState extends State<ItineraryPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildScheduledDoctorsRow(List<Map<String, dynamic>> visitsForDay) {
+    const double badgeOverflow = 10.0;
+    const double shadowPadding = 12.0;
+    const double minCardWidth = 280.0;
+    const double maxCardWidth = 380.0;
+    const double charsPerLine = 18.0;
+    const double extraWidthPerChar = 7.0;
+    const double cardHeight = 180.0;       // Set again to 212.0 if ia-add na yung Start Call button
+
+    final String longestName = visitsForDay
+        .map((v) => (v['doctorName'] as String? ?? ''))
+        .reduce((a, b) => a.length > b.length ? a : b);
+
+    final double cardWidth = longestName.length > charsPerLine
+        ? (minCardWidth + (longestName.length - charsPerLine) * extraWidthPerChar)
+            .clamp(minCardWidth, maxCardWidth)
+        : minCardWidth;
+
+    return SizedBox(
+      height: cardHeight + badgeOverflow + shadowPadding,
+      child: ListView.builder(
+        controller: _doctorsScrollController,
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.only(left: 5, top: badgeOverflow, bottom: shadowPadding),
+        itemCount: visitsForDay.length,
+        itemBuilder: (context, idx) {
+          final visit = visitsForDay[idx];
+          final visitData = visit['visitData'] as Map<String, dynamic>;
+          final String scheduledTime = visit['scheduledTime'] as String? ?? '';
+          final String doctorName = visit['doctorName'] as String? ?? '-';
+          final String hospital = visit['hospital'] as String? ?? '';
+          final bool isUnplanned = visitData['unplanned'] == true;
+          final String visitTypeLabel = isUnplanned ? '(Unplanned)' : '(Planned)';
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 12.0),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: cardWidth + badgeOverflow,
+                height: cardHeight,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      left: badgeOverflow,
+                      top: 0,
+                      child: Container(
+                        width: cardWidth,
+                        height: cardHeight,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.07),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(18),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => CallDetailPage(
+                                  doctor: visit['doctor'] as Map<String, dynamic>,
+                                  scheduledVisitId: visit['visitId'] as String,
+                                ),
+                              ),
+                            );
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF0F0F2),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Icon(
+                                        Icons.assignment_outlined,
+                                        size: 26,
+                                        color: Color(0xFF5A5A7A),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Text(
+                                            "Doctor's Visit",
+                                            style: TextStyle(
+                                              fontFamily: 'OpenSauce',
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 12,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                          Text(
+                                            visitTypeLabel,
+                                            style: TextStyle(
+                                              fontFamily: 'OpenSauce',
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 10,
+                                              color: Colors.grey.shade500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  doctorName,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: 'OpenSauce',
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                    color: Colors.black87,
+                                    height: 1.2,
+                                    shadows: [
+                                      Shadow(
+                                        color: Colors.black.withValues(alpha: 0.15),
+                                        blurRadius: 0,
+                                        offset: const Offset(0.4, 0),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  scheduledTime,
+                                  style: TextStyle(
+                                    fontFamily: 'OpenSauce',
+                                    fontWeight: FontWeight.w400,
+                                    fontSize: 14,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                                if (hospital.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    hospital,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontFamily: 'OpenSauce',
+                                      fontWeight: FontWeight.w400,
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ],
+                                // START CALL BUTTON (commented out for now)
+                                // const Spacer(),
+                                // Container(
+                                //   width: double.infinity,
+                                //   height: 34,
+                                //   decoration: BoxDecoration(
+                                //     color: const Color(0xFFE8F5E9),
+                                //     borderRadius: BorderRadius.circular(10),
+                                //   ),
+                                //   child: ElevatedButton.icon(
+                                //     onPressed: () {
+                                //       Navigator.push(
+                                //         context,
+                                //         MaterialPageRoute(
+                                //           builder: (context) => CallDetailPage(
+                                //             doctor: visit['doctor'] as Map<String, dynamic>,
+                                //             scheduledVisitId: visit['visitId'] as String,
+                                //           ),
+                                //         ),
+                                //       );
+                                //     },
+                                //     icon: const Icon(Icons.play_arrow, size: 17),
+                                //     label: const Text(
+                                //       'Start Call',
+                                //       style: TextStyle(
+                                //         fontFamily: 'OpenSauce',
+                                //         fontWeight: FontWeight.w700,
+                                //         fontSize: 13,
+                                //         letterSpacing: 0.3,
+                                //       ),
+                                //     ),
+                                //     style: ElevatedButton.styleFrom(
+                                //       backgroundColor: Colors.transparent,
+                                //       foregroundColor: const Color(0xFF2E7D32),
+                                //       elevation: 0,
+                                //       shadowColor: Colors.transparent,
+                                //       padding: const EdgeInsets.symmetric(horizontal: 8),
+                                //       shape: RoundedRectangleBorder(
+                                //         borderRadius: BorderRadius.circular(10),
+                                //       ),
+                                //     ),
+                                //   ),
+                                // ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

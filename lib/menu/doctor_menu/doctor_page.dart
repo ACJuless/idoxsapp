@@ -557,16 +557,26 @@ class _DoctorPageState extends State<DoctorPage>
           flexibleSpace: Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  Color(0xFF4e2f80),
-                  Color(0xFF60448d),
-                  Color(0xFF715999),
-                  Color(0xFF836da6),
-                  Color(0xFF9582b3),
-                ],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
+              colors: [
+                Color(0xFF4E3385),
+                Color(0xFF503282),
+                Color(0xFF523584),
+                Color(0xFF543887),
+                Color(0xFF563B89),
+                Color(0xFF593F8C),
+                Color(0xFF5C438F),
+                Color(0xFF5F4892),
+                Color(0xFF634D96),
+                Color(0xFF68529A),
+                Color(0xFF6E589E),
+                Color(0xFF7560A4),
+                Color(0xFF8170AB),
+                Color(0xFF9582B3),
+              ],
+              stops: [0.0, 0.07, 0.14, 0.22, 0.30, 0.38, 0.46, 0.54, 0.62, 0.70, 0.77, 0.84, 0.92, 1.0],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
               borderRadius: BorderRadius.vertical(
                 bottom: Radius.circular(24),
               ),
