@@ -52,36 +52,102 @@ class _LoginPageState extends State<LoginPage> {
     return hash.toString();
   }
 
+  /// Helper: find user in the new client structure used by signup, using email field:
+  /// - /DaloyClients/INDOFIL/Users   (query by email)
+  /// - /DaloyClients/IVA/Users       (query by email)
+  /// - /DaloyClients/WERT/Users      (query by email)
+  /// - /flowDB/client/GENERAL/users/users (query by email)
+  Future<DocumentSnapshot<Map<String, dynamic>>?> _findUserInClientTree(
+    String email,
+  ) async {
+    final lower = email.toLowerCase();
+
+    if (lower.endsWith('@indofil.com')) {
+      // /DaloyClients/INDOFIL/Users  (ID is MRxxxxx, so query by email field)
+      final usersRef = FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('INDOFIL')
+          .collection('Users');
+      final query = await usersRef
+          .where('email', isEqualTo: lower)
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) return query.docs.first;
+    } else if (lower.endsWith('@iva.com')) {
+      // /DaloyClients/IVA/Users
+      final usersRef = FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('Users');
+      final query = await usersRef
+          .where('email', isEqualTo: lower)
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) return query.docs.first;
+    } else if (lower.endsWith('@wert.com')) {
+      // /DaloyClients/WERT/Users
+      final usersRef = FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('WERT')
+          .collection('Users');
+      final query = await usersRef
+          .where('email', isEqualTo: lower)
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) return query.docs.first;
+    } else {
+      // /flowDB/client/GENERAL/users/users
+      final usersRef = FirebaseFirestore.instance
+          .collection('flowDB')
+          .doc('client')
+          .collection('GENERAL')
+          .doc('users')
+          .collection('users');
+      final query = await usersRef
+          .where('email', isEqualTo: lower)
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) return query.docs.first;
+    }
+
+    return null;
+  }
+
+  /// Only use new structure; lookups driven purely by email, not emailKey
+  Future<DocumentSnapshot<Map<String, dynamic>>?> _findUserDoc(
+    String email,
+  ) async {
+    return await _findUserInClientTree(email);
+  }
+
   Future<void> _signIn() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
 
       try {
         final email = _emailController.text.trim();
-        final emailKey = email.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
         final hashedPassword = _hashPassword(_passwordController.text);
 
-        // Query the user's collection using sanitized email from input
-        final userProfiles = await FirebaseFirestore.instance
-            .collection('flowDB')
-            .doc('users')
-            .collection(emailKey)
-            .get();
+        if (_selectedTerritory == null || _selectedTerritory!.isEmpty) {
+          throw Exception('Please select a territory');
+        }
 
-        // Find user matching by email & territory
-        final docs = userProfiles.docs.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          return data['email'] == email &&
-              data['territoryId'] == _selectedTerritory;
-        }).toList();
+        // Use only the new client structure, querying by email
+        final userDocSnap = await _findUserDoc(email);
 
-        if (docs.isEmpty) {
+        if (userDocSnap == null || !userDocSnap.exists) {
           throw Exception('Invalid email, password, or territory');
         }
 
-        final userDoc = docs.first;
-        final userData = userDoc.data() as Map<String, dynamic>;
+        final userData =
+            userDocSnap.data() as Map<String, dynamic>? ?? {};
 
+        // Check territory
+        if (userData['territoryId'] != _selectedTerritory) {
+          throw Exception('Invalid email, password, or territory');
+        }
+
+        // Check password
         if (userData['password'] != hashedPassword) {
           throw Exception('Invalid password');
         }
@@ -89,7 +155,8 @@ class _LoginPageState extends State<LoginPage> {
         // Get clientType from user document (set during signup)
         final clientType = userData['clientType'] ?? 'both';
 
-        await userDoc.reference.update({
+        // Mark user active and update last login
+        await userDocSnap.reference.update({
           'isActive': true,
           'lastLogin': FieldValue.serverTimestamp(),
         });
@@ -106,24 +173,24 @@ class _LoginPageState extends State<LoginPage> {
         if (_rememberMe) {
           await prefs.setBool('isLoggedIn', true);
           await prefs.setString('userEmail', email);
-          await prefs.setString('userId', userDoc.id);
+          await prefs.setString('userId', userDocSnap.id);
           await prefs.setString('territoryId', _selectedTerritory ?? '');
           await prefs.setString('userName', userData['name'] ?? '');
         } else {
           // Still store basic info even if not remembering
           await prefs.setString('userEmail', email);
-          await prefs.setString('userId', userDoc.id);
+          await prefs.setString('userId', userDocSnap.id);
           await prefs.setString('territoryId', _selectedTerritory ?? '');
           await prefs.setString('userName', userData['name'] ?? '');
         }
 
-        // Pass needed data to home via push or use global state
+        // Pass needed data to home
         Navigator.pushReplacementNamed(
           context,
           '/home',
           arguments: {
             'userEmail': email,
-            'userId': userDoc.id,
+            'userId': userDocSnap.id,
             'territoryId': _selectedTerritory,
             'userName': userData['name'] ?? '',
             'userClientType': clientType,
@@ -131,7 +198,11 @@ class _LoginPageState extends State<LoginPage> {
         );
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+          SnackBar(
+            content: Text(
+              e.toString().replaceAll('Exception: ', ''),
+            ),
+          ),
         );
       }
 
@@ -141,7 +212,8 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isLand = MediaQuery.of(context).orientation == Orientation.landscape;
+    final isLand =
+        MediaQuery.of(context).orientation == Orientation.landscape;
     final gradientColors = [
       Color(0xFF4b2874),
       Color(0xFF4b2874),
@@ -231,7 +303,12 @@ class _LoginPageState extends State<LoginPage> {
                                     style: TextStyle(
                                       fontSize: 100,
                                       fontWeight: FontWeight.bold,
-                                      color: Color.fromRGBO(248, 242, 254, 1),
+                                      color: Color.fromRGBO(
+                                        248,
+                                        242,
+                                        254,
+                                        1,
+                                      ),
                                     ),
                                   ),
                                   Text(
@@ -252,15 +329,18 @@ class _LoginPageState extends State<LoginPage> {
                                       labelStyle: TextStyle(color: Colors.white),
                                       labelText: 'Email',
                                       border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(30),
+                                        borderRadius:
+                                            BorderRadius.circular(30),
                                         borderSide: BorderSide.none,
                                       ),
                                       enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(30),
+                                        borderRadius:
+                                            BorderRadius.circular(30),
                                         borderSide: BorderSide.none,
                                       ),
                                       focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(30),
+                                        borderRadius:
+                                            BorderRadius.circular(30),
                                         borderSide: BorderSide.none,
                                       ),
                                     ),
@@ -293,20 +373,24 @@ class _LoginPageState extends State<LoginPage> {
                                         ),
                                         onPressed: () {
                                           setState(() {
-                                            _obscurePassword = !_obscurePassword;
+                                            _obscurePassword =
+                                                !_obscurePassword;
                                           });
                                         },
                                       ),
                                       border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(24),
+                                        borderRadius:
+                                            BorderRadius.circular(24),
                                         borderSide: BorderSide.none,
                                       ),
                                       enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(24),
+                                        borderRadius:
+                                            BorderRadius.circular(24),
                                         borderSide: BorderSide.none,
                                       ),
                                       focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(24),
+                                        borderRadius:
+                                            BorderRadius.circular(24),
                                         borderSide: BorderSide.none,
                                       ),
                                     ),
@@ -324,7 +408,8 @@ class _LoginPageState extends State<LoginPage> {
                                   SizedBox(height: 16),
                                   DropdownButtonFormField<String>(
                                     value: _selectedTerritory,
-                                    items: _territoryOptions.map((territory) {
+                                    items: _territoryOptions
+                                        .map((territory) {
                                       return DropdownMenuItem(
                                         value: territory,
                                         child: Text(
@@ -337,13 +422,12 @@ class _LoginPageState extends State<LoginPage> {
                                         ),
                                       );
                                     }).toList(),
-                                    dropdownColor:
-                                        Color.fromRGBO(69, 56, 98, 0.6),
+                                    dropdownColor: Color.fromRGBO(
+                                        69, 56, 98, 0.6),
                                     decoration: InputDecoration(
                                       fillColor: Color(0xFF3d3876),
                                       filled: true,
-                                      labelStyle:
-                                          TextStyle(color: Colors.white),
+                                      labelStyle: TextStyle(color: Colors.white),
                                       labelText: 'Territory ID',
                                       border: OutlineInputBorder(
                                         borderRadius:
@@ -361,8 +445,11 @@ class _LoginPageState extends State<LoginPage> {
                                         borderSide: BorderSide.none,
                                       ),
                                     ),
-                                    icon: Icon(Icons.arrow_drop_down_rounded,
-                                        color: Colors.white, size: 32),
+                                    icon: Icon(
+                                      Icons.arrow_drop_down_rounded,
+                                      color: Colors.white,
+                                      size: 32,
+                                    ),
                                     onChanged: (value) {
                                       setState(() {
                                         _selectedTerritory = value;
@@ -387,13 +474,15 @@ class _LoginPageState extends State<LoginPage> {
                                           borderRadius:
                                               BorderRadius.circular(5),
                                         ),
-                                        activeColor: Colors.deepPurpleAccent,
+                                        activeColor:
+                                            Colors.deepPurpleAccent,
                                       ),
                                       Text(
                                         'Remember Me',
                                         style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 15),
+                                          color: Colors.white,
+                                          fontSize: 15,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -407,15 +496,15 @@ class _LoginPageState extends State<LoginPage> {
                                         onPressed:
                                             _isLoading ? null : _signIn,
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor:
-                                              Color(0xFFa95dee),
+                                          backgroundColor: Color(0xFFa95dee),
                                           foregroundColor: Colors.white,
                                           shape: RoundedRectangleBorder(
                                             borderRadius:
                                                 BorderRadius.circular(30),
                                           ),
                                           padding: EdgeInsets.symmetric(
-                                              vertical: 16),
+                                            vertical: 16,
+                                          ),
                                         ),
                                         child: _isLoading
                                             ? SizedBox(
@@ -423,8 +512,8 @@ class _LoginPageState extends State<LoginPage> {
                                                 width: 20,
                                                 child:
                                                     CircularProgressIndicator(
-                                                  color: Colors
-                                                      .deepPurpleAccent,
+                                                  color:
+                                                      Colors.deepPurpleAccent,
                                                   strokeWidth: 2,
                                                 ),
                                               )
@@ -432,8 +521,7 @@ class _LoginPageState extends State<LoginPage> {
                                                 'Log In',
                                                 style: TextStyle(
                                                   fontSize: 16,
-                                                  fontWeight:
-                                                      FontWeight.bold,
+                                                  fontWeight: FontWeight.bold,
                                                 ),
                                               ),
                                       ),
@@ -445,17 +533,19 @@ class _LoginPageState extends State<LoginPage> {
                                     onPressed: () {
                                       Navigator.of(context).push(
                                         MaterialPageRoute(
-                                            builder: (context) =>
-                                                SignupPage()),
+                                          builder: (context) => SignupPage(),
+                                        ),
                                       );
                                     },
                                     style: TextButton.styleFrom(
-                                        foregroundColor: Colors.white),
+                                      foregroundColor: Colors.white,
+                                    ),
                                     child: RichText(
                                       text: TextSpan(
                                         style: TextStyle(
-                                            fontSize: 16,
-                                            color: Colors.white),
+                                          fontSize: 16,
+                                          color: Colors.white,
+                                        ),
                                         children: [
                                           TextSpan(
                                             text:
@@ -496,15 +586,19 @@ class _LoginPageState extends State<LoginPage> {
                           style: TextStyle(color: Colors.black),
                           children: <TextSpan>[
                             TextSpan(
-                                text: 'RAGING',
-                                style: TextStyle(
-                                    fontSize: 24,
-                                    color: Color(0xFFf7ad01))),
+                              text: 'RAGING',
+                              style: TextStyle(
+                                fontSize: 24,
+                                color: Color(0xFFf7ad01),
+                              ),
+                            ),
                             TextSpan(
-                                text: 'RIVER',
-                                style: TextStyle(
-                                    fontSize: 24,
-                                    color: Color(0xFF70309e))),
+                              text: 'RIVER',
+                              style: TextStyle(
+                                fontSize: 24,
+                                color: Color(0xFF70309e),
+                              ),
+                            ),
                           ],
                         ),
                       ),

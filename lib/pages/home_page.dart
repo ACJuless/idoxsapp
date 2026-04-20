@@ -63,9 +63,11 @@ bool _isTimedIn = false;
 Map<String, Map<String, bool>> doctorChecklistStates = {};
 Map<int, bool> checkedStates = {};
 
+// SAMPLES TO BRING
 Future<List<Map<String, dynamic>>> getTodaySamplesFlat(
   String emailKey,
   String userName,
+  String userClientType,
 ) async {
   if (emailKey.isEmpty) return [];
 
@@ -80,14 +82,33 @@ Future<List<Map<String, dynamic>>> getTodaySamplesFlat(
 
   final firestore = FirebaseFirestore.instance;
 
-  // 1. Load all doctors for this user
-  final doctorsSnap = await firestore
-      .collection('flowDB')
-      .doc('users')
-      .collection(emailKey)
-      .doc('doctors')
-      .collection('doctors')
-      .get();
+  // 1. Load all doctors for this user, using same structure as VisitsTab / Scheduled Doctors
+  CollectionReference<Map<String, dynamic>> doctorsCollection;
+  final root = firestore.collection('flowDB').doc('users');
+
+  if (userClientType == 'pharma') {
+    doctorsCollection = root
+        .collection('RR')
+        .doc(emailKey)
+        .collection('doctors')
+        .doc('doctors')
+        .collection('doctors');
+  } else if (userClientType == 'farmers') {
+    doctorsCollection = root
+        .collection('INDOFIL')
+        .doc(emailKey)
+        .collection('doctors')
+        .doc('doctors')
+        .collection('doctors');
+  } else {
+    // legacy / default
+    doctorsCollection = root
+        .collection(emailKey)
+        .doc('doctors')
+        .collection('doctors');
+  }
+
+  final doctorsSnap = await doctorsCollection.get();
 
   if (doctorsSnap.docs.isEmpty) return [];
 
@@ -156,7 +177,7 @@ Future<List<Map<String, dynamic>>> getTodaySamplesFlat(
 
 // CALL PERFORMANCE STATS
 
-// Monthly Call Performance
+// MONTHLY CALL PERFORMANCE
 Future<Map<String, int>> _getAccomplishedVisitsForMonth(
     String emailKey, String userName) async {
   final now = DateTime.now();
@@ -364,9 +385,13 @@ class _HomePageState extends State<HomePage> {
   String emailKey = '';
   bool _hasSubmittedSignature = false;
   bool _isLoading = true;
+  String _userId = '';
+
 
   int _selectedIndex = 0;
   bool _isOffline = false;
+
+  String userClientType = ''; // 'pharma', 'farmers', or legacy/other
 
   List<Point>? _pendingSignaturePoints;
   String? _pendingSignatureTimestamp;
@@ -468,13 +493,16 @@ String? _selectedGender;
 
     String storedEmail = prefs.getString('userEmail') ?? '';
     String storedName = prefs.getString('userName') ?? '';
+    String storedClientType = prefs.getString('userClientType') ?? '';
     String fetchEmailKey =
         storedEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
 
     bool online = await _hasNetwork();
     bool wentOffline = !online;
 
-    if (storedName.isEmpty && storedEmail.isNotEmpty && online) {
+    if ((storedName.isEmpty || storedClientType.isEmpty) &&
+        storedEmail.isNotEmpty &&
+        online) {
       try {
         final userDocs = await FirebaseFirestore.instance
             .collection('flowDB')
@@ -483,10 +511,14 @@ String? _selectedGender;
             .get();
 
         for (var doc in userDocs.docs) {
-          if (doc.data().containsKey('name')) {
-            storedName = doc.data()['name'];
+          final data = doc.data();
+          if (data.containsKey('name') && storedName.isEmpty) {
+            storedName = data['name'] ?? '';
             await prefs.setString('userName', storedName);
-            break;
+          }
+          if (data.containsKey('clientType') && storedClientType.isEmpty) {
+            storedClientType = data['clientType']?.toString() ?? '';
+            await prefs.setString('userClientType', storedClientType);
           }
         }
       } catch (e) {
@@ -499,12 +531,14 @@ String? _selectedGender;
       userEmail = storedEmail;
       userName = storedName;
       emailKey = storedEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
-      _hasSubmittedSignature = prefs.getBool('hasSubmittedSignature') ?? false;
+      userClientType = storedClientType; // set here
+      _hasSubmittedSignature =
+          prefs.getBool('hasSubmittedSignature') ?? false;
       _isLoading = false;
       _isOffline = wentOffline;
     });
   }
-
+  
   Future<bool?> _openTimeInDialog() async {
     Position? position;
     bool _isSubmittingTimeIn = false;
@@ -1569,66 +1603,66 @@ SingleChildScrollView(
     });
   }
 
-  Future<List<Map<String, dynamic>>> getAllScheduledVisitsForToday(
-    List<QueryDocumentSnapshot> doctorDocs,
-    DateTime selectedDay,
-  ) async {
-    if (emailKey.isEmpty) return [];
+Future<List<Map<String, dynamic>>> getAllScheduledVisitsForToday(
+  List<QueryDocumentSnapshot> doctorDocs,
+  DateTime selectedDay,
+) async {
+  if (emailKey.isEmpty) return [];
 
-    final List<Map<String, dynamic>> allVisits = [];
+  final List<Map<String, dynamic>> allVisits = [];
 
-    final targetDateKey =
-        '${selectedDay.year.toString().padLeft(4, '0')}-'
-        '${selectedDay.month.toString().padLeft(2, '0')}-'
-        '${selectedDay.day.toString().padLeft(2, '0')}';
+  final targetDateKey =
+      '${selectedDay.year.toString().padLeft(4, '0')}-'
+      '${selectedDay.month.toString().padLeft(2, '0')}-'
+      '${selectedDay.day.toString().padLeft(2, '0')}';
 
-    // derive the month doc id, e.g. "2026-03"
-    final monthId =
-        '${selectedDay.year.toString().padLeft(4, '0')}-'
-        '${selectedDay.month.toString().padLeft(2, '0')}';
+  final monthId =
+      '${selectedDay.year.toString().padLeft(4, '0')}-'
+      '${selectedDay.month.toString().padLeft(2, '0')}';
 
-    for (var doc in doctorDocs) {
-      final docData = doc.data() as Map<String, dynamic>;
-      final doctorId = docData['doc_id'] ?? doc.id;
-      final doctorName =
-          "${docData['lastName'] ?? ''}, ${docData['firstName'] ?? ''}";
+  for (var doc in doctorDocs) {
+    final docData = doc.data() as Map<String, dynamic>;
+    final doctorId = docData['doc_id'] ?? doc.id;
+    final doctorName =
+        "${docData['lastName'] ?? ''}, ${docData['firstName'] ?? ''}";
 
-      // ⬇️ navigate into scheduledVisits/months/months/{yyyy-MM}/dates
-      final monthDocRef = doc.reference
-          .collection('scheduledVisits')
-          .doc('months')
-          .collection('months')
-          .doc(monthId);
+    // /flowDB/client/{SEGMENT}/users/{emailKey}/doctors/{docId}
+    //   /scheduledVisits/months/months/{yyyy-MM}/dates
+    final monthDocRef = doc.reference
+        .collection('scheduledVisits')
+        .doc('months')
+        .collection('months')
+        .doc(monthId);
 
-      final datesSnap = await monthDocRef.collection('dates').get();
+    final datesSnap = await monthDocRef.collection('dates').get();
 
-      for (var v in datesSnap.docs) {
-        final visitData = v.data() as Map<String, dynamic>;
-        final visitDateString = visitData['scheduledDate'] ?? '';
+    for (var v in datesSnap.docs) {
+      final visitData = v.data() as Map<String, dynamic>;
+      final visitDateString = visitData['scheduledDate'] ?? '';
 
-        if (visitDateString == targetDateKey) {
-          allVisits.add({
-            'doctorName': doctorName,
-            'scheduledTime': visitData['scheduledTime'] ?? '',
-            'hospital': docData['hospital'] ?? '',
-            'specialty': docData['specialty'] ?? '',
-            'doctor': docData,
-            'doctorId': doctorId,
-            'visitId': v.id,
-            'visitData': visitData,
-          });
-        }
+      if (visitDateString == targetDateKey) {
+        allVisits.add({
+          'doctorName': doctorName,
+          'scheduledTime': visitData['scheduledTime'] ?? '',
+          'hospital': docData['hospital'] ?? '',
+          'specialty': docData['specialty'] ?? '',
+          'doctor': docData,
+          'doctorId': doctorId,
+          'visitId': v.id,
+          'visitData': visitData,
+        });
       }
     }
-
-    allVisits.sort((a, b) =>
-        (a['scheduledTime'] ?? '').compareTo(b['scheduledTime'] ?? ''));
-
-    return allVisits;
   }
 
-  String _dateKey(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  allVisits.sort((a, b) =>
+      (a['scheduledTime'] ?? '').compareTo(b['scheduledTime'] ?? ''));
+
+  return allVisits;
+}
+
+String _dateKey(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   Future<Map<String, int>> getAccomplishedVisitsForToday(
       String emailKey, String userName) async {
@@ -1643,7 +1677,7 @@ SingleChildScrollView(
         .collection(emailKey)
         .doc('doctors')
         .collection('doctors')
-        .get();
+        .get(); 
 
     for (var doc in doctorSnapshot.docs) {
       var scheduledVisitsSnap =
@@ -4134,17 +4168,17 @@ void _openCreateEFormDialog() {
                         SizedBox(height: 12),
                         SizedBox(height: 4),
 
+                        // ===================== SCHEDULED DOCTOR SECTION HEADER =====================
                         Padding(
                           padding: EdgeInsets.symmetric(horizontal: 20.0),
                           child: LayoutBuilder(
                             builder: (context, constraints) {
                               final double availableWidth = constraints.maxWidth;
                               return Row(
-                                // mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
-                                    flex: 6,                                    
+                                    flex: 6,
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       mainAxisSize: MainAxisSize.min,
@@ -4156,9 +4190,8 @@ void _openCreateEFormDialog() {
                                             "Scheduled Doctors for Today",
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
-                                              fontSize: availableWidth < 360 
-                                                  ? 13 
-                                                  : 15,
+                                              fontSize:
+                                                  availableWidth < 360 ? 13 : 15,
                                               color: Color(0xFFf7ad01),
                                             ),
                                           ),
@@ -4172,9 +4205,8 @@ void _openCreateEFormDialog() {
                                             style: TextStyle(
                                               fontFamily: 'OpenSauce',
                                               fontWeight: FontWeight.w700,
-                                              fontSize: availableWidth < 360 
-                                                  ? 15 
-                                                  : 17,
+                                              fontSize:
+                                                  availableWidth < 360 ? 15 : 17,
                                               color: Colors.black,
                                             ),
                                           ),
@@ -4182,11 +4214,9 @@ void _openCreateEFormDialog() {
                                       ],
                                     ),
                                   ),
-
                                   const SizedBox(width: 12),
-
                                   Expanded(
-                                    flex: 4,                                    
+                                    flex: 4,
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.end,
                                       mainAxisSize: MainAxisSize.min,
@@ -4198,9 +4228,8 @@ void _openCreateEFormDialog() {
                                             "Completed Visits",
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
-                                              fontSize: availableWidth < 360 
-                                                  ? 13
-                                                  : 15,
+                                              fontSize:
+                                                  availableWidth < 360 ? 13 : 15,
                                               color: Colors.grey[600],
                                             ),
                                           ),
@@ -4211,9 +4240,8 @@ void _openCreateEFormDialog() {
                                           style: TextStyle(
                                             fontFamily: 'OpenSauce',
                                             fontWeight: FontWeight.w700,
-                                            fontSize: availableWidth < 360 
-                                                  ? 15
-                                                  : 17,
+                                            fontSize:
+                                                availableWidth < 360 ? 15 : 17,
                                             color: Colors.black87,
                                           ),
                                         ),
@@ -4222,7 +4250,7 @@ void _openCreateEFormDialog() {
                                   ),
                                 ],
                               );
-                            }
+                            },
                           ),
                         ),
 
@@ -4234,19 +4262,43 @@ void _openCreateEFormDialog() {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               FutureBuilder<QuerySnapshot>(
-                                future: FirebaseFirestore.instance
-                                    .collection('flowDB')
-                                    .doc('users')
-                                    .collection(emailKey)
-                                    .doc('doctors')
-                                    .collection('doctors')
-                                    .get()
-                                    .timeout(
-                                      Duration(seconds: 10),
-                                      onTimeout: () {
-                                        throw TimeoutException('Failed to load doctors data');
-                                      },
-                                    ),
+                                future: (() {
+                                  final flowDbRoot =
+                                      FirebaseFirestore.instance.collection('flowDB');
+
+                                  // Decide client segment (same as add_doctor_page / tml_view)
+                                  String clientSegment;
+                                  if (userClientType == 'farmers') {
+                                    clientSegment = 'INDOFIL';
+                                  } else if (userClientType == 'pharma') {
+                                    final userEmailLower = userEmail.toLowerCase();
+                                    if (userEmailLower.endsWith('@iva.com')) {
+                                      clientSegment = 'IVA';
+                                    } else if (userEmailLower.endsWith('@wert.com')) {
+                                      clientSegment = 'WERT';
+                                    } else {
+                                      clientSegment = 'IVA';
+                                    }
+                                  } else {
+                                    clientSegment = 'GENERAL';
+                                  }
+
+                                  // /flowDB/client/{SEGMENT}/users/{emailKey}/doctors
+                                  final doctorsCol = flowDbRoot
+                                      .doc('client')
+                                      .collection(clientSegment)
+                                      .doc('users')
+                                      .collection('users')
+                                      .doc(emailKey)
+                                      .collection('doctors');
+
+                                  return doctorsCol.get().timeout(
+                                        const Duration(seconds: 10),
+                                        onTimeout: () {
+                                          throw TimeoutException('Failed to load doctors data');
+                                        },
+                                      );
+                                })(),
                                 builder: (context, doctorSnapshot) {
                                   if (doctorSnapshot.hasError) {
                                     print('Error loading doctors: ${doctorSnapshot.error}');
@@ -4256,18 +4308,18 @@ void _openCreateEFormDialog() {
                                       child: Column(
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          Icon(Icons.error_outline, color: Colors.red, size: 40),
-                                          SizedBox(height: 8),
+                                          const Icon(Icons.error_outline, color: Colors.red, size: 40),
+                                          const SizedBox(height: 8),
                                           Text(
                                             'Error loading doctors\n${doctorSnapshot.error}',
                                             textAlign: TextAlign.center,
-                                            style: TextStyle(color: Colors.red, fontSize: 12),
+                                            style: const TextStyle(color: Colors.red, fontSize: 12),
                                           ),
                                           TextButton(
                                             onPressed: () {
                                               setState(() {});
                                             },
-                                            child: Text('Retry'),
+                                            child: const Text('Retry'),
                                           ),
                                         ],
                                       ),
@@ -4275,7 +4327,7 @@ void _openCreateEFormDialog() {
                                   }
 
                                   if (doctorSnapshot.connectionState == ConnectionState.waiting) {
-                                    return Center(child: CircularProgressIndicator());
+                                    return const Center(child: CircularProgressIndicator());
                                   }
 
                                   if (!doctorSnapshot.hasData || doctorSnapshot.data!.docs.isEmpty) {
@@ -4297,13 +4349,12 @@ void _openCreateEFormDialog() {
 
                                   final doctorDocs = doctorSnapshot.data!.docs;
 
-                                  // NEW: use getAllScheduledVisitsForToday for every doctor
                                   return FutureBuilder<List<Map<String, dynamic>>>(
                                     future: getAllScheduledVisitsForToday(
                                       doctorDocs,
                                       DateTime.now(),
                                     ).timeout(
-                                      Duration(seconds: 10),
+                                      const Duration(seconds: 10),
                                       onTimeout: () {
                                         print('Timeout loading scheduled visits');
                                         return <Map<String, dynamic>>[];
@@ -4318,32 +4369,30 @@ void _openCreateEFormDialog() {
                                           child: Column(
                                             mainAxisAlignment: MainAxisAlignment.center,
                                             children: [
-                                              Icon(Icons.error_outline, color: Colors.red, size: 40),
-                                              SizedBox(height: 8),
+                                              const Icon(Icons.error_outline, color: Colors.red, size: 40),
+                                              const SizedBox(height: 8),
                                               Text(
                                                 'Error loading visits\n${visitsSnapshot.error}',
                                                 textAlign: TextAlign.center,
-                                                style: TextStyle(color: Colors.red, fontSize: 12),
+                                                style: const TextStyle(color: Colors.red, fontSize: 12),
                                               ),
                                               TextButton(
                                                 onPressed: () {
                                                   setState(() {});
                                                 },
-                                                child: Text('Retry'),
+                                                child: const Text('Retry'),
                                               ),
                                             ],
                                           ),
                                         );
                                       }
 
-                                      if (visitsSnapshot.connectionState ==
-                                              ConnectionState.waiting &&
+                                      if (visitsSnapshot.connectionState == ConnectionState.waiting &&
                                           !visitsSnapshot.hasData) {
-                                        return Center(child: CircularProgressIndicator());
+                                        return const Center(child: CircularProgressIndicator());
                                       }
 
-                                      if (!visitsSnapshot.hasData ||
-                                          visitsSnapshot.data!.isEmpty) {
+                                      if (!visitsSnapshot.hasData || visitsSnapshot.data!.isEmpty) {
                                         return Center(
                                           child: Text(
                                             _isOffline
@@ -4355,13 +4404,15 @@ void _openCreateEFormDialog() {
                                       }
 
                                       final visitsForDay = visitsSnapshot.data!;
-                                      return _buildScheduledDoctorsRow(visitsForDay);                                      
+                                      return _buildScheduledDoctorsRow(visitsForDay);
                                     },
                                   );
                                 },
                               ),
-
+                              
                               SizedBox(height: 12),
+
+                              // SAMPLES TO BRING SECTION
 
                               Padding(
                                 padding: EdgeInsets.only(left: 20),
@@ -4375,10 +4426,11 @@ void _openCreateEFormDialog() {
                                   ),
                                 ),
                               ),
+
                               Padding(
                                 padding: EdgeInsets.only(left: 1, top: 12, right: 0, bottom: 10),
                                 child: FutureBuilder<List<Map<String, dynamic>>>(
-                                  future: getTodaySamplesFlat(emailKey, userName).timeout(
+                                  future: getTodaySamplesFlat(emailKey, userName, userClientType).timeout(
                                     Duration(seconds: 10),
                                     onTimeout: () {
                                       print('Timeout loading samples');
@@ -4409,12 +4461,12 @@ void _openCreateEFormDialog() {
                                         ),
                                       );
                                     }
-                                
+
                                     if (snapshot.connectionState == ConnectionState.waiting &&
                                         !snapshot.hasData) {
                                       return Center(child: CircularProgressIndicator());
                                     }
-                                
+
                                     if (!snapshot.hasData || snapshot.data!.isEmpty) {
                                       return Text(
                                         _isOffline
@@ -4426,15 +4478,16 @@ void _openCreateEFormDialog() {
                                         ),
                                       );
                                     }
-                                
+
                                     final samplesList = snapshot.data!;
-                                
-                                    return _buildSamplesToBringRow(samplesList);                                      
+
+                                    return _buildSamplesToBringRow(samplesList);
                                   },
                                 ),
                               ),
-
+                              
                               SizedBox(height: 24),
+                              
                               Padding(
                                 padding: EdgeInsets.only(left: 20),
                                 child: Text(
@@ -5604,8 +5657,7 @@ Widget build(BuildContext context) {
 
   // Scheduled doctors for today section
   Widget _buildScheduledDoctorsRow(List<Map<String, dynamic>> visitsForDay) {
-    // Sort by time 
-    // Visited doctors are shown first
+    // Sort by time, visited first (defensive: data may not be sorted yet)
     visitsForDay.sort((a, b) {
       final aVisitData = a['visitData'] as Map<String, dynamic>;
       final bVisitData = b['visitData'] as Map<String, dynamic>;
@@ -5623,7 +5675,7 @@ Widget build(BuildContext context) {
       final bTime = b['scheduledTime'] as String? ?? '';
       return aTime.compareTo(bTime);
     });
-  
+
     // Find the doctor to visit (purple card)
     final int nextIdx = visitsForDay.indexWhere((v) {
       final visitData = v['visitData'] as Map<String, dynamic>;
@@ -5631,7 +5683,7 @@ Widget build(BuildContext context) {
       return signaturePoints == null ||
           (signaturePoints is List && signaturePoints.isEmpty);
     });
- 
+
     // Auto-scroll to the next (purple) doctor card
     if (nextIdx > 0) {
       Future.delayed(const Duration(milliseconds: 350), () {
@@ -5671,7 +5723,7 @@ Widget build(BuildContext context) {
         );
       });
     }
-  
+
     const double badgeOverflow = 10.0;
     const double shadowPadding = 12.0;
     return SizedBox(
@@ -5680,9 +5732,9 @@ Widget build(BuildContext context) {
         controller: _doctorsScrollController,
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.only(
-          left: 5, 
-          top: badgeOverflow, 
-          bottom: shadowPadding
+          left: 5,
+          top: badgeOverflow,
+          bottom: shadowPadding,
         ),
         itemCount: visitsForDay.length,
         itemBuilder: (context, idx) {
@@ -5691,29 +5743,24 @@ Widget build(BuildContext context) {
           final scheduledTime = visit['scheduledTime'] as String? ?? '';
           final String doctorName = visit['doctorName'] as String? ?? '-';
           final String hospital = visit['hospital'] as String? ?? '';
-          final String specialty = visit['specialty'] as String? ?? '';      
-          final bool isUnplanned = visitData['unplanned'] == true;          // Added these here because Dave's UI includes Planned/Unplanned labels
-          final String visitTypeLabel = isUnplanned                         // Not sure tho if backend for this has already been implemented
-              ? '(Unplanned)'
-              : '(Planned)';
-  
-          // Determineif visited or not yet
+          final String specialty = visit['specialty'] as String? ?? '';
+          final bool isUnplanned = visitData['unplanned'] == true;
+          final String visitTypeLabel =
+              isUnplanned ? '(Unplanned)' : '(Planned)';
+
           final signaturePoints = visitData['signaturePoints'];
           final bool isVisited = signaturePoints != null &&
               signaturePoints is List &&
               (signaturePoints as List).isNotEmpty;
-  
-          // "Next to visit" is purple
-          final bool isNext = !isVisited && idx == nextIdx;
-  
-          // Card dimensions
+
+          final int nextIdxLocal = nextIdx;
+          final bool isNext = !isVisited && idx == nextIdxLocal;
+
           const double visitedCardHeight = 200.0;
           const double normalCardHeight = 212.0;
-          final double cardHeight = isVisited 
-              ? visitedCardHeight 
-              : normalCardHeight;
+          final double cardHeight =
+              isVisited ? visitedCardHeight : normalCardHeight;
 
-          // Measure the longest doctor name and scale card width accordingly
           const double minCardWidth = 280.0;
           const double maxCardWidth = 380.0;
           const double charsPerLine = 18.0;
@@ -5723,35 +5770,29 @@ Widget build(BuildContext context) {
               .map((v) => (v['doctorName'] as String? ?? ''))
               .reduce((a, b) => a.length > b.length ? a : b);
 
-          final double dynamicWidth = longestName.length > charsPerLine
-              ? (minCardWidth + (longestName.length - charsPerLine) * extraWidthPerChar)
-                  .clamp(minCardWidth, maxCardWidth)
-              : minCardWidth;
+          final double dynamicWidth =
+              longestName.length > charsPerLine
+                  ? (minCardWidth +
+                          (longestName.length - charsPerLine) *
+                              extraWidthPerChar)
+                      .clamp(minCardWidth, maxCardWidth)
+                  : minCardWidth;
 
           final double cardWidth = dynamicWidth;
 
-          // Color constants
-          final Color cardBg = Colors.white;
           final Color iconBoxBg = isNext
               ? Colors.white.withValues(alpha: 0.18)
               : const Color(0xFFF0F0F2);
           final Color iconColor = isNext
               ? Colors.white
               : const Color(0xFF5A5A7A);
-          final Color titleColor = isNext 
-              ? Colors.white
-              : Colors.black87;
-          final Color subtitleColor = isNext 
-              ? Colors.white70
-              : Colors.grey.shade500;
-          final Color timeColor = isNext 
-              ? Colors.white70
-              : Colors.grey.shade700;
-          final Color hospitalColor = isNext 
-              ? Colors.white60 
-              : Colors.grey.shade600;
-  
-          // Card widget
+          final Color titleColor =
+              isNext ? Colors.white : Colors.black87;
+          final Color timeColor =
+              isNext ? Colors.white70 : Colors.grey.shade700;
+          final Color hospitalColor =
+              isNext ? Colors.white60 : Colors.grey.shade600;
+
           return Padding(
             padding: const EdgeInsets.only(right: 12.0),
             child: Align(
@@ -5762,7 +5803,6 @@ Widget build(BuildContext context) {
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // Main card
                     Positioned(
                       left: badgeOverflow,
                       top: 0,
@@ -5772,32 +5812,33 @@ Widget build(BuildContext context) {
                         width: cardWidth,
                         height: cardHeight,
                         decoration: BoxDecoration(
-                          // Card colors depending on state (visited or not visited)
-                          color: isNext
-                              ? null
-                              : (isVisited 
-                                      ? Colors.white
-                                      : Colors.white),
+                          color: isNext ? null : Colors.white,
                           borderRadius: BorderRadius.circular(18),
                           gradient: isNext
-                              ? const LinearGradient(                                
+                              ? const LinearGradient(
                                   colors: [
-                                    Color(0xFF4A2371), 
-                                    Color(0xFF4A2371), 
-                                    Color(0xFF5958B2)],
+                                    Color(0xFF4A2371),
+                                    Color(0xFF4A2371),
+                                    Color(0xFF5958B2)
+                                  ],
                                   stops: [0.0, 0.55, 1.0],
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                 )
                               : null,
                           border: isVisited
-                              ? Border.all(color: const Color(0xFF4CAF50), width: 2.2)
+                              ? Border.all(
+                                  color: const Color(0xFF4CAF50),
+                                  width: 2.2,
+                                )
                               : null,
                           boxShadow: [
                             BoxShadow(
                               color: isNext
-                                  ? const Color(0xFF3B2A7E).withValues(alpha: 0.35)
-                                  : Colors.black.withValues(alpha: 0.07),
+                                  ? const Color(0xFF3B2A7E)
+                                      .withValues(alpha: 0.35)
+                                  : Colors.black
+                                      .withValues(alpha: 0.07),
                               blurRadius: isNext ? 16 : 8,
                               offset: const Offset(0, 4),
                             ),
@@ -5810,28 +5851,32 @@ Widget build(BuildContext context) {
                               context,
                               MaterialPageRoute(
                                 builder: (context) => CallDetailPage(
-                                  doctor: visit['doctor'] as Map<String, dynamic>,
-                                  scheduledVisitId: visit['visitId'] as String,
+                                  doctor: visit['doctor']
+                                      as Map<String, dynamic>,
+                                  scheduledVisitId:
+                                      visit['visitId'] as String,
                                 ),
                               ),
                             );
                           },
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+                            padding:
+                                const EdgeInsets.fromLTRB(12, 14, 12, 12),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                // Icon, doctor's visit, planned/unplanned
                                 Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.center,
                                   children: [
                                     Container(
                                       width: 44,
                                       height: 44,
                                       decoration: BoxDecoration(
                                         color: iconBoxBg,
-                                        borderRadius: BorderRadius.circular(8),
+                                        borderRadius:
+                                            BorderRadius.circular(8),
                                       ),
                                       child: Icon(
                                         Icons.assignment_outlined,
@@ -5842,7 +5887,8 @@ Widget build(BuildContext context) {
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(
@@ -5850,7 +5896,7 @@ Widget build(BuildContext context) {
                                             style: TextStyle(
                                               fontFamily: 'OpenSauce',
                                               fontWeight: FontWeight.w600,
-                                              fontSize: 12,                                              
+                                              fontSize: 12,
                                               color: titleColor,
                                             ),
                                           ),
@@ -5859,10 +5905,11 @@ Widget build(BuildContext context) {
                                             style: TextStyle(
                                               fontFamily: 'OpenSauce',
                                               fontWeight: FontWeight.w500,
-                                              fontSize: 10,                                            
+                                              fontSize: 10,
                                               color: isNext
                                                   ? Colors.white60
-                                                  : Colors.grey.shade500,
+                                                  : Colors
+                                                      .grey.shade500,
                                             ),
                                           ),
                                         ],
@@ -5870,10 +5917,7 @@ Widget build(BuildContext context) {
                                     ),
                                   ],
                                 ),
-                      
                                 const SizedBox(height: 10),
-                      
-                                // Doctor name
                                 Text(
                                   doctorName,
                                   maxLines: 2,
@@ -5885,16 +5929,32 @@ Widget build(BuildContext context) {
                                     color: titleColor,
                                     height: 1.2,
                                     shadows: isNext
-                                      ? [Shadow(color: Colors.white.withValues(alpha: 0.3), blurRadius: 0, offset: Offset(0.4, 0))]
-                                      : [Shadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 0, offset: Offset(0.4, 0))],
+                                        ? [
+                                            Shadow(
+                                              color: Colors.white
+                                                  .withValues(
+                                                      alpha: 0.3),
+                                              blurRadius: 0,
+                                              offset:
+                                                  const Offset(0.4, 0),
+                                            )
+                                          ]
+                                        : [
+                                            Shadow(
+                                              color: Colors.black
+                                                  .withValues(
+                                                      alpha: 0.15),
+                                              blurRadius: 0,
+                                              offset:
+                                                  const Offset(0.4, 0),
+                                            )
+                                          ],
                                   ),
                                 ),
-                      
                                 const SizedBox(height: 4),
-                      
-                                // Time
                                 Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
@@ -5902,8 +5962,9 @@ Widget build(BuildContext context) {
                                       style: TextStyle(
                                         fontFamily: 'OpenSauce',
                                         fontWeight: FontWeight.w400,
-                                        fontSize: 14, 
-                                        color: timeColor),
+                                        fontSize: 14,
+                                        color: timeColor,
+                                      ),
                                     ),
                                     if (hospital.isNotEmpty) ...[
                                       const SizedBox(height: 2),
@@ -5914,17 +5975,15 @@ Widget build(BuildContext context) {
                                         style: TextStyle(
                                           fontFamily: 'OpenSauce',
                                           fontWeight: FontWeight.w400,
-                                          fontSize: 12, 
-                                          color: hospitalColor, 
-                                          height: 1.3),
+                                          fontSize: 12,
+                                          color: hospitalColor,
+                                          height: 1.3,
+                                        ),
                                       ),
                                     ],
                                   ],
                                 ),
-
                                 const Spacer(),
-
-                                // Start Call button (non-visited only)
                                 if (!isVisited)
                                   Container(
                                     width: double.infinity,
@@ -5932,27 +5991,32 @@ Widget build(BuildContext context) {
                                     decoration: BoxDecoration(
                                       gradient: isNext
                                           ? const LinearGradient(
-                                              // colors: [Color(0xFF388E3C), Color(0xFF4CAF50)],
-                                              colors: [Color(0xFF4CAF50), Color(0xFF388E3C)],
+                                              colors: [
+                                                Color(0xFF4CAF50),
+                                                Color(0xFF388E3C)
+                                              ],
                                               begin: Alignment.topLeft,
                                               end: Alignment.bottomRight,
                                             )
                                           : null,
-                                      color: isNext 
+                                      color: isNext
                                           ? null
                                           : const Color(0xFFE8F5E9),
-                                      borderRadius: BorderRadius.circular(10),
+                                      borderRadius:
+                                          BorderRadius.circular(10),
                                     ),
                                     child: ElevatedButton.icon(
                                       onPressed: () {
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
-                                            builder: (context) => CallDetailPage(
+                                            builder: (context) =>
+                                                CallDetailPage(
                                               doctor: visit['doctor']
                                                   as Map<String, dynamic>,
                                               scheduledVisitId:
-                                                  visit['visitId'] as String,
+                                                  visit['visitId']
+                                                      as String,
                                             ),
                                           ),
                                         );
@@ -5966,21 +6030,24 @@ Widget build(BuildContext context) {
                                         style: TextStyle(
                                           fontFamily: 'OpenSauce',
                                           fontWeight: FontWeight.w700,
-                                          fontSize: 13,                                          
+                                          fontSize: 13,
                                           letterSpacing: 0.3,
                                         ),
                                       ),
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.transparent,
+                                        backgroundColor:
+                                            Colors.transparent,
                                         foregroundColor: isNext
                                             ? Colors.white
                                             : const Color(0xFF2E7D32),
                                         elevation: 0,
                                         shadowColor: Colors.transparent,
                                         padding:
-                                            const EdgeInsets.symmetric(horizontal: 8),
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 8),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(10),
+                                          borderRadius:
+                                              BorderRadius.circular(10),
                                         ),
                                       ),
                                     ),
@@ -5991,8 +6058,6 @@ Widget build(BuildContext context) {
                         ),
                       ),
                     ),
-  
-                    // Green check badge (visited)
                     if (isVisited)
                       Positioned(
                         top: -4,
@@ -6026,8 +6091,8 @@ Widget build(BuildContext context) {
         },
       ),
     );
-  }
-
+  }  
+  
   Widget _buildSamplesToBringRow(List<Map<String, dynamic>> samplesList) {
     return StatefulBuilder(
       builder: (context, setBoxState) {

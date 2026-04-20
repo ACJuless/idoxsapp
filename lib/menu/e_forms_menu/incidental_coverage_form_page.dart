@@ -2,404 +2,512 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// Theme constants
+const Color kPrimary     = Color(0xFF5958B2);
+const Color kPrimaryDark = Color(0xFF4A2371);
+const Color kSurface     = Color(0xFFF9F5FF);
+const Color kCard        = Color(0xFFFFFFFF);
+const Color kFieldFill   = Color(0x0A6B21C8);
+const Color kMuted       = Color(0xFF2B2B2B);
+const Color kRed         = Color(0xFFDC2626);
+const Color kGreen       = Color(0xFF059669);
+const Color kEmpty       = Color(0xFF9CA3AF);
+
+const _kGrad = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [Color(0xFF4A2371), Color(0xFF4A2371), Color(0xFF5958B2)],
+  stops: [0.0, 0.55, 1.0],
+);
+
 class IncidentalCoverageFormPage extends StatefulWidget {
-  final Map<String, dynamic>? formData;
-  final bool readonly;
-  IncidentalCoverageFormPage({this.formData, this.readonly = false, Key? key})
-      : super(key: key);
+  final Map<String, dynamic> formData;
+  final String docId;
+  final String userKey;
+
+  const IncidentalCoverageFormPage({
+    required this.formData,
+    required this.docId,
+    required this.userKey,
+    Key? key,
+  }) : super(key: key);
 
   @override
-  _IncidentalCoverageFormPageState createState() =>
+  State<IncidentalCoverageFormPage> createState() =>
       _IncidentalCoverageFormPageState();
 }
 
 class _IncidentalCoverageFormPageState
     extends State<IncidentalCoverageFormPage> {
-  late String lastName;
-  late String firstName;
-  late String middleName;
-  late String specialty;
-  late String hospitalPharmacyName;
-  late DateTime selectedDate;
-  late String preCallNotes;
-  late String postCallNotes;
-  late TextEditingController dateController;
+
+  bool _isEditMode = false;
+  bool _isSaving   = false;
+  bool _submitted  = false;
+
+  late Map<String, dynamic> _original;
+  late TextEditingController _lastNameCtrl;
+  late TextEditingController _firstNameCtrl;
+  late TextEditingController _middleNameCtrl;
+  late TextEditingController _specialtyCtrl;
+  late TextEditingController _hospitalCtrl;
+  late TextEditingController _dateCtrl;
+  late TextEditingController _preCallCtrl;
+  late TextEditingController _postCallCtrl;
 
   @override
   void initState() {
     super.initState();
-    final d = widget.formData;
-    lastName = d?['lastName'] ?? "";
-    firstName = d?['firstName'] ?? "";
-    middleName = d?['middleName'] ?? "";
-    specialty = d?['specialty'] ?? "";
-    hospitalPharmacyName = d?['hospitalPharmacyName'] ?? "";
-    selectedDate = d?['dateOfCover'] != null
-        ? DateTime.tryParse(d!['dateOfCover']) ?? DateTime.now()
-        : DateTime.now();
-    preCallNotes = d?['preCallNotes'] ?? "";
-    postCallNotes = d?['postCallNotes'] ?? "";
-    dateController = TextEditingController(
-      text:
-          "${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}",
-    );
+    _original = Map<String, dynamic>.from(widget.formData);
+    _init(_original);
   }
 
-  Future<String> getSanitizedUserEmail() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userEmail = prefs.getString('userEmail') ?? '';
-    return userEmail.replaceAll(RegExp(r'[.#\$\\\[\]/]'), '_');
+  void _init(Map<String, dynamic> d) {
+    _lastNameCtrl   = TextEditingController(text: d['lastName']             as String? ?? '');
+    _firstNameCtrl  = TextEditingController(text: d['firstName']            as String? ?? '');
+    _middleNameCtrl = TextEditingController(text: d['middleName']           as String? ?? '');
+    _specialtyCtrl  = TextEditingController(text: d['specialty']            as String? ?? '');
+    _hospitalCtrl   = TextEditingController(text: d['hospitalPharmacyName'] as String? ?? '');
+    _dateCtrl       = TextEditingController(text: d['dateOfCover']          as String? ?? '');
+    _preCallCtrl    = TextEditingController(text: d['preCallNotes']         as String? ?? '');
+    _postCallCtrl   = TextEditingController(text: d['postCallNotes']        as String? ?? '');
   }
 
-  Future<void> _selectDate(BuildContext context) async {
-    if (widget.readonly) return;
-    final DateTime? picked = await showDatePicker(
+  void _disposeControllers() {
+    _lastNameCtrl.dispose();
+    _firstNameCtrl.dispose();
+    _middleNameCtrl.dispose();
+    _specialtyCtrl.dispose();
+    _hospitalCtrl.dispose();
+    _dateCtrl.dispose();
+    _preCallCtrl.dispose();
+    _postCallCtrl.dispose();
+  }
+
+  void _populateFromOriginal() {
+    _lastNameCtrl.text   = _original['lastName']             as String? ?? '';
+    _firstNameCtrl.text  = _original['firstName']            as String? ?? '';
+    _middleNameCtrl.text = _original['middleName']           as String? ?? '';
+    _specialtyCtrl.text  = _original['specialty']            as String? ?? '';
+    _hospitalCtrl.text   = _original['hospitalPharmacyName'] as String? ?? '';
+    _dateCtrl.text       = _original['dateOfCover']          as String? ?? '';
+    _preCallCtrl.text    = _original['preCallNotes']         as String? ?? '';
+    _postCallCtrl.text   = _original['postCallNotes']        as String? ?? '';
+  }
+
+  @override
+  void dispose() {
+    _disposeControllers();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final initial = DateTime.tryParse(_dateCtrl.text) ?? DateTime.now();
+    final picked  = await showDatePicker(
       context: context,
-      initialDate: selectedDate,
+      initialDate: initial,
       firstDate: DateTime(2000),
       lastDate: DateTime(2101),
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: kPrimary,
+            onPrimary: Colors.white,
+          ),
+        ),
+        child: child!,
+      ),
     );
-    if (picked != null && picked != selectedDate) {
+    if (picked != null) {
       setState(() {
-        selectedDate = picked;
-        dateController.text =
-            "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+        _dateCtrl.text =
+            '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
       });
     }
   }
 
-  void _resetFields() {
-    if (widget.readonly) return;
+  // Validation
+  bool get _lastNameValid   => _lastNameCtrl.text.trim().isNotEmpty;
+  bool get _firstNameValid  => _firstNameCtrl.text.trim().isNotEmpty;
+  bool get _middleNameValid => _middleNameCtrl.text.trim().isNotEmpty;
+  bool get _specialtyValid  => _specialtyCtrl.text.trim().isNotEmpty;
+  bool get _hospitalValid   => _hospitalCtrl.text.trim().isNotEmpty;
+  bool get _dateValid       => _dateCtrl.text.trim().isNotEmpty;
+  bool get _preCallValid    => _preCallCtrl.text.trim().isNotEmpty;
+  bool get _postCallValid   => _postCallCtrl.text.trim().isNotEmpty;
+  bool get _formValid =>
+      _lastNameValid && _firstNameValid && _middleNameValid &&
+      _specialtyValid && _hospitalValid && _dateValid &&
+      _preCallValid && _postCallValid;
+
+  // Toast
+  void _toast(String msg, {bool error = false}) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Row(children: [
+          Icon(
+            error ? Icons.error_outline : Icons.check_circle_outline,
+            color: Colors.white,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              msg,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ]),
+        backgroundColor: error ? kRed : kGreen,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 3),
+      ));
+  }
+
+  // Reset
+  Future<void> _handleReset() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Reset Form',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+        content: const Text(
+          'This will restore all fields to their last saved values. Continue?',
+          style: TextStyle(fontSize: 14, color: Colors.black54),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Reset',
+              style: TextStyle(color: kRed, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
     setState(() {
-      lastName = "";
-      firstName = "";
-      middleName = "";
-      specialty = "";
-      hospitalPharmacyName = "";
-      selectedDate = DateTime.now();
-      dateController.text =
-          "${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}";
-      preCallNotes = "";
-      postCallNotes = "";
+      _submitted = false;
+      _populateFromOriginal();
     });
+    _toast('Form has been reset.');
   }
 
-  Future<void> _submitForm() async {
-    if (widget.readonly) return;
-    final userKey = await getSanitizedUserEmail();
-    await FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(userKey)
-        .doc('inc_cov_forms')
-        .collection('inc_cov_forms')
-        .add({
-      'lastName': lastName,
-      'firstName': firstName,
-      'middleName': middleName,
-      'specialty': specialty,
-      'hospitalPharmacyName': hospitalPharmacyName,
-      'dateOfCover': dateController.text,
-      'preCallNotes': preCallNotes,
-      'postCallNotes': postCallNotes,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
-    Navigator.pop(context, true);
-  }
-
-  String _displayTitle() {
-    final parts = [
-      firstName.trim(),
-      middleName.trim(),
-      lastName.trim(),
-    ].where((e) => e.isNotEmpty).toList();
-    if (parts.isEmpty) {
-      return widget.readonly ? 'Incidental Coverage Details' : 'New Form';
+  // Save
+  Future<void> _save() async {
+    setState(() => _submitted = true);
+    if (!_formValid) {
+      _toast('Please fill out all required fields.', error: true);
+      return;
     }
-    return parts.join(' ');
+    setState(() => _isSaving = true);
+    try {
+      final update = {
+        'lastName':             _lastNameCtrl.text.trim(),
+        'firstName':            _firstNameCtrl.text.trim(),
+        'middleName':           _middleNameCtrl.text.trim(),
+        'specialty':            _specialtyCtrl.text.trim(),
+        'hospitalPharmacyName': _hospitalCtrl.text.trim(),
+        'dateOfCover':          _dateCtrl.text.trim(),
+        'preCallNotes':         _preCallCtrl.text.trim(),
+        'postCallNotes':        _postCallCtrl.text.trim(),
+      };
+
+      await FirebaseFirestore.instance
+          .collection('flowDB').doc('users')
+          .collection(widget.userKey).doc('inc_cov_forms')
+          .collection('inc_cov_forms').doc(widget.docId)
+          .update(update);
+
+      _original.addAll(update);
+
+      setState(() {
+        _isEditMode = false;
+        _submitted  = false;
+      });
+      _toast('Form updated successfully.');
+    } catch (e) {
+      if (mounted) _toast('Failed to update: $e', error: true);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  // Helpers
+  String _formatDate(String raw) {
+    if (raw.isEmpty) return '';
+    try {
+      final d = DateTime.parse(raw);
+      const months = [
+        'January','February','March','April','May','June',
+        'July','August','September','October','November','December',
+      ];
+      return '${months[d.month - 1]} ${d.day.toString().padLeft(2, '0')}, ${d.year}';
+    } catch (_) { return raw; }
+  }
+
+  String get _appbarTitle {
+    final first  = _firstNameCtrl.text.trim();
+    final middle = _middleNameCtrl.text.trim();
+    final last   = _lastNameCtrl.text.trim();
+    final name   = [first, middle, last].where((s) => s.isNotEmpty).join(' ');
+    return name.isNotEmpty ? name : 'Incidental Coverage';
   }
 
   @override
   Widget build(BuildContext context) {
-    final isReadonly = widget.readonly;
-
     return Scaffold(
-      backgroundColor: const Color(0xFFF9F5FF),
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(72),
-        child: AppBar(
-          elevation: 6,
-          automaticallyImplyLeading: true,
-          backgroundColor: Colors.transparent,
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              borderRadius: BorderRadius.vertical(
-                bottom: Radius.circular(22),
-              ),
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFF4A2371),
-                  Color(0xFF4A2371),
-                  Color(0xFF5958B2),
-                ],
-                stops: [0, 0.55, 1],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Color.fromRGBO(76, 29, 149, 0.3),
-                  blurRadius: 28,
-                  offset: Offset(0, 6),
-                ),
-              ],
+      backgroundColor: kSurface,
+
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        centerTitle: false,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: _kGrad,
+            borderRadius: BorderRadius.only(
+              bottomLeft:  Radius.circular(22),
+              bottomRight: Radius.circular(22),
             ),
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-            child: SafeArea(
-              bottom: false,
-              child: Row(
-                children: [
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Incidental Coverage',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Color.fromRGBO(255, 255, 255, 0.65),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _displayTitle(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+          ),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.chevron_left, color: Colors.white, size: 30),
+          onPressed: () => Navigator.of(context).maybePop(),
+          tooltip: 'Back',
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'INCIDENTAL COVERAGE FORM',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.white60,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
+            ),
+            Text(
+              _appbarTitle.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: TextButton(
+              onPressed: _isSaving ? null : () {
+                if (_isEditMode) {
+                  setState(() {
+                    _populateFromOriginal();
+                    _submitted  = false;
+                    _isEditMode = false;
+                  });
+                } else {
+                  setState(() => _isEditMode = true);
+                }
+              },
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.white.withValues(alpha: 0.22),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+              ),
+              child: Text(
+                _isEditMode ? 'CANCEL' : 'EDIT',
+                style: TextStyle(
+                  color: _isEditMode ? Colors.white60 : Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
               ),
             ),
           ),
-          titleSpacing: 0,
-        ),
+        ],
       ),
+
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
-        child: Center(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 40),
+        child: Align(
+          alignment: Alignment.topCenter,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _sectionLabel('Personal Information', first: true),
-                _card(
-                  Column(
-                    children: [
-                      isReadonly
-                          ? _viewRow('Last Name', lastName)
-                          : _editRow(
-                              label: 'Last Name',
-                              value: lastName,
-                              onChanged: (v) =>
-                                  setState(() => lastName = v),
-                            ),
-                      isReadonly
-                          ? _viewRow('First Name', firstName)
-                          : _editRow(
-                              label: 'First Name',
-                              value: firstName,
-                              onChanged: (v) =>
-                                  setState(() => firstName = v),
-                            ),
-                      isReadonly
-                          ? _viewRow('Middle Name', middleName)
-                          : _editRow(
-                              label: 'Middle Name',
-                              value: middleName,
-                              onChanged: (v) =>
-                                  setState(() => middleName = v),
-                            ),
-                      isReadonly
-                          ? _viewRow('Specialty', specialty)
-                          : _editRow(
-                              label: 'Specialty',
-                              value: specialty,
-                              onChanged: (v) =>
-                                  setState(() => specialty = v),
-                            ),
-                    ],
-                  ),
-                ),
+                _buildPersonalCard(_isEditMode),
 
-                const SizedBox(height: 16),
                 _sectionLabel('Coverage Details'),
-                _card(
-                  Column(
-                    children: [
-                      isReadonly
-                          ? _viewRow(
-                              'Hospital / Pharmacy Name',
-                              hospitalPharmacyName,
-                            )
-                          : _editRow(
-                              label: 'Hospital / Pharmacy Name',
-                              value: hospitalPharmacyName,
-                              onChanged: (v) =>
-                                  setState(() => hospitalPharmacyName = v),
-                            ),
-                      isReadonly
-                          ? _viewRow(
-                              'Date of Cover',
-                              _formatDateText(dateController.text),
-                            )
-                          : _dateRow(context),
-                    ],
-                  ),
-                ),
+                _buildCoverageCard(_isEditMode),
 
-                const SizedBox(height: 16),
                 _sectionLabel('Call Notes'),
-                _card(
-                  Column(
-                    children: [
-                      isReadonly
-                          ? _viewRow('Pre-Call Notes', preCallNotes)
-                          : _editMultilineRow(
-                              label: 'Pre-Call Notes',
-                              value: preCallNotes,
-                              onChanged: (v) =>
-                                  setState(() => preCallNotes = v),
-                            ),
-                      isReadonly
-                          ? _viewRow('Post-Call Notes', postCallNotes)
-                          : _editMultilineRow(
-                              label: 'Post-Call Notes',
-                              value: postCallNotes,
-                              onChanged: (v) =>
-                                  setState(() => postCallNotes = v),
-                            ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 80),
+                _buildCallNotesCard(_isEditMode),
+
+                if (_isEditMode) _footer(),
               ],
             ),
           ),
         ),
       ),
-      persistentFooterButtons: isReadonly
-          ? null
-          : [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 140,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: _resetFields,
-                      child: const Text(
-                        "Clear",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  SizedBox(
-                    width: 140,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xFF5958B2),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: _submitForm,
-                      child: const Text(
-                        "Submit",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ],
+    );
+  }
+
+  Widget _footer() => Padding(
+        padding: const EdgeInsets.fromLTRB(0, 24, 0, 28),
+        child: Row(children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: _isSaving ? null : _handleReset,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: kPrimary,
+                backgroundColor: kSurface,
+                side: const BorderSide(color: kPrimary, width: 2),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15)),
+                padding: const EdgeInsets.symmetric(vertical: 15),
               ),
-            ],
-    );
-  }
+              child: const Text(
+                'RESET',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: _gradBtn('UPDATE FORM', _save)),
+        ]),
+      );
 
-  Widget _sectionLabel(String text, {bool first = false}) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(8, first ? 6 : 20, 8, 8),
-      child: Text(
-        text.toUpperCase(),
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF5958B2),
-          letterSpacing: 0.4,
-        ),
-      ),
-    );
-  }
-
-  Widget _card(Widget child) {
-    return Card(
-      elevation: 3,
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: child,
-    );
-  }
-
-  Widget _viewRow(String label, String value) {
-    final trimmed = value.trim();
-    final isEmpty = trimmed.isEmpty;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Color(0xFFF0EBF9),
-            width: 1,
+  Widget _gradBtn(String label, VoidCallback onTap) => Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(15),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(15),
+          onTap: _isSaving ? null : onTap,
+          child: Ink(
+            height: 52,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [kPrimaryDark, kPrimaryDark, kPrimary],
+                stops: [0.0, 0.55, 1.0],
+              ),
+              borderRadius: BorderRadius.circular(15),
+              boxShadow: [
+                BoxShadow(
+                  color: kPrimary.withValues(alpha: 0.44),
+                  blurRadius: 18,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Center(
+              child: _isSaving
+                  ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.2, color: Colors.white),
+                    )
+                  : Text(
+                      label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+            ),
           ),
         ),
+      );
+
+  // Section label
+  Widget _sectionLabel(String text, {bool first = false}) => Padding(
+        padding: EdgeInsets.only(left: 8, bottom: 8, top: first ? 4 : 20),
+        child: Text(
+          text.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: kPrimary,
+            letterSpacing: 0.5,
+          ),
+        ),
+      );
+
+  // Card
+  Widget _card(List<Widget> rows) => Container(
+        decoration: BoxDecoration(
+          color: kCard,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 14,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: rows,
+        ),
+      );
+
+  // View
+  Widget _vRow(String label, String value, {bool isLast = false}) {
+    final empty = value.trim().isEmpty;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        border: isLast
+            ? null
+            : const Border(bottom: BorderSide(color: Color(0xFFF0EBF9))),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             label.toUpperCase(),
             style: const TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF2B2B2B),
+              color: kMuted,
               letterSpacing: 0.5,
             ),
           ),
           const SizedBox(height: 3),
           Text(
-            isEmpty ? 'No data' : trimmed,
+            empty ? 'No data' : value.trim(),
             style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w400,
-              color: isEmpty ? const Color(0xFF9CA3AF) : Colors.black,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              color: empty ? kEmpty : Colors.black87,
             ),
           ),
         ],
@@ -407,204 +515,201 @@ class _IncidentalCoverageFormPageState
     );
   }
 
-  Widget _editRow({
+  // Edit
+  Widget _eRow({
     required String label,
-    required String value,
-    required ValueChanged<String> onChanged,
+    required TextEditingController ctrl,
+    required bool isValid,
+    bool isLast = false,
+    String? hint,
+    int maxLines = 1,
+    TextInputType keyboardType = TextInputType.text,
+    bool readOnly = false,
+    VoidCallback? onTap,
+    Widget? suffixIcon,
   }) {
+    final showError = _submitted && !isValid;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Color(0xFFF0EBF9),
-            width: 1,
-          ),
-        ),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      decoration: BoxDecoration(
+        border: isLast
+            ? null
+            : const Border(bottom: BorderSide(color: Color(0xFFF0EBF9))),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            label.toUpperCase(),
+          Row(children: [
+            Text(
+              label.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: kMuted,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const Text(
+              ' *',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: kRed,
+              ),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          TextFormField(
+            controller: ctrl,
+            keyboardType: keyboardType,
+            maxLines: maxLines,
+            readOnly: readOnly,
+            onTap: onTap,
+            decoration: _eDeco(hasError: showError, hint: hint)
+                .copyWith(suffixIcon: suffixIcon),
             style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF2B2B2B),
-              letterSpacing: 0.5,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              color: Colors.black87,
             ),
+            onChanged: (_) {
+              if (_submitted) setState(() {});
+            },
           ),
-          const SizedBox(height: 4),
-          TextField(
-            enabled: !widget.readonly,
-            decoration: InputDecoration(
-              isDense: true,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
-              filled: true,
-              fillColor: const Color.fromRGBO(107, 33, 200, 0.04),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(9),
-                borderSide: const BorderSide(
-                  color: Color.fromRGBO(107, 33, 200, 0.25),
-                  width: 1.5,
-                ),
-              ),
-            ),
-            controller: TextEditingController.fromValue(
-              TextEditingValue(
-                text: value,
-                selection:
-                    TextSelection.collapsed(offset: value.length),
-              ),
-            ),
-            onChanged: onChanged,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-          ),
+          if (showError) _errorMsg(),
         ],
       ),
     );
   }
 
-  Widget _editMultilineRow({
-    required String label,
-    required String value,
-    required ValueChanged<String> onChanged,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Color(0xFFF0EBF9),
-            width: 1,
+  InputDecoration _eDeco({bool hasError = false, String? hint}) =>
+      InputDecoration(
+        filled: true,
+        fillColor: hasError ? const Color(0x0ADC2626) : kFieldFill,
+        hintText: hint,
+        hintStyle: const TextStyle(
+          color: Color(0xFFB0A8C8),
+          fontWeight: FontWeight.w400,
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(9),
+          borderSide: BorderSide(
+            color: hasError ? kRed : kPrimary.withValues(alpha: 0.25),
+            width: 1.5,
           ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label.toUpperCase(),
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF2B2B2B),
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-          TextField(
-            enabled: !widget.readonly,
-            maxLines: 3,
-            decoration: InputDecoration(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-              filled: true,
-              fillColor: const Color.fromRGBO(107, 33, 200, 0.04),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(9),
-                borderSide: const BorderSide(
-                  color: Color.fromRGBO(107, 33, 200, 0.25),
-                  width: 1.5,
-                ),
-              ),
-            ),
-            controller: TextEditingController.fromValue(
-              TextEditingValue(
-                text: value,
-                selection:
-                    TextSelection.collapsed(offset: value.length),
-              ),
-            ),
-            onChanged: onChanged,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _dateRow(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Color(0xFFF0EBF9),
-            width: 1,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(9),
+          borderSide: BorderSide(
+            color: hasError ? kRed : kPrimary.withValues(alpha: 0.25),
+            width: 1.5,
           ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'DATE OF COVER',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF2B2B2B),
-              letterSpacing: 0.5,
-            ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(9),
+          borderSide: BorderSide(
+            color: hasError ? kRed : kPrimary,
+            width: 1.5,
           ),
-          const SizedBox(height: 4),
-          TextField(
-            controller: dateController,
-            readOnly: true,
-            enabled: !widget.readonly,
-            onTap: () => _selectDate(context),
-            style: const TextStyle(fontSize: 16),
-            decoration: InputDecoration(
-              isDense: true,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
-              filled: true,
-              fillColor: const Color.fromRGBO(107, 33, 200, 0.04),
-              suffixIcon: const Icon(
-                Icons.calendar_today_outlined,
-                color: Color(0xFF5958B2),
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(9),
-                borderSide: const BorderSide(
-                  color: Color.fromRGBO(107, 33, 200, 0.25),
-                  width: 1.5,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+        ),
+        isDense: true,
+      );
 
-  String _formatDateText(String raw) {
-    if (raw.isEmpty) return '';
-    try {
-      final d = DateTime.parse(raw);
-      return "${_monthName(d.month)} ${d.day.toString().padLeft(2, '0')}, ${d.year}";
-    } catch (_) {
-      return raw;
+  Widget _errorMsg() => const Padding(
+        padding: EdgeInsets.only(top: 5, left: 2),
+        child: Text(
+          'This field is required.',
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+            color: kRed,
+          ),
+        ),
+      );
+
+  Widget _buildPersonalCard(bool isEditing) {
+    if (!isEditing) {
+      return _card([
+        _vRow('Last Name',   (_original['lastName']   as String? ?? '').trim()),
+        _vRow('First Name',  (_original['firstName']  as String? ?? '').trim()),
+        _vRow('Middle Name', (_original['middleName'] as String? ?? '').trim()),
+        _vRow('Specialty',   (_original['specialty']  as String? ?? '').trim(),
+            isLast: true),
+      ]);
     }
+    return _card([
+      _eRow(label: 'Last Name',   ctrl: _lastNameCtrl,
+            isValid: _lastNameValid,   hint: 'e.g., Reyes'),
+      _eRow(label: 'First Name',  ctrl: _firstNameCtrl,
+            isValid: _firstNameValid,  hint: 'e.g., Maria'),
+      _eRow(label: 'Middle Name', ctrl: _middleNameCtrl,
+            isValid: _middleNameValid, hint: 'e.g., Santos'),
+      _eRow(label: 'Specialty',   ctrl: _specialtyCtrl,
+            isValid: _specialtyValid,  hint: 'e.g., Cardiologist',
+            isLast: true),
+    ]);
   }
 
-  String _monthName(int m) {
-    const names = [
-      '',
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December'
-    ];
-    return (m >= 1 && m <= 12) ? names[m] : '';
+  Widget _buildCoverageCard(bool isEditing) {
+    if (!isEditing) {
+      return _card([
+        _vRow('Hospital / Pharmacy Name',
+            (_original['hospitalPharmacyName'] as String? ?? '').trim()),
+        _vRow('Date of Cover',
+            _formatDate((_original['dateOfCover'] as String? ?? '').trim()),
+            isLast: true),
+      ]);
+    }
+    return _card([
+      _eRow(
+        label: 'Hospital / Pharmacy Name',
+        ctrl: _hospitalCtrl,
+        isValid: _hospitalValid,
+        hint: "e.g., St. Luke's Medical Center, BGC",
+      ),
+      _eRow(
+        label: 'Date of Cover',
+        ctrl: _dateCtrl,
+        isValid: _dateValid,
+        hint: 'Tap to pick a date',
+        readOnly: true,
+        onTap: _pickDate,
+        suffixIcon: const Icon(Icons.calendar_today_outlined,
+            color: kPrimary, size: 18),
+        isLast: true,
+      ),
+    ]);
+  }
+
+  Widget _buildCallNotesCard(bool isEditing) {
+    if (!isEditing) {
+      return _card([
+        _vRow('Pre-Call Notes',
+            (_original['preCallNotes']  as String? ?? '').trim()),
+        _vRow('Post-Call Notes',
+            (_original['postCallNotes'] as String? ?? '').trim(), isLast: true),
+      ]);
+    }
+    return _card([
+      _eRow(
+        label: 'Pre-Call Notes',
+        ctrl: _preCallCtrl,
+        isValid: _preCallValid,
+        hint: 'e.g., Discuss Amlodipine 10mg samples…',
+        maxLines: 4,
+      ),
+      _eRow(
+        label: 'Post-Call Notes',
+        ctrl: _postCallCtrl,
+        isValid: _postCallValid,
+        hint: 'e.g., Dr. Reyes requested product brochures…',
+        maxLines: 4,
+        isLast: true,
+      ),
+    ]);
   }
 }

@@ -32,6 +32,9 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
   String? _profileImageBase64;
   bool _isUpdatingImage = false;
   String? emailKey;
+  String _userClientType = '';
+  String _userEmail = '';
+  String _userId = ''; // MR00001, used in Daloy path
 
   bool _isEditing = false;
   bool _isUpdatingDoctor = false;
@@ -52,7 +55,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
     super.initState();
     _profileImageBase64 = widget.doctor?['profileImage'] as String?;
     _initControllersFromDoctor();
-    _loadEmailKey();
+    _loadUserPrefs();
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       setState(() {});
@@ -80,12 +83,44 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
         TextEditingController(text: (d['email'] ?? '').toString());
   }
 
-  Future<void> _loadEmailKey() async {
+  Future<void> _loadUserPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     final userEmail = prefs.getString('userEmail') ?? '';
+    final clientType = prefs.getString('userClientType') ?? 'both';
+    final userId = prefs.getString('userId') ?? ''; // MR00001, etc.
+
     setState(() {
       emailKey = userEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
+      _userClientType = clientType;
+      _userEmail = userEmail;
+      _userId = userId;
     });
+  }
+
+  /// Base Doctor collection for this MR in Daloy:
+  /// /DaloyClients/{segment}/Users/{_userId}/Doctor/{docId}
+  CollectionReference<Map<String, dynamic>> _doctorCollectionRef() {
+    final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
+
+    String clientSegment;
+    if (_userClientType == 'farmers') {
+      clientSegment = 'INDOFIL';
+    } else if (_userClientType == 'pharma') {
+      clientSegment = 'IVA';
+    } else {
+      clientSegment = 'GENERAL';
+    }
+
+    // IMPORTANT: use _userId (MR00001) like DoctorPage, not emailKey
+    final userDocRef =
+        daloyRoot.doc(clientSegment).collection('Users').doc(_userId);
+
+    return userDocRef.collection('Doctor');
+  }
+
+  /// Current doctor's document reference
+  DocumentReference<Map<String, dynamic>> _doctorDocRef() {
+    return _doctorCollectionRef().doc(widget.doc_id);
   }
 
   String fullName() {
@@ -250,7 +285,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
   }
 
   Future<void> _updateDoctor() async {
-    if (emailKey == null || emailKey!.isEmpty) return;
+    if (_userId.isEmpty) return;
 
     setState(() {
       _isUpdatingDoctor = true;
@@ -268,14 +303,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
         'email': _emailController.text.trim(),
       };
 
-      await FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('users')
-          .collection(emailKey!)
-          .doc('doctors')
-          .collection('doctors')
-          .doc(widget.doc_id)
-          .update(updateData);
+      await _doctorDocRef().update(updateData);
 
       widget.doctor?.addAll(updateData);
 
@@ -343,7 +371,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
 
   @override
   Widget build(BuildContext context) {
-    if (emailKey == null || emailKey!.isEmpty) {
+    if (_userId.isEmpty || _userClientType.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Doctor')),
         body: const Center(child: CircularProgressIndicator()),
@@ -661,14 +689,18 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
           ),
 
           // CALL NOTES TAB
-          CallNotesTab(docId: widget.doc_id, emailKey: emailKey!),
+          CallNotesTab(
+            docId: widget.doc_id,
+            userId: _userId,
+            userClientType: _userClientType,
+          ),
 
-          // VISITS TAB
+          // VISITS TAB – uses /DaloyClients/IVA/Users/MR00001/Doctor/{docId}/Visits/{yyyyMMdd}
           VisitsTab(
             docId: widget.doc_id,
             doctor: widget.doctor,
-            emailKey: emailKey!,
-            monthId: null, // null = current month
+            userId: _userId,
+            userClientType: _userClientType,
           ),
         ],
       ),
@@ -744,22 +776,39 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
 
 class CallNotesTab extends StatelessWidget {
   final String docId;
-  final String emailKey;
+  final String userId; // MR00001
+  final String userClientType;
 
-  const CallNotesTab({Key? key, required this.docId, required this.emailKey})
-      : super(key: key);
+  const CallNotesTab({
+    Key? key,
+    required this.docId,
+    required this.userId,
+    required this.userClientType,
+  }) : super(key: key);
+
+  CollectionReference<Map<String, dynamic>> _doctorCollectionRef() {
+    final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
+
+    String clientSegment;
+    if (userClientType == 'farmers') {
+      clientSegment = 'INDOFIL';
+    } else if (userClientType == 'pharma') {
+      clientSegment = 'IVA';
+    } else {
+      clientSegment = 'GENERAL';
+    }
+
+    final userDocRef =
+        daloyRoot.doc(clientSegment).collection('Users').doc(userId);
+    return userDocRef.collection('Doctor');
+  }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 8.0),
       child: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('flowDB')
-            .doc('users')
-            .collection(emailKey)
-            .doc('doctors')
-            .collection('doctors')
+        stream: _doctorCollectionRef()
             .doc(docId)
             .collection('callNotes')
             .orderBy('timestamp', descending: true)
@@ -803,48 +852,49 @@ class CallNotesTab extends StatelessWidget {
 class VisitsTab extends StatelessWidget {
   final String docId;
   final Map<String, dynamic>? doctor;
-  final String emailKey;
-
-  final String? monthId;
+  final String userId; // MR00001
+  final String userClientType;
 
   const VisitsTab({
     Key? key,
     required this.docId,
     required this.doctor,
-    required this.emailKey,
-    this.monthId,
+    required this.userId,
+    required this.userClientType,
   }) : super(key: key);
 
-  String _currentMonthId() {
-    final now = DateTime.now();
-    return DateFormat('yyyy-MM').format(now);
+  CollectionReference<Map<String, dynamic>> _doctorCollectionRef() {
+    final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
+
+    String clientSegment;
+    if (userClientType == 'farmers') {
+      clientSegment = 'INDOFIL';
+    } else if (userClientType == 'pharma') {
+      clientSegment = 'IVA';
+    } else {
+      clientSegment = 'GENERAL';
+    }
+
+    final userDocRef =
+        daloyRoot.doc(clientSegment).collection('Users').doc(userId);
+    return userDocRef.collection('Doctor');
   }
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
 
-    final effectiveMonthId = monthId ?? _currentMonthId();
-
-    final monthDocRef = FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
-        .doc(docId)
-        .collection('scheduledVisits')
-        .doc('months')
-        .collection('months')
-        .doc(effectiveMonthId);
+    // /DaloyClients/IVA/Users/MR00001/Doctor/{docId}/Visits
+    final visitsCollection =
+        _doctorCollectionRef().doc(docId).collection('Visits');
 
     return Padding(
       padding: const EdgeInsets.only(top: 8.0),
       child: StreamBuilder<QuerySnapshot>(
-        stream: monthDocRef
-            .collection('dates')
-            .orderBy('scheduledDate')
-            .snapshots(),
+        stream: visitsCollection
+            // scheduledDate is a string "yyyyMMdd" in each document
+            .orderBy('scheduledDate') // strings sort chronologically [web:43]
+            .snapshots(), // realtime updates [web:47]
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -858,20 +908,36 @@ class VisitsTab extends StatelessWidget {
             itemBuilder: (context, idx) {
               final visitDoc = visits[idx];
               final visit = visitDoc.data() as Map<String, dynamic>?;
-              final scheduledDateStr = visit?['scheduledDate'] ?? '';
-              final scheduledTime = visit?['scheduledTime'] ?? '';
+
+              // Doc ID is also yyyyMMdd (e.g. 20260413)
               final visitId = visitDoc.id;
+
+              // Prefer the field; if missing, fall back to doc id
+              final scheduledDateRaw =
+                  (visit?['scheduledDate'] ?? visitId).toString();
+              final scheduledTime =
+                  (visit?['scheduledTime'] ?? '').toString();
+
+              DateTime? visitDate;
+              String displayDate = scheduledDateRaw;
+              if (scheduledDateRaw.length == 8) {
+                try {
+                  final year =
+                      int.parse(scheduledDateRaw.substring(0, 4));
+                  final month =
+                      int.parse(scheduledDateRaw.substring(4, 6));
+                  final day =
+                      int.parse(scheduledDateRaw.substring(6, 8));
+                  visitDate = DateTime(year, month, day);
+                  displayDate =
+                      DateFormat('yyyy-MM-dd').format(visitDate);
+                } catch (_) {
+                  visitDate = null;
+                }
+              }
 
               final bool isSubmitted = visit?['submitted'] == true;
               final bool isSurprise = visit?['surprise'] == true;
-
-              DateTime? visitDate;
-              try {
-                visitDate =
-                    DateFormat('yyyy-MM-dd').parse(scheduledDateStr);
-              } catch (_) {
-                visitDate = null;
-              }
 
               Color cardColor = Colors.white;
               if (isSurprise) {
@@ -890,11 +956,11 @@ class VisitsTab extends StatelessWidget {
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 child: ListTile(
                   title: Text(
-                    scheduledDateStr,
+                    displayDate,
                     style: const TextStyle(
                         fontSize: 17, fontWeight: FontWeight.bold),
                   ),
-                  subtitle: Text("$scheduledTime"),
+                  subtitle: Text(scheduledTime),
                   trailing: ElevatedButton(
                     onPressed: () {
                       Navigator.push(
@@ -902,6 +968,7 @@ class VisitsTab extends StatelessWidget {
                         MaterialPageRoute(
                           builder: (_) => CallDetailPage(
                             doctor: doctor ?? {},
+                            // Visit doc ID (yyyyMMdd) as scheduledVisitId
                             scheduledVisitId: visitId,
                           ),
                         ),

@@ -1,312 +1,45 @@
 {
   "project_info": {
-    "project_number": "240522491766",
-    "firebase_url": "https://doxs-42fe8.firebaseio.com",
-    "project_id": "doxs-42fe8",
-    "storage_bucket": "doxs-42fe8.appspot.com"
+    "project_number": "215692238547",
+    "project_id": "daloy-661ce",
+    "storage_bucket": "daloy-661ce.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:240522491766:android:4fac91402f6c8bc8",
+        "mobilesdk_app_id": "1:215692238547:android:72e164e604ce37ac52fe26",
         "android_client_info": {
-          "package_name": "com.RagingRiverICT.DoXs"
+          "package_name": "com.company.iDoXS"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCj3DvHDx-9z3NCw43-k6HqanZK-jTyZV4"
+          "current_key": "AIzaSyA44l6mP2AMP4CcWPvEBWNyJbGew72-kRc"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "240522491766-0f2l992vhtj4etumbrf7ln4gq41btids.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.ragingriverict.e-firma-id"
-              }
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:240522491766:android:ade65f5f635d12be",
-        "android_client_info": {
-          "package_name": "com.RagingRiverICT.R2"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyCj3DvHDx-9z3NCw43-k6HqanZK-jTyZV4"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "240522491766-0f2l992vhtj4etumbrf7ln4gq41btids.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.ragingriverict.e-firma-id"
-              }
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:240522491766:android:21709ea2cf5ef6fc6e6c57",
-        "android_client_info": {
-          "package_name": "com.company.iDoXs"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyCj3DvHDx-9z3NCw43-k6HqanZK-jTyZV4"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "240522491766-0f2l992vhtj4etumbrf7ln4gq41btids.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.ragingriverict.e-firma-id"
-              }
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:240522491766:android:f1c791959172729f",
-        "android_client_info": {
-          "package_name": "com.ethelbautista.rfielder"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyCj3DvHDx-9z3NCw43-k6HqanZK-jTyZV4"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "240522491766-0f2l992vhtj4etumbrf7ln4gq41btids.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.ragingriverict.e-firma-id"
-              }
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:240522491766:android:bf6aa8ca3e845ef76e6c57",
+        "mobilesdk_app_id": "1:215692238547:android:1f7be298cdcf551c52fe26",
         "android_client_info": {
           "package_name": "com.example.idoxsapp"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCj3DvHDx-9z3NCw43-k6HqanZK-jTyZV4"
+          "current_key": "AIzaSyA44l6mP2AMP4CcWPvEBWNyJbGew72-kRc"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "240522491766-0f2l992vhtj4etumbrf7ln4gq41btids.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.ragingriverict.e-firma-id"
-              }
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:240522491766:android:af7c3b7e821d7e606e6c57",
-        "android_client_info": {
-          "package_name": "com.example.project_artemis"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyCj3DvHDx-9z3NCw43-k6HqanZK-jTyZV4"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "240522491766-0f2l992vhtj4etumbrf7ln4gq41btids.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.ragingriverict.e-firma-id"
-              }
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:240522491766:android:7627e315984508816e6c57",
-        "android_client_info": {
-          "package_name": "com.ragingriverict.cheka"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "240522491766-avq5ecv9q7q0381r5becihrjci743fup.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.ragingriverict.cheka",
-            "certificate_hash": "09dd841139ba38862b0bec36d693206bcc7531bd"
-          }
-        },
-        {
-          "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyCj3DvHDx-9z3NCw43-k6HqanZK-jTyZV4"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "240522491766-0f2l992vhtj4etumbrf7ln4gq41btids.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.ragingriverict.e-firma-id"
-              }
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:240522491766:android:0627f3979909d912",
-        "android_client_info": {
-          "package_name": "com.ragingriverict.doxs"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "240522491766-qb6ls4vtcgutm6tc3rr2asi6r8o7b74m.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.ragingriverict.doxs",
-            "certificate_hash": "fe05a7509a28dd91285ed407fe6e091818a05150"
-          }
-        },
-        {
-          "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyCj3DvHDx-9z3NCw43-k6HqanZK-jTyZV4"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "240522491766-9j1habtrl2gnr88cj0ifqi3uuu8mqppn.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "240522491766-0f2l992vhtj4etumbrf7ln4gq41btids.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.ragingriverict.e-firma-id"
-              }
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }

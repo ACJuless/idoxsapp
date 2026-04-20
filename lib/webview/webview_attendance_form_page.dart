@@ -25,7 +25,7 @@ class _AttendanceFormWebviewPageState extends State<AttendanceFormWebviewPage> {
   /// NOTE: Replace the token below with the actual token of your
   /// attendance_form_page.zip file in Firebase Storage.
   static const String _zipUrl =
-      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fattendance_form_page.zip?alt=media&token=532871f5-2390-402f-b92d-55b2dec6678a';
+      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fattendance_form_page.zip?alt=media&token=86454164-5bd8-4484-80da-2eba3d86a419';
 
   /// Name of the HTML file inside the ZIP.
   static const String _innerHtmlFileName = 'attendance_form_page.html';
