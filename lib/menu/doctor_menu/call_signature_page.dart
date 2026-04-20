@@ -50,21 +50,25 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
   ];
 
   String? emailKey;
+  String userClientType = ''; // pharma / farmers / legacy
 
   @override
   void initState() {
     super.initState();
-    _loadEmailKey();
+    _loadEmailKeyAndUserType();
     _loadPdfSampleProducts();
   }
 
-  Future<void> _loadEmailKey() async {
+  Future<void> _loadEmailKeyAndUserType() async {
     final prefs = await SharedPreferences.getInstance();
     final userEmail = prefs.getString('userEmail') ?? '';
+    final storedClientType = prefs.getString('userClientType') ?? '';
+
     setState(() {
-      emailKey =
-          userEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
+      emailKey = userEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
+      userClientType = storedClientType;
     });
+
     if (emailKey != null && emailKey!.isNotEmpty) {
       _loadExistingSignature();
     }
@@ -77,20 +81,45 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
   }
 
   /// Build the Firestore doc ref where this visit data is stored.
-  /// Path: flowDB/users/{emailKey}/doctors/doctors/{doctorId}
-  ///       /scheduledVisits/months/months/{yyyy-MM}/dates/{scheduledVisitId}
+  /// Path (matches HomePage / VisitsTab addressing):
+  ///   pharma  : flowDB/users/RR/{emailKey}/doctors/doctors/doctors/{doctorId}/scheduledVisits/...
+  ///   farmers: flowDB/users/INDOFIL/{emailKey}/doctors/doctors/doctors/{doctorId}/scheduledVisits/...
+  ///   else   : flowDB/users/{emailKey}/doctors/doctors/{doctorId}/scheduledVisits/...
   DocumentReference<Map<String, dynamic>> _visitDocRef() {
     final dateId = widget.scheduledVisitId; // assumed yyyy-MM-dd
     final year = dateId.substring(0, 4);
     final month = dateId.substring(5, 7);
     final monthId = '$year-$month'; // yyyy-MM
 
-    return FirebaseFirestore.instance
+    final root = FirebaseFirestore.instance
         .collection('flowDB')
-        .doc('users')
-        .collection(emailKey!)
-        .doc('doctors')
-        .collection('doctors')
+        .doc('users');
+
+    CollectionReference<Map<String, dynamic>> doctorsCollection;
+
+    if (userClientType == 'pharma') {
+      doctorsCollection = root
+          .collection('RR')
+          .doc(emailKey!)
+          .collection('doctors')
+          .doc('doctors')
+          .collection('doctors');
+    } else if (userClientType == 'farmers') {
+      doctorsCollection = root
+          .collection('INDOFIL')
+          .doc(emailKey!)
+          .collection('doctors')
+          .doc('doctors')
+          .collection('doctors');
+    } else {
+      // legacy / default path
+      doctorsCollection = root
+          .collection(emailKey!)
+          .doc('doctors')
+          .collection('doctors');
+    }
+
+    return doctorsCollection
         .doc(widget.doctorId)
         .collection('scheduledVisits')
         .doc('months')
@@ -157,8 +186,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
         });
       }
     } catch (e) {
-      print(
-          'Error loading signature/sample allocations: $e');
+      print('Error loading signature/sample allocations: $e');
     }
   }
 
@@ -270,7 +298,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
       }
 
       // Use set(..., merge: true) so doc is created if missing,
-      // and updated otherwise (no more not-found errors).
+      // and updated otherwise.
       await _visitDocRef().set(
         updateData,
         SetOptions(merge: true),

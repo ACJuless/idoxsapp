@@ -21,6 +21,8 @@ class _SignupPageState extends State<SignupPage> {
   String? _selectedTerritory;
   final List<String> _territoryOptions = ["PH-L", "PH-V", "PH-M"];
 
+  bool _isManager = false; // "Manager?" switch state
+
   String _hashPassword(String password) {
     var bytes = utf8.encode(password);
     var digest = sha256.convert(bytes);
@@ -29,12 +31,92 @@ class _SignupPageState extends State<SignupPage> {
 
   // Determine clientType based on email domain
   String _determineClientType(String email) {
-    if (email.toLowerCase().contains('@indofil.com')) {
+    final lower = email.toLowerCase();
+    if (lower.endsWith('@indofil.com')) {
       return 'farmers';
-    } else if (email.toLowerCase().contains('@idoxs.com')) {
+    } else if (lower.endsWith('@iva.com') || lower.endsWith('@wert.com')) {
       return 'pharma';
     } else {
       return 'both'; // Can access both pharma and farmers
+    }
+  }
+
+  /// Helper: generate the next sequential ID like MR00003 or MN00003
+  /// inside a given /DaloyClients/{client}/Users collection.
+  /// It counts only documents whose ID starts with the given prefix.
+  Future<String> _getNextClientIdWithPrefix(
+    String clientDocId,
+    String prefix,
+  ) async {
+    final usersRef = FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc(clientDocId)
+        .collection('Users');
+
+    // We can't query by ID prefix directly, so we fetch IDs and filter in memory.
+    final snapshot = await usersRef.get();
+    int count = 0;
+
+    for (final doc in snapshot.docs) {
+      if (doc.id.startsWith(prefix)) {
+        count++;
+      }
+    }
+
+    final int nextNum = count + 1;
+    final String numStr = nextNum.toString().padLeft(5, '0');
+    return '$prefix$numStr';
+  }
+
+  /// Determine Firestore path based on email domain and Manager flag.
+  ///
+  /// Final paths:
+  /// - @indofil.com -> /DaloyClients/INDOFIL/Users/{MR/MN0000X}
+  /// - @iva.com     -> /DaloyClients/IVA/Users/{MR/MN0000X}
+  /// - @wert.com    -> /DaloyClients/WERT/Users/{MR/MN0000X}
+  /// - others       -> /flowDB/client/GENERAL/users/users/{emailKey}
+  Future<DocumentReference<Map<String, dynamic>>> _userDocRefForEmail(
+    String email,
+    String emailKey,
+  ) async {
+    final lower = email.toLowerCase();
+
+    if (lower.endsWith('@indofil.com')) {
+      // /DaloyClients/INDOFIL/Users/{MRxxxx / MNxxxx}
+      final prefix = _isManager ? 'MN' : 'MR';
+      final docId = await _getNextClientIdWithPrefix('INDOFIL', prefix);
+      return FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('INDOFIL')
+          .collection('Users')
+          .doc(docId);
+    } else if (lower.endsWith('@iva.com')) {
+      // /DaloyClients/IVA/Users/{MRxxxx / MNxxxx}
+      final prefix = _isManager ? 'MN' : 'MR';
+      final docId = await _getNextClientIdWithPrefix('IVA', prefix);
+      return FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('Users')
+          .doc(docId);
+    } else if (lower.endsWith('@wert.com')) {
+      // /DaloyClients/WERT/Users/{MRxxxx / MNxxxx}
+      final prefix = _isManager ? 'MN' : 'MR';
+      final docId = await _getNextClientIdWithPrefix('WERT', prefix);
+      return FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('WERT')
+          .collection('Users')
+          .doc(docId);
+    } else {
+      // /flowDB/client/GENERAL/users/users/{emailKey}
+      return FirebaseFirestore.instance
+          .collection('flowDB')
+          .doc('client')
+          .collection('GENERAL')
+          .doc('users')
+          .collection('users')
+          .doc(emailKey);
     }
   }
 
@@ -45,49 +127,51 @@ class _SignupPageState extends State<SignupPage> {
       try {
         final String email = _emailController.text.trim();
         final String hashedPassword = _hashPassword(_passwordController.text);
-        final String emailKey = email.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
+        final String emailKey =
+            email.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
         final String name = _nameController.text.trim();
-        final String clientType = _determineClientType(email); // NEW: Auto-determine clientType
+        final String clientType = _determineClientType(email);
+        final lower = email.toLowerCase();
 
-        // Check for existing user in flowDB/users/[emailKey]
-        final existingDocs = await FirebaseFirestore.instance
-            .collection('flowDB')
-            .doc('users')
-            .collection(emailKey)
-            .get();
+        // Resolve the document reference based on email domain and Manager flag
+        final userDocRef = await _userDocRefForEmail(email, emailKey);
 
-        if (existingDocs.docs.isNotEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('An account already exists for that email.')),
-          );
-          setState(() => _isLoading = false);
-          return;
+        // Base user data
+        final Map<String, dynamic> userData = {
+          'email': email.toLowerCase(),
+          'password': hashedPassword,
+          'name': name,
+          'territoryId': _selectedTerritory,
+          'clientType': clientType,
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastLogin': FieldValue.serverTimestamp(),
+          'isActive': true,
+        };
+
+        // Role logic for @iva.com only:
+        // - Manager? = true  -> /DaloyUserRoles/NSM
+        // - Manager? = false -> /DaloyUserRoles/Medrep
+        if (lower.endsWith('@iva.com')) {
+          final String roleDocId = _isManager ? 'NSM' : 'Medrep';
+          userData['Role'] = FirebaseFirestore.instance
+              .collection('DaloyUserRoles')
+              .doc(roleDocId);
         }
 
-        await FirebaseFirestore.instance
-            .collection('flowDB')
-            .doc('users')
-            .collection(emailKey)
-            .doc(name)
-            .set({
-              'email': email,
-              'password': hashedPassword,
-              'name': name,
-              'territoryId': _selectedTerritory,
-              'clientType': clientType, // NEW: Save clientType
-              'createdAt': FieldValue.serverTimestamp(),
-              'lastLogin': FieldValue.serverTimestamp(),
-              'isActive': true,
-              'themeColor': Colors.green.value,
-            });
+        // Create the user document; parent docs/collections are created implicitly
+        await userDocRef.set(userData);
 
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Account created successfully! Please login.')),
+          SnackBar(
+            content: Text('Account created successfully! Please login.'),
+          ),
         );
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error creating account: ${e.toString()}')),
+          SnackBar(
+            content: Text('Error creating account: ${e.toString()}'),
+          ),
         );
       }
       setState(() => _isLoading = false);
@@ -96,7 +180,6 @@ class _SignupPageState extends State<SignupPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isLand = MediaQuery.of(context).orientation == Orientation.landscape;
     final gradientColors = [
       Color(0xFF221045),
       Color(0xFF4E2062),
@@ -142,7 +225,7 @@ class _SignupPageState extends State<SignupPage> {
               borderSide: BorderSide.none,
             ),
             focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(24),
               borderSide: BorderSide.none,
             ),
           ),
@@ -224,7 +307,7 @@ class _SignupPageState extends State<SignupPage> {
             }
             if (value.length < 6) {
               return 'Password must be at least 6 characters';
-                          }
+            }
             return null;
           },
         ),
@@ -239,11 +322,15 @@ class _SignupPageState extends State<SignupPage> {
             labelStyle: TextStyle(color: Color.fromRGBO(188, 184, 196, 1)),
             suffixIcon: IconButton(
               icon: Icon(
-                _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
+                _obscureConfirmPassword
+                    ? Icons.visibility
+                    : Icons.visibility_off,
                 color: Colors.white,
               ),
               onPressed: () {
-                setState(() => _obscureConfirmPassword = !_obscureConfirmPassword);
+                setState(
+                  () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                );
               },
             ),
             border: OutlineInputBorder(
@@ -256,7 +343,7 @@ class _SignupPageState extends State<SignupPage> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(24),
-                            borderSide: BorderSide.none,
+              borderSide: BorderSide.none,
             ),
           ),
           obscureText: _obscureConfirmPassword,
@@ -305,13 +392,48 @@ class _SignupPageState extends State<SignupPage> {
               borderSide: BorderSide.none,
             ),
           ),
-          icon: Icon(Icons.arrow_drop_down_rounded, color: Colors.white, size: 32),
+          icon: Icon(
+            Icons.arrow_drop_down_rounded,
+            color: Colors.white,
+            size: 32,
+          ),
           onChanged: (value) {
             setState(() => _selectedTerritory = value);
           },
           validator: (value) =>
-              value == null || value.isEmpty ? 'Please select a territory' : null,
+              value == null || value.isEmpty
+                  ? 'Please select a territory'
+                  : null,
         ),
+        SizedBox(height: 8),
+
+        // "Manager?" switch with red when off and purple when on
+        Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            Switch(
+              value: _isManager,
+              onChanged: (value) {
+                setState(() {
+                  _isManager = value;
+                });
+              },
+              activeColor: Color(0xFFa95dee),
+              inactiveThumbColor: Colors.red,
+              inactiveTrackColor: Colors.red.withOpacity(0.4),
+            ),
+            SizedBox(width: 8),
+            Text(
+              'Manager?',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+
         SizedBox(height: 24),
         Padding(
           padding: EdgeInsets.symmetric(horizontal: 50),
@@ -338,7 +460,10 @@ class _SignupPageState extends State<SignupPage> {
                     )
                   : Text(
                       'Create Account',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
             ),
           ),
@@ -352,7 +477,10 @@ class _SignupPageState extends State<SignupPage> {
           ),
           child: RichText(
             text: TextSpan(
-              style: TextStyle(fontSize: 16, color: Colors.white),
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.white,
+              ),
               children: [
                 TextSpan(
                   text: "Already have an account? ",
@@ -406,4 +534,3 @@ class _SignupPageState extends State<SignupPage> {
     super.dispose();
   }
 }
-

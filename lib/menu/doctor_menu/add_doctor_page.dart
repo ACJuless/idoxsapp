@@ -29,7 +29,8 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
   final TextEditingController addressController = TextEditingController();
   final TextEditingController cityController = TextEditingController();
   final TextEditingController birthDateController = TextEditingController();
-  final TextEditingController mobileNumberController = TextEditingController();
+  final TextEditingController mobileNumberController =
+      TextEditingController();
   final TextEditingController emailController = TextEditingController();
 
   String? _selectedSpecialty;
@@ -52,45 +53,60 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
     _generateNextDoctorId();
   }
 
-  Future<String> _getEmailKey() async {
+  /// Get the logged-in user's Firestore doc ID (e.g. MR00001) from SharedPreferences.
+  Future<String?> _getLoggedInUserId() async {
     final prefs = await SharedPreferences.getInstance();
-    final userEmail = prefs.getString('userEmail') ?? '';
-    return userEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
+    return prefs.getString('userId'); // set in login_page.dart
   }
 
-  /// Generates the next doctor ID (e.g., RR-00003) based on the number of
-  /// existing doctor documents in Firestore.
+  /// Collection reference:
+  /// /DaloyClients/IVA/Users/{userId}/Doctor
+  Future<CollectionReference<Map<String, dynamic>>> _getDoctorsCollectionRef()
+      async {
+    final userId = await _getLoggedInUserId();
+    if (userId == null || userId.isEmpty) {
+      throw Exception('Logged-in userId not found in SharedPreferences');
+    }
+
+    return FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc('IVA')
+        .collection('Users')
+        .doc(userId)
+        .collection('Doctor');
+  }
+
+  /// Generates the next doctor ID (MD-0000X) based on the number of
+  /// existing doctor documents in /DaloyClients/IVA/Users/{userId}/Doctor.
   Future<void> _generateNextDoctorId() async {
     setState(() {
       _isGeneratingId = true;
     });
 
     try {
-      final emailKey = await _getEmailKey();
+      final doctorsCollection = await _getDoctorsCollectionRef();
 
-      final QuerySnapshot snapshot = await FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('users')
-          .collection(emailKey)
-          .doc('doctors')
-          .collection('doctors')
-          .get();
+      final QuerySnapshot snapshot = await doctorsCollection.get();
 
       final int currentCount = snapshot.size;
       final int nextNumber = currentCount + 1;
 
-      final String formattedNumber = nextNumber.toString().padLeft(5, '0');
-      final String generatedId = 'RR-$formattedNumber';
+      final String formattedNumber =
+          nextNumber.toString().padLeft(5, '0');
+      final String generatedId = 'MD-$formattedNumber';
 
       mdIdController.text = generatedId;
     } catch (e) {
-      // If ID generation fails, leave the field empty and let user input manually.
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Failed to generate ID automatically. You may input it manually."),
+          content: Text(
+              "Failed to generate ID automatically. You may input it manually."),
           backgroundColor: Colors.red,
         ),
       );
+      if (mdIdController.text.isEmpty) {
+        mdIdController.text = '';
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -100,14 +116,14 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
     }
   }
 
-  /// Email validator: requires '@' and a basic domain (e.g. gmail.com, outlook.com).
+  /// Email validator: requires '@' and a basic domain.
   String? _validateEmail(String? value) {
     if (value == null || value.trim().isEmpty) {
       return "Email is required";
     }
     final email = value.trim();
     final RegExp emailRegex =
-        RegExp(r'^[^@]+@[^@]+\.[^@]+'); // good enough for your use case
+        RegExp(r'^[^@]+@[^@]+\.[^@]+');
     if (!emailRegex.hasMatch(email)) {
       return "Please enter a valid email address";
     }
@@ -138,16 +154,16 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
   }
 
   Future<void> _selectBirthDate() async {
-    FocusScope.of(context).unfocus(); // close keyboard if any
+    FocusScope.of(context).unfocus();
     final DateTime now = DateTime.now();
     final DateTime firstDate = DateTime(1900);
     final DateTime lastDate = now;
 
     DateTime initialDate = now;
-    // If already has a value, try to parse and use as initial date.
     if (birthDateController.text.isNotEmpty) {
       try {
-        initialDate = DateFormat('yyyy-MM-dd').parse(birthDateController.text);
+        initialDate =
+            DateFormat('yyyy-MM-dd').parse(birthDateController.text);
       } catch (_) {
         initialDate = now;
       }
@@ -161,12 +177,12 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
     );
 
     if (picked != null) {
-      birthDateController.text = DateFormat('yyyy-MM-dd').format(picked);
+      birthDateController.text =
+          DateFormat('yyyy-MM-dd').format(picked);
     }
   }
 
-  /// Convert signature points into a Firestore-friendly structure:
-  /// List<Map<String, dynamic>>
+  /// Convert signature points into a Firestore-friendly structure.
   List<Map<String, dynamic>> _serializeSignature() {
     return _signaturePoints
         .map((p) => {
@@ -203,7 +219,6 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
         'freq': _selectedFrequency,
         'hospital': addressController.text.trim(),
         'city': cityController.text.trim(),
-        // keep key names consistent with doctor_detail_page expectations
         'bday': birthDateController.text.trim(),
         'mob_no': mobileNumberController.text.trim(),
         'email': emailController.text.trim(),
@@ -212,16 +227,9 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
         'createdAt': FieldValue.serverTimestamp(),
       };
 
-      final emailKey = await _getEmailKey();
+      final doctorsCollection = await _getDoctorsCollectionRef();
 
-      await FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('users')
-          .collection(emailKey)
-          .doc('doctors')
-          .collection('doctors')
-          .doc(docId)
-          .set(infoData);
+      await doctorsCollection.doc(docId).set(infoData);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -259,32 +267,42 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
 
   void _onSignaturePanStart(DragStartDetails details) {
     final renderBox =
-        _signaturePadKey.currentContext?.findRenderObject() as RenderBox?;
+        _signaturePadKey.currentContext?.findRenderObject()
+            as RenderBox?;
     if (renderBox == null) return;
-    final localPosition = renderBox.globalToLocal(details.globalPosition);
+    final localPosition =
+        renderBox.globalToLocal(details.globalPosition);
 
     setState(() {
       _currentStrokeId++;
       _signaturePoints.add(
-        _SignaturePoint(position: localPosition, strokeId: _currentStrokeId),
+        _SignaturePoint(
+          position: localPosition,
+          strokeId: _currentStrokeId,
+        ),
       );
     });
   }
 
   void _onSignaturePanUpdate(DragUpdateDetails details) {
     final renderBox =
-        _signaturePadKey.currentContext?.findRenderObject() as RenderBox?;
+        _signaturePadKey.currentContext?.findRenderObject()
+            as RenderBox?;
     if (renderBox == null) return;
-    final localPosition = renderBox.globalToLocal(details.globalPosition);
+    final localPosition =
+        renderBox.globalToLocal(details.globalPosition);
     setState(() {
       _signaturePoints.add(
-        _SignaturePoint(position: localPosition, strokeId: _currentStrokeId),
+        _SignaturePoint(
+          position: localPosition,
+          strokeId: _currentStrokeId,
+        ),
       );
     });
   }
 
   void _onSignaturePanEnd(DragEndDetails details) {
-    // Nothing special needed; strokeId already advanced on next start.
+    // No-op
   }
 
   void _clearSignature() {
@@ -318,8 +336,8 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
       ),
       backgroundColor: Color(0xFF5958b2),
 
-      /// Floating Buttons
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButtonLocation:
+          FloatingActionButtonLocation.centerFloat,
       floatingActionButton: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -327,8 +345,9 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
             heroTag: "cancelBtn",
             backgroundColor: Colors.grey,
             label: Text("Cancel"),
-            onPressed:
-                _isSaving ? null : () => Navigator.of(context).pop(false),
+            onPressed: _isSaving
+                ? null
+                : () => Navigator.of(context).pop(false),
           ),
           SizedBox(width: 20),
           FloatingActionButton.extended(
@@ -347,12 +366,15 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
             onPressed: _isSaving
                 ? null
                 : () async {
-                    if (_formKey.currentState?.validate() != true) return;
+                    if (_formKey.currentState?.validate() != true) {
+                      return;
+                    }
 
                     if (_selectedSpecialty == null) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text("Please select a category"),
+                          content:
+                              Text("Please select a category"),
                           backgroundColor: Colors.red,
                         ),
                       );
@@ -378,12 +400,13 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
                   _buildInput(
                     "Input ID",
                     mdIdController,
-                    readOnly: true,
+                    readOnly: false,
                     validator: (v) => _validateRequired(v, "ID"),
                   ),
                   if (_isGeneratingId)
                     Padding(
-                      padding: const EdgeInsets.only(right: 12.0),
+                      padding:
+                          const EdgeInsets.only(right: 12.0),
                       child: SizedBox(
                         width: 18,
                         height: 18,
@@ -399,28 +422,31 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
                 "PRC No.",
                 prcNoController,
                 keyboardType: TextInputType.text,
-                validator: (v) => _validateRequired(v, "PRC No."),
+                validator: (v) =>
+                    _validateRequired(v, "PRC No."),
               ),
 
               _sectionTitle("Full Name"),
               _buildInput(
                 "Last Name",
                 lastNameController,
-                validator: (v) => _validateRequired(v, "Last Name"),
+                validator: (v) =>
+                    _validateRequired(v, "Last Name"),
               ),
               _buildInput(
                 "First Name",
                 firstNameController,
-                validator: (v) => _validateRequired(v, "First Name"),
+                validator: (v) =>
+                    _validateRequired(v, "First Name"),
               ),
               _buildInput(
                 "Middle Name",
                 middleNameController,
-                validator: (v) => _validateRequired(v, "Middle Name"),
+                validator: (v) =>
+                    _validateRequired(v, "Middle Name"),
               ),
 
               _sectionTitle("Other Information"),
-              // Birth Date as date picker
               TextFormField(
                 controller: birthDateController,
                 readOnly: true,
@@ -430,7 +456,8 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
                   fillColor: Colors.white,
                 ),
                 onTap: _selectBirthDate,
-                validator: (v) => _validateRequired(v, "Birth Date"),
+                validator: (v) =>
+                    _validateRequired(v, "Birth Date"),
               ),
               _buildInput(
                 "Email",
@@ -455,12 +482,14 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
               _buildInput(
                 "Address",
                 addressController,
-                validator: (v) => _validateRequired(v, "Address"),
+                validator: (v) =>
+                    _validateRequired(v, "Address"),
               ),
               _buildInput(
                 "City",
                 cityController,
-                validator: (v) => _validateRequired(v, "City"),
+                validator: (v) =>
+                    _validateRequired(v, "City"),
               ),
 
               _sectionTitle("Category"),
@@ -493,7 +522,10 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
                     child: RadioListTile<String>(
                       value: freq,
                       groupValue: _selectedFrequency,
-                      title: Text(freq, style: TextStyle(color: Colors.white)),
+                      title: Text(
+                        freq,
+                        style: TextStyle(color: Colors.white),
+                      ),
                       fillColor: _radioColor(),
                       onChanged: (v) =>
                           setState(() => _selectedFrequency = v!),
@@ -502,7 +534,6 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
                 }).toList(),
               ),
 
-              // Signature input area
               _sectionTitle("Signature"),
               Container(
                 key: _signaturePadKey,
@@ -536,7 +567,7 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
                 ),
               ),
 
-              SizedBox(height: 100), // spacing for floating buttons
+              SizedBox(height: 100),
             ],
           ),
         ),
@@ -547,7 +578,8 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
   Widget _sectionTitle(String text) => Align(
         alignment: Alignment.centerLeft,
         child: Padding(
-          padding: const EdgeInsets.only(top: 20, bottom: 10),
+          padding:
+              const EdgeInsets.only(top: 20, bottom: 10),
           child: Text(
             text,
             style: TextStyle(
@@ -601,7 +633,6 @@ class _SignaturePainter extends CustomPainter {
       final p1 = points[i];
       final p2 = points[i + 1];
 
-      // Only connect consecutive points from the same stroke
       if (p1.strokeId == p2.strokeId) {
         canvas.drawLine(p1.position, p2.position, paint);
       }

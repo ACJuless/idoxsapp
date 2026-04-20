@@ -13,7 +13,7 @@ class TmlViewPage extends StatefulWidget {
 class _TmlViewPageState extends State<TmlViewPage> {
   bool editMode = false;
   bool isSaving = false;
-  bool isOpeningScheduleDialog = false; // NEW: loading for Schedule Overview
+  bool isOpeningScheduleDialog = false;
   int? selectedDoctorIdx;
   String? selectedDoctorId;
   Map<String, dynamic>? selectedDoctorRowData;
@@ -23,41 +23,61 @@ class _TmlViewPageState extends State<TmlViewPage> {
   static const double minWeekColWidth = 210;
   static const double rowHeight = 62.0;
 
+  // doctorId -> 5-element list of "Su","M","T","W","Th","F","Sa" or ""
   Map<String, List<String>> weekSelections = {};
+  // doctorId -> {weekIndex(0–4) : "HH:mm"}
   Map<String, Map<int, String>> scheduledTimes = {};
 
   final ScrollController _leftController = ScrollController();
   final ScrollController _rightController = ScrollController();
   String userEmail = '';
   String emailKey = '';
+  String _userClientType = '';
+  String _userId = ''; // MR id (MR00001) from SharedPreferences
+
+  // Keep current month/year and month grid so date calculations are consistent
+  late DateTime _currentMonthBase;
+  late List<List<DateTime?>> _monthGrid;
 
   @override
   void initState() {
     super.initState();
     _initSyncedScroll();
-    _loadUserEmail();
+    _initCurrentMonth();
+    _loadUserPrefs();
+  }
+
+  void _initCurrentMonth() {
+    final now = DateTime.now();
+    _currentMonthBase = DateTime(now.year, now.month, 1);
+    _monthGrid = _buildMonthGrid(_currentMonthBase.year, _currentMonthBase.month);
   }
 
   void _initSyncedScroll() {
     _leftController.addListener(() {
       if (_rightController.hasClients &&
-          (_rightController.offset != _leftController.offset)) {
+          _rightController.offset != _leftController.offset) {
         _rightController.jumpTo(_leftController.offset);
       }
     });
     _rightController.addListener(() {
       if (_leftController.hasClients &&
-          (_leftController.offset != _rightController.offset)) {
+          _rightController.offset != _rightController.offset) {
         _leftController.jumpTo(_rightController.offset);
       }
     });
   }
 
-  Future<void> _loadUserEmail() async {
+  Future<void> _loadUserPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     userEmail = prefs.getString('userEmail') ?? '';
+    final clientType = prefs.getString('userClientType') ?? 'both';
+    final userId = prefs.getString('userId') ?? ''; // MR00001, etc.
+
     setState(() {
       emailKey = userEmail.replaceAll(RegExp(r'[.#$\\\[\]/]'), '_');
+      _userClientType = clientType;
+      _userId = userId;
     });
   }
 
@@ -66,6 +86,56 @@ class _TmlViewPageState extends State<TmlViewPage> {
     _leftController.dispose();
     _rightController.dispose();
     super.dispose();
+  }
+
+  /// Doctors: /DaloyClients/IVA/Users/{_userId}/Doctor
+  CollectionReference<Map<String, dynamic>> _doctorsCollectionRef() {
+    if (_userId.isEmpty) {
+      // Dummy path while loading; UI shows loader until _userId is set
+      return FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('Users')
+          .doc('_DUMMY')
+          .collection('Doctor');
+    }
+
+    return FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc('IVA')
+        .collection('Users')
+        .doc(_userId)
+        .collection('Doctor');
+  }
+
+  /// Visits: /DaloyClients/IVA/Users/{_userId}/Doctor/{docId}/Visits/{yyyyMMdd}
+  CollectionReference<Map<String, dynamic>> _visitsRootForDoctor(
+    String docId,
+  ) {
+    return _doctorsCollectionRef().doc(docId).collection('Visits');
+  }
+
+  /// Calendar itinerary:
+  /// /DaloyClients/IVA/Users/{_userId}/Calendar/{yyyy-MM}/Days/{d}/Itinerary/{doctorId}
+  DocumentReference<Map<String, dynamic>> _calendarItineraryRef(
+    DateTime visitDate,
+    String doctorId,
+  ) {
+    final monthId =
+        "${visitDate.year}-${visitDate.month.toString().padLeft(2, '0')}";
+    final dayId = visitDate.day.toString(); // "6" for 6th of month
+
+    return FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc('IVA')
+        .collection('Users')
+        .doc(_userId)
+        .collection('Calendar')
+        .doc(monthId)
+        .collection('Days')
+        .doc(dayId)
+        .collection('Itinerary')
+        .doc(doctorId);
   }
 
   void _goToAddDoctor() async {
@@ -81,19 +151,18 @@ class _TmlViewPageState extends State<TmlViewPage> {
     int idx,
     String docId,
   ) {
-    setState(() {
-      selectedDoctorIdx = idx;
-      selectedDoctorRowData = data;
-      selectedDoctorId = docId;
-      if (!weekSelections.containsKey(docId)) {
-        weekSelections[docId] = [
-          for (int w = 1; w <= 5; w++) (data['week_$w'] ?? "")
-        ];
-      }
-      if (!scheduledTimes.containsKey(docId)) {
-        scheduledTimes[docId] = {for (int w = 0; w < 5; w++) w: ""};
-      }
-    });
+    selectedDoctorIdx = idx;
+    selectedDoctorRowData = data;
+    selectedDoctorId = docId;
+
+    if (!weekSelections.containsKey(docId)) {
+      weekSelections[docId] = [
+        for (int w = 1; w <= 5; w++) (data['week_$w'] ?? "").toString(),
+      ];
+    }
+    if (!scheduledTimes.containsKey(docId)) {
+      scheduledTimes[docId] = {for (int w = 0; w < 5; w++) w: ""};
+    }
   }
 
   void _selectDoctorForDetail(
@@ -109,48 +178,42 @@ class _TmlViewPageState extends State<TmlViewPage> {
   }
 
   void _handleWeekBoxTap(
-    int doctorIdx,
     String docId,
     int weekIdx,
     String selectedDay,
-    int freq,
   ) {
+    final current = weekSelections[docId] ?? ["", "", "", "", ""];
+    final updated = List<String>.from(current);
+    updated[weekIdx] = updated[weekIdx] == selectedDay ? "" : selectedDay;
     setState(() {
-      var doctorWeek = weekSelections[docId] ?? ["", "", "", "", ""];
-      doctorWeek[weekIdx] =
-          doctorWeek[weekIdx] == selectedDay ? "" : selectedDay;
-      weekSelections[docId] = doctorWeek;
+      weekSelections[docId] = updated;
     });
   }
 
   bool _isExceededFreq(List<String> selected, int freq) {
-    int count = selected.where((e) => e.isNotEmpty).length;
+    final count = selected.where((e) => e.isNotEmpty).length;
     return count > freq;
   }
 
+  /// Update week_1..week_5 for a doctor, then sync that doctor's Visits + Itinerary.
+  /// For each week there will be at most one Visits/{yyyyMMdd} entry and one
+  /// matching Itinerary doc (linked by Reference).
   Future<void> _saveEditedWeeksWithTimes(
     Map<String, dynamic> originalData,
     List<String> editedWeeks,
     String docId,
     Map<int, String> times,
   ) async {
-    Map<String, dynamic> weekUpdate = {};
+    final doctorRef = _doctorsCollectionRef().doc(docId);
+
+    final Map<String, dynamic> weekUpdate = {};
     for (int i = 0; i < 5; i++) {
-      String orig = (originalData['week_${i + 1}'] ?? "");
-      String edited = editedWeeks[i];
+      final orig = (originalData['week_${i + 1}'] ?? "").toString();
+      final edited = editedWeeks[i];
       if (orig != edited) {
         weekUpdate['week_${i + 1}'] = edited;
       }
     }
-
-    final doctorRef = FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
-        .doc(docId);
-
     if (weekUpdate.isNotEmpty) {
       await doctorRef.update(weekUpdate);
     }
@@ -163,53 +226,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
     );
   }
 
-  DateTime? getDateForWeekdayOfMonth(
-    int year,
-    int month,
-    int week,
-    String day,
-  ) {
-    final weekdayMap = {
-      "Su": DateTime.sunday,
-      "M": DateTime.monday,
-      "T": DateTime.tuesday,
-      "W": DateTime.wednesday,
-      "Th": DateTime.thursday,
-      "F": DateTime.friday,
-      "Sa": DateTime.saturday
-    };
-    int weekday = weekdayMap[day] ?? DateTime.monday;
-    DateTime dt = DateTime(year, month, 1);
-    while (dt.weekday != weekday) {
-      dt = dt.add(const Duration(days: 1));
-    }
-    dt = dt.add(Duration(days: (week - 1) * 7));
-    if (dt.month != month) return null;
-    return dt;
-  }
-
-  String _getDayFromDateString(String dateStr, int year, int month) {
-    try {
-      final date = DateFormat("yyyy-MM-dd").parse(dateStr);
-      if (date.year != year || date.month != month) return "";
-
-      final weekdayMapReverse = {
-        DateTime.sunday: "Su",
-        DateTime.monday: "M",
-        DateTime.tuesday: "T",
-        DateTime.wednesday: "W",
-        DateTime.thursday: "Th",
-        DateTime.friday: "F",
-        DateTime.saturday: "Sa",
-      };
-      return weekdayMapReverse[date.weekday] ?? "";
-    } catch (_) {
-      return "";
-    }
-  }
-
   DateTime _startOfWeekSunday(DateTime d) {
-    final int delta = d.weekday % 7;
+    final delta = d.weekday % 7;
     return DateTime(d.year, d.month, d.day).subtract(Duration(days: delta));
   }
 
@@ -219,144 +237,137 @@ class _TmlViewPageState extends State<TmlViewPage> {
     return sa.year == sb.year && sa.month == sb.month && sa.day == sb.day;
   }
 
+  /// Sync week selections into flat Visits/{yyyymmdd} docs AND matching Itinerary docs.
+  ///
+  /// Behaviour per week index (0–4):
+  /// - At most one visit doc in Visits for that calendar week.
+  /// - When a new date in that week is selected, any existing visit in that
+  ///   calendar week is deleted, and its referenced Itinerary doc (Reference)
+  ///   is also deleted.
+  /// - For the new date, a visit doc is created/merged and an Itinerary doc
+  ///   is created/merged, and the visit's "Reference" field stores the
+  ///   DocumentReference to that itinerary doc. [web:47][web:82][web:190][web:64]
   Future<void> _syncVisitsWithTmlScheduleAndTimes(
     String docId,
     Map<String, dynamic> doctorData,
     List<String> weeks,
     Map<int, String> scheduledTimesMap,
   ) async {
-    final visitsRootRef = FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
-        .doc(docId)
-        .collection('scheduledVisits');
+    final visitsRootRef = _visitsRootForDoctor(docId);
 
-    final now = DateTime.now();
+    final now = _currentMonthBase;
     final year = now.year;
     final month = now.month;
-    final monthId = DateFormat('yyyy-MM').format(now);
 
-    final monthDatesRef = visitsRootRef
-        .doc('months')
-        .collection('months')
-        .doc(monthId)
-        .collection('dates');
-
+    // 1. Compute the desired date per week from the grid (new UI state)
     final desiredDatePerWeek = <int, DateTime>{};
     for (int w = 0; w < 5; w++) {
       final dayCode = weeks[w];
       if (dayCode.isEmpty) continue;
-      final dt = getDateForWeekdayOfMonth(year, month, w + 1, dayCode);
+
+      final weekRow = _monthGrid[w];
+      final weekdayIndex = _dayCodeToGridIndex(dayCode);
+      if (weekdayIndex == null) continue;
+      final dt = weekRow[weekdayIndex];
       if (dt == null || dt.month != month) continue;
       desiredDatePerWeek[w] = dt;
     }
 
-    final allDatesSnap = await monthDatesRef.get();
-    final existingDates = <String, Map<String, dynamic>>{};
-    for (final docSnap in allDatesSnap.docs) {
-      existingDates[docSnap.id] = docSnap.data();
+    // 2. Fetch existing Visits docs for this month to detect duplicates.
+    final monthStart = DateTime(year, month, 1);
+    final monthEnd = DateTime(year, month + 1, 0);
+    final String startId = DateFormat("yyyyMMdd").format(monthStart);
+    final String endId = DateFormat("yyyyMMdd").format(monthEnd);
+
+    final existingSnap = await visitsRootRef
+        .where('scheduledDate', isGreaterThanOrEqualTo: startId)
+        .where('scheduledDate', isLessThanOrEqualTo: endId)
+        .get();
+
+    final existingById = <String, Map<String, dynamic>>{};
+    for (final doc in existingSnap.docs) {
+      existingById[doc.id] = doc.data();
     }
 
     DateTime? _parseDateId(String id) {
       try {
-        final d = DateFormat("yyyy-MM-dd").parse(id);
-        if (d.year != year || d.month != month) return null;
-        return d;
+        return DateTime.parse(
+            "${id.substring(0, 4)}-${id.substring(4, 6)}-${id.substring(6, 8)}");
       } catch (_) {
         return null;
       }
     }
 
-    final Map<int, String> carriedTimes = {};
+    // 3. For each week, delete any old visit in the same calendar week
+    //    but with a different dateId, and also delete its referenced
+    //    Itinerary document via the Reference field.
     for (final entry in desiredDatePerWeek.entries) {
-      final int weekIndex = entry.key;
-      final DateTime newDate = entry.value;
-      final String newDateStr = DateFormat("yyyy-MM-dd").format(newDate);
+      final newDate = entry.value;
+      final newDateId = DateFormat("yyyyMMdd").format(newDate);
 
-      String carriedTimeForWeek = "";
+      for (final existingEntry in existingById.entries) {
+        final existingId = existingEntry.key;
+        final existingData = existingEntry.value;
 
-      for (final existingEntry in existingDates.entries) {
-        final String existingId = existingEntry.key;
-        final data = existingEntry.value;
+        if (existingId == newDateId) {
+          continue;
+        }
 
         final existingDt = _parseDateId(existingId);
         if (existingDt == null) continue;
+        if (existingDt.year != year || existingDt.month != month) continue;
 
         if (_isSameCalendarWeek(existingDt, newDate)) {
-          final existingTime =
-              (data['scheduledTime'] ?? "").toString().trim();
-          if (existingTime.isNotEmpty) {
-            carriedTimeForWeek = existingTime;
-          }
-          if (existingId != newDateStr) {
-            await monthDatesRef.doc(existingId).delete();
+          // Delete the visit doc
+          await visitsRootRef.doc(existingId).delete();
+
+          // If it has a Reference to an itinerary doc, delete that too
+          final refField = existingData['Reference'];
+          if (refField is DocumentReference) {
+            try {
+              await refField.delete();
+            } catch (e) {
+              debugPrint(
+                  'Failed to delete itinerary doc via Reference for $existingId: $e');
+            }
           }
         }
       }
-
-      if (carriedTimeForWeek.isNotEmpty) {
-        carriedTimes[weekIndex] = carriedTimeForWeek;
-      }
     }
 
-    for (final existingEntry in existingDates.entries) {
-      final String existingId = existingEntry.key;
-      final data = existingEntry.value;
-
-      final existingDt = _parseDateId(existingId);
-      if (existingDt == null) continue;
-
-      final bool hasTime =
-          (data['scheduledTime']?.toString().trim().isNotEmpty ?? false);
-
-      bool isDesired = false;
-      for (final d in desiredDatePerWeek.values) {
-        if (DateFormat("yyyy-MM-dd").format(d) == existingId) {
-          isDesired = true;
-          break;
-        }
-      }
-
-      if (!isDesired && !hasTime) {
-        await monthDatesRef.doc(existingId).delete();
-      }
-    }
-
+    // 4. (Re)create visit docs per week with times and Reference field.
     for (int w = 0; w < 5; w++) {
       final dt = desiredDatePerWeek[w];
       if (dt == null) continue;
-      final dateStr = DateFormat("yyyy-MM-dd").format(dt);
+      final dateId = DateFormat("yyyyMMdd").format(dt);
 
-      final String fromUser =
-          (scheduledTimesMap[w] ?? "").toString().trim();
-      final String fromCarried =
-          (carriedTimes[w] ?? "").toString().trim();
+      final fromUser = (scheduledTimesMap[w] ?? "").toString().trim();
+      String? finalTime = fromUser.isNotEmpty ? fromUser : null;
 
-      String? finalTime;
-      if (fromUser.isNotEmpty) {
-        finalTime = fromUser;
-      } else if (fromCarried.isNotEmpty) {
-        finalTime = fromCarried;
-      } else {
-        finalTime = null;
-      }
+      // Build itinerary document reference for Calendar path
+      final itineraryRef = _calendarItineraryRef(dt, docId);
 
-      final Map<String, dynamic> dataToSet = {
-        "scheduledDate": dateStr,
+      // Ensure calendar itinerary doc exists/updated (merge to not overwrite). [web:82]
+      await itineraryRef.set(
+        {
+          'doctorId': docId,
+          'scheduledDate': dateId,
+          'createdAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+
+      final flatData = <String, dynamic>{
+        "scheduledDate": dateId,
+        "Visit": true,
         "submitted": false,
         "surprise": false,
+        "Reference": itineraryRef, // Firestore DocumentReference
       };
       if (finalTime != null) {
-        dataToSet["scheduledTime"] = finalTime;
+        flatData["scheduledTime"] = finalTime;
       }
-
-      await monthDatesRef.doc(dateStr).set(
-            dataToSet,
-            SetOptions(merge: true),
-          );
+      await visitsRootRef.doc(dateId).set(flatData, SetOptions(merge: true));
     }
   }
 
@@ -364,10 +375,10 @@ class _TmlViewPageState extends State<TmlViewPage> {
     List<String> oldWeeks,
     List<String> newWeeks,
   ) {
-    final List<int> indices = [];
+    final indices = <int>[];
     for (int i = 0; i < 5; i++) {
-      final String oldVal = oldWeeks[i];
-      final String newVal = newWeeks[i];
+      final oldVal = oldWeeks[i];
+      final newVal = newWeeks[i];
       if (oldVal.isEmpty && newVal.isNotEmpty) {
         indices.add(i);
       }
@@ -380,49 +391,46 @@ class _TmlViewPageState extends State<TmlViewPage> {
     required String dayCode,
     required int weekIndex,
   }) async {
-    final now = DateTime.now();
-    final int year = now.year;
-    final int month = now.month;
+    final base = _currentMonthBase;
+    final year = base.year;
+    final month = base.month;
 
-    final visitDate =
-        getDateForWeekdayOfMonth(year, month, weekIndex + 1, dayCode);
+    final visitDate = _getDateFromGrid(weekIndex, dayCode, year, month);
     if (visitDate == null) return;
 
-    final String dateStr = DateFormat("yyyy-MM-dd").format(visitDate);
-    final String monthId = DateFormat('yyyy-MM').format(visitDate);
+    final dateId = DateFormat("yyyyMMdd").format(visitDate);
 
-    final visitsRootRef = FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
-        .doc(docId)
-        .collection('scheduledVisits');
-
-    final monthDatesRef = visitsRootRef
-        .doc('months')
-        .collection('months')
-        .doc(monthId)
-        .collection('dates');
-
-    final dateDocRef = monthDatesRef.doc(dateStr);
+    final visitsRootRef = _visitsRootForDoctor(docId);
+    final dateDocRef = visitsRootRef.doc(dateId);
     final snap = await dateDocRef.get();
 
-    String existingTime = "";
+    var existingTime = "";
     if (snap.exists) {
       final data = snap.data() as Map<String, dynamic>;
       existingTime = (data['scheduledTime'] ?? "").toString().trim();
     }
 
-    final String finalTime = existingTime.isNotEmpty ? existingTime : "09:00";
+    final finalTime = existingTime.isNotEmpty ? existingTime : "09:00";
+
+    // Also wire the Reference / Calendar doc here in case auto-set runs alone.
+    final itineraryRef = _calendarItineraryRef(visitDate, docId);
+    await itineraryRef.set(
+      {
+        'doctorId': docId,
+        'scheduledDate': dateId,
+        'createdAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
 
     await dateDocRef.set(
       {
-        "scheduledDate": dateStr,
+        "scheduledDate": dateId,
         "scheduledTime": finalTime,
+        "Visit": true,
         "submitted": false,
         "surprise": false,
+        "Reference": itineraryRef,
       },
       SetOptions(merge: true),
     );
@@ -433,14 +441,14 @@ class _TmlViewPageState extends State<TmlViewPage> {
     required Map<String, dynamic> originalData,
     required List<String> newWeeks,
   }) async {
-    final List<String> oldWeeks = [
+    final oldWeeks = <String>[
       for (int i = 1; i <= 5; i++) (originalData['week_$i'] ?? "").toString(),
     ];
 
     final newVisitIndices = _getNewVisitWeekIndices(oldWeeks, newWeeks);
 
     for (final weekIndex in newVisitIndices) {
-      final String dayCode = newWeeks[weekIndex];
+      final dayCode = newWeeks[weekIndex];
       if (dayCode.isEmpty) continue;
       await _autoSetScheduledTimeForVisit(
         docId: docId,
@@ -451,55 +459,28 @@ class _TmlViewPageState extends State<TmlViewPage> {
   }
 
   Future<List<Map<String, String>>> _getDoctorsForDate(
-    String scheduledDate,
+    String scheduledDateId,
   ) async {
-    final String monthId =
-        scheduledDate.substring(0, 7);
-
-    final doctorsSnap = await FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
-        .get();
-
-    final List<Map<String, String>> result = [];
+    final doctorsSnap = await _doctorsCollectionRef().get();
+    final result = <Map<String, String>>[];
 
     for (final doc in doctorsSnap.docs) {
-      final data = doc.data() as Map<String, dynamic>;
-      final String lastName = (data['lastName'] ?? '').toString();
-      final String firstName = (data['firstName'] ?? '').toString();
-      final String doctorName = "$lastName, $firstName";
+      final data = doc.data();
+      final lastName = (data['lastName'] ?? '').toString();
+      final firstName = (data['firstName'] ?? '').toString();
+      final doctorName = "$lastName, $firstName";
 
-      final visitsRootRef = FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('users')
-          .collection(emailKey)
-          .doc('doctors')
-          .collection('doctors')
-          .doc(doc.id)
-          .collection('scheduledVisits');
-
-      final dateDocRef = visitsRootRef
-          .doc('months')
-          .collection('months')
-          .doc(monthId)
-          .collection('dates')
-          .doc(scheduledDate);
+      final visitsRootRef = _visitsRootForDoctor(doc.id);
+      final dateDocRef = visitsRootRef.doc(scheduledDateId);
 
       final dateSnap = await dateDocRef.get();
       if (!dateSnap.exists) continue;
 
       final dateData = dateSnap.data() as Map<String, dynamic>;
-      final String time =
-          (dateData['scheduledTime'] ?? '').toString().trim();
+      final time = (dateData['scheduledTime'] ?? '').toString().trim();
       if (time.isEmpty) continue;
 
-      result.add({
-        'doctorName': doctorName,
-        'time': time,
-      });
+      result.add({'doctorName': doctorName, 'time': time});
     }
 
     result.sort((a, b) {
@@ -515,10 +496,9 @@ class _TmlViewPageState extends State<TmlViewPage> {
     return result;
   }
 
-  Future<Set<int>> _getBookedHoursForDate(String scheduledDate) async {
-    final List<Map<String, String>> doctorsList =
-        await _getDoctorsForDate(scheduledDate);
-    final Set<int> booked = {};
+  Future<Set<int>> _getBookedHoursForDate(String scheduledDateId) async {
+    final doctorsList = await _getDoctorsForDate(scheduledDateId);
+    final booked = <int>{};
     for (final row in doctorsList) {
       final time = row['time'] ?? '';
       if (time.length >= 2) {
@@ -537,52 +517,46 @@ class _TmlViewPageState extends State<TmlViewPage> {
     required String dayLabel,
     required int weekIndex,
   }) async {
-    final String headerDate = DateFormat('MMMM d, yyyy').format(visitDate);
-    final String scheduledDate = DateFormat("yyyy-MM-dd").format(visitDate);
+    final headerDate = DateFormat('MMMM d, yyyy').format(visitDate);
+    final scheduledDateId = DateFormat("yyyyMMdd").format(visitDate);
 
-    final visitsRootRef = FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
-        .doc(docId)
-        .collection('scheduledVisits');
-
-    final String monthId = DateFormat('yyyy-MM').format(visitDate);
-
-    final monthDatesRef = visitsRootRef
-        .doc('months')
-        .collection('months')
-        .doc(monthId)
-        .collection('dates');
+    final visitsRootRef = _visitsRootForDoctor(docId);
 
     Future<void> saveHour(int hour) async {
-      final String dateStr = scheduledDate;
-      final String timeStr = hour.toString().padLeft(2, '0') + ":00";
+      final dateId = scheduledDateId;
+      final timeStr = "${hour.toString().padLeft(2, '0')}:00";
 
-      await monthDatesRef.doc(dateStr).set({
-        "scheduledDate": dateStr,
+      // Ensure calendar itinerary doc exists
+      final itineraryRef = _calendarItineraryRef(visitDate, docId);
+      await itineraryRef.set(
+        {
+          'doctorId': docId,
+          'scheduledDate': dateId,
+          'createdAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+
+      await visitsRootRef.doc(dateId).set({
+        "scheduledDate": dateId,
         "scheduledTime": timeStr,
+        "Visit": true,
         "submitted": false,
         "surprise": false,
+        "Reference": itineraryRef,
       }, SetOptions(merge: true));
 
       setState(() {
-        if (!scheduledTimes.containsKey(docId)) {
-          scheduledTimes[docId] = {};
-        }
+        scheduledTimes.putIfAbsent(docId, () => {});
         scheduledTimes[docId]![weekIndex] = timeStr;
       });
 
       if (mounted) {
-        await _showScheduledTimesDialogForDate(
-          dateStr,
-        );
+        await _showScheduledTimesDialogForDate(dateId);
       }
     }
 
-    final Set<int> bookedHours = await _getBookedHoursForDate(scheduledDate);
+    final bookedHours = await _getBookedHoursForDate(scheduledDateId);
 
     await showDialog(
       context: context,
@@ -775,15 +749,11 @@ class _TmlViewPageState extends State<TmlViewPage> {
     required int weekIndex,
     required String dayCode,
   }) async {
-    final now = DateTime.now();
-    final int year = now.year;
-    final int month = now.month;
+    final year = _currentMonthBase.year;
+    final month = _currentMonthBase.month;
 
-    final visitDate =
-        getDateForWeekdayOfMonth(year, month, weekIndex + 1, dayCode);
-    if (visitDate == null) {
-      return;
-    }
+    final visitDate = _getDateFromGrid(weekIndex, dayCode, year, month);
+    if (visitDate == null) return;
 
     final weekdayNames = {
       "Su": "Sunday",
@@ -794,9 +764,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
       "F": "Friday",
       "Sa": "Saturday",
     };
-    final String dayLabel = weekdayNames[dayCode] ?? dayCode;
+    final dayLabel = weekdayNames[dayCode] ?? dayCode;
 
-    // NEW: show loader while we fetch booked hours and open dialog
     setState(() => isOpeningScheduleDialog = true);
     try {
       await _showHourSlotsDialog(
@@ -814,11 +783,13 @@ class _TmlViewPageState extends State<TmlViewPage> {
   }
 
   Future<void> _showScheduledTimesDialogForDate(
-    String scheduledDate,
+    String scheduledDateId,
   ) async {
-    final dateObj = DateFormat("yyyy-MM-dd").parse(scheduledDate);
-    final String headerDate =
-        DateFormat('MMMM d, yyyy').format(dateObj);
+    final year = int.parse(scheduledDateId.substring(0, 4));
+    final month = int.parse(scheduledDateId.substring(4, 6));
+    final day = int.parse(scheduledDateId.substring(6, 8));
+    final dateObj = DateTime(year, month, day);
+    final headerDate = DateFormat('MMMM d, yyyy').format(dateObj);
 
     await showDialog(
       context: context,
@@ -842,11 +813,10 @@ class _TmlViewPageState extends State<TmlViewPage> {
             width: double.maxFinite,
             height: 400,
             child: FutureBuilder<List<Map<String, String>>>(
-              future: _getDoctorsForDate(scheduledDate),
+              future: _getDoctorsForDate(scheduledDateId),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
-                  return const Center(
-                      child: CircularProgressIndicator());
+                  return const Center(child: CircularProgressIndicator());
                 }
 
                 final items = snapshot.data!;
@@ -859,9 +829,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                   itemCount: items.length,
                   itemBuilder: (context, index) {
                     final row = items[index];
-                    final String doctorName =
-                        row['doctorName'] ?? '';
-                    final String time = row['time'] ?? '';
+                    final doctorName = row['doctorName'] ?? '';
+                    final time = row['time'] ?? '';
                     return ListTile(
                       dense: true,
                       title: Text(
@@ -900,7 +869,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
 
   List<List<DateTime?>> _buildMonthGrid(int year, int month) {
     final firstOfMonth = DateTime(year, month, 1);
-    final firstWeekday = firstOfMonth.weekday;
+    final firstWeekday = firstOfMonth.weekday; // Mon=1..Sun=7
     final daysBackToSunday = firstWeekday % 7;
     final gridStart = firstOfMonth.subtract(Duration(days: daysBackToSunday));
 
@@ -908,10 +877,10 @@ class _TmlViewPageState extends State<TmlViewPage> {
     final totalDaysSpan = lastOfMonth.difference(gridStart).inDays + 1;
     final totalWeeks = (totalDaysSpan / 7.0).ceil();
 
-    List<List<DateTime?>> weeks = [];
-    DateTime cursor = gridStart;
+    var weeks = <List<DateTime?>>[];
+    var cursor = gridStart;
     for (int w = 0; w < totalWeeks; w++) {
-      List<DateTime?> row = [];
+      final row = <DateTime?>[];
       for (int d = 0; d < 7; d++) {
         if (cursor.month == month) {
           row.add(cursor);
@@ -932,6 +901,23 @@ class _TmlViewPageState extends State<TmlViewPage> {
     return weeks;
   }
 
+  int? _dayCodeToGridIndex(String dayCode) {
+    const weekDays = ["Su", "M", "T", "W", "Th", "F", "Sa"];
+    final idx = weekDays.indexOf(dayCode);
+    if (idx < 0) return null;
+    return idx;
+  }
+
+  DateTime? _getDateFromGrid(int weekIndex, String dayCode, int year, int month) {
+    if (weekIndex < 0 || weekIndex >= _monthGrid.length) return null;
+    final weekRow = _monthGrid[weekIndex];
+    final col = _dayCodeToGridIndex(dayCode);
+    if (col == null || col < 0 || col >= weekRow.length) return null;
+    final dt = weekRow[col];
+    if (dt == null || dt.month != month || dt.year != year) return null;
+    return dt;
+  }
+
   LinearGradient get _purpleRowGradient => const LinearGradient(
         begin: Alignment.centerLeft,
         end: Alignment.centerRight,
@@ -945,19 +931,19 @@ class _TmlViewPageState extends State<TmlViewPage> {
 
   @override
   Widget build(BuildContext context) {
-    final double screenWidth = MediaQuery.of(context).size.width;
-    final double mdNameColWidth = minMdNameColWidth;
-    final double availableWidth = screenWidth - mdNameColWidth;
-    final double weekColWidth =
+    final screenWidth = MediaQuery.of(context).size.width;
+    final mdNameColWidth = minMdNameColWidth;
+    final availableWidth = screenWidth - mdNameColWidth;
+    final weekColWidth =
         (availableWidth / 5 > minWeekColWidth) ? availableWidth / 5 : minWeekColWidth;
-    final double tableWidth = weekColWidth * 5 + 4;
+    final tableWidth = weekColWidth * 5 + 4;
 
-    final DateTime now = DateTime.now();
-    final String monthYearLabel = DateFormat('MMMM yyyy').format(now);
-    final int year = now.year;
-    final int month = now.month;
+    final now = _currentMonthBase;
+    final monthYearLabel = DateFormat('MMMM yyyy').format(now);
+    final year = now.year;
+    final month = now.month;
 
-    final List<List<DateTime?>> monthGrid = _buildMonthGrid(year, month);
+    _monthGrid = _buildMonthGrid(year, month);
 
     return Stack(
       children: [
@@ -978,9 +964,10 @@ class _TmlViewPageState extends State<TmlViewPage> {
                   child: const Text(
                     "Done",
                     style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        fontSize: 16),
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      fontSize: 16,
+                    ),
                   ),
                   onPressed: () async {
                     if (isSaving) return;
@@ -989,58 +976,76 @@ class _TmlViewPageState extends State<TmlViewPage> {
                       isSaving = true;
                     });
 
-                    if (weekSelections.isNotEmpty || scheduledTimes.isNotEmpty) {
-                      final doctorsSnap = await FirebaseFirestore.instance
-                          .collection('flowDB')
-                          .doc('users')
-                          .collection(emailKey)
-                          .doc('doctors')
-                          .collection('doctors')
-                          .get();
+                    try {
+                      if (weekSelections.isNotEmpty ||
+                          scheduledTimes.isNotEmpty) {
+                        final doctorsSnap =
+                            await _doctorsCollectionRef().get();
+                        final originalById =
+                            <String, Map<String, dynamic>>{
+                          for (final d in doctorsSnap.docs)
+                            d.id: d.data(),
+                        };
 
-                      final Map<String, Map<String, dynamic>> originalById = {
-                        for (final d in doctorsSnap.docs)
-                          d.id: (d.data() as Map<String, dynamic>)
-                      };
+                        final affectedDoctorIds = <String>{
+                          ...weekSelections.keys,
+                          ...scheduledTimes.keys,
+                        };
 
-                      final Set<String> affectedDoctorIds = {
-                        ...weekSelections.keys,
-                        ...scheduledTimes.keys,
-                      };
+                        for (final docId in affectedDoctorIds) {
+                          final originalData = originalById[docId] ?? {};
 
-                      for (final docId in affectedDoctorIds) {
-                        final Map<String, dynamic> originalData =
-                            originalById[docId] ?? {};
+                          final newWeeks = weekSelections[docId] ??
+                              [
+                                for (int w = 1; w <= 5; w++)
+                                  (originalData['week_$w'] ?? "")
+                                      .toString(),
+                              ];
 
-                        final List<String> newWeeks =
-                            weekSelections[docId] ??
-                                [
-                                  for (int w = 1; w <= 5; w++)
-                                    (originalData['week_$w'] ?? "")
-                                        .toString(),
-                                ];
+                          final timesForDoctor =
+                              scheduledTimes[docId] ?? {};
 
-                        final Map<int, String> timesForDoctor =
-                            scheduledTimes[docId] ?? {};
+                          await _saveEditedWeeksWithTimes(
+                            originalData,
+                            newWeeks,
+                            docId,
+                            timesForDoctor,
+                          );
 
-                        await _saveEditedWeeksWithTimes(
-                          originalData,
-                          newWeeks,
-                          docId,
-                          timesForDoctor,
+                          await _autoSetTimesForNewVisits(
+                            docId: docId,
+                            originalData: originalData,
+                            newWeeks: newWeeks,
+                          );
+                        }
+                      }
+
+                      if (!mounted) return;
+                      setState(() {
+                        selectedDoctorIdx = null;
+                        selectedDoctorRowData = null;
+                        selectedDoctorId = null;
+                        editMode = false;
+                        weekSelections.clear();
+                        scheduledTimes.clear();
+                      });
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content:
+                                Text('Error saving schedule: $e'),
+                            backgroundColor: Colors.red,
+                          ),
                         );
                       }
+                    } finally {
+                      if (mounted) {
+                        setState(() {
+                          isSaving = false;
+                        });
+                      }
                     }
-
-                    setState(() {
-                      selectedDoctorIdx = null;
-                      selectedDoctorRowData = null;
-                      selectedDoctorId = null;
-                      editMode = false;
-                      isSaving = false;
-                      weekSelections.clear();
-                      scheduledTimes.clear();
-                    });
                   },
                 )
               else
@@ -1051,14 +1056,13 @@ class _TmlViewPageState extends State<TmlViewPage> {
                     setState(() {
                       editMode = true;
                     });
-
                     ScaffoldMessenger.of(context).hideCurrentSnackBar();
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text(
                           'Select the name first before editing the schedule.',
                         ),
-                        duration: Duration(seconds: 3),
+                        duration: Duration(seconds: 5),
                         behavior: SnackBarBehavior.floating,
                       ),
                     );
@@ -1066,20 +1070,15 @@ class _TmlViewPageState extends State<TmlViewPage> {
                 ),
             ],
           ),
-          body: emailKey.isEmpty
+          body: _userId.isEmpty || _userClientType.isEmpty
               ? const Center(child: CircularProgressIndicator())
               : StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('flowDB')
-                      .doc('users')
-                      .collection(emailKey)
-                      .doc('doctors')
-                      .collection('doctors')
-                      .snapshots(),
+                  stream: _doctorsCollectionRef().snapshots(),
                   builder: (context, snapshot) {
                     if (!snapshot.hasData) {
                       return const Center(child: CircularProgressIndicator());
                     }
+
                     final doctors = snapshot.data!.docs.toList();
                     doctors.sort((a, b) {
                       final aData = a.data() as Map<String, dynamic>;
@@ -1103,6 +1102,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // LEFT column: doctor list
                               Container(
                                 width: mdNameColWidth,
                                 color: Colors.purple.shade50,
@@ -1139,8 +1139,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                         gradient: _purpleRowGradient,
                                         border: Border(
                                           bottom: BorderSide(
-                                            color: Colors.grey.shade400,
-                                          ),
+                                              color: Colors.grey.shade400),
                                         ),
                                       ),
                                       child: const Text(
@@ -1159,47 +1158,64 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                         itemBuilder: (context, rowIdx) {
                                           final doc = doctors[rowIdx];
                                           final docId = doc.id;
-                                          final data = doc.data()
-                                              as Map<String, dynamic>;
-                                          final selList =
+                                          final data =
+                                              doc.data() as Map<String, dynamic>;
+                                          final localWeeks =
                                               weekSelections[docId] ??
                                                   [
                                                     for (int w = 1; w <= 5; w++)
-                                                      (data['week_$w'] ?? "")
+                                                      (data['week_$w'] ??
+                                                              "")
+                                                          .toString(),
                                                   ];
+                                          weekSelections[docId] =
+                                              localWeeks;
+
                                           final freqField =
-                                              (data['freq'] ?? data['frequency']);
+                                              (data['freq'] ??
+                                                  data['frequency']);
                                           final freq = int.tryParse(
                                                   freqField
-                                                      ?.toString()
-                                                      .replaceAll(
-                                                          RegExp(r'\D'), '') ??
+                                                          ?.toString()
+                                                          .replaceAll(
+                                                              RegExp(r'\D'),
+                                                              '') ??
                                                       "1") ??
                                               1;
-                                          final overFreq =
-                                              _isExceededFreq(selList, freq);
+                                          final overFreq = _isExceededFreq(
+                                              localWeeks, freq);
 
-                                          final bool isSelectedRow =
+                                          final isSelectedRow =
                                               selectedDoctorIdx == rowIdx;
-                                          final Color? nameRowColor = overFreq
+                                          final nameRowColor = overFreq
                                               ? Colors.red.shade200
                                               : (editMode && isSelectedRow
-                                                  ? Colors.purple.shade100
+                                                  ? Colors
+                                                      .purple.shade100
                                                       .withOpacity(0.9)
                                                   : (isSelectedRow
-                                                      ? Colors.purple.shade50
+                                                      ? Colors
+                                                          .purple.shade50
                                                           .withOpacity(0.8)
                                                       : null));
 
                                           return GestureDetector(
                                             onTap: () {
-                                              if (editMode) {
-                                                _selectDoctorForEdit(
-                                                    data, rowIdx, docId);
-                                              } else {
-                                                _selectDoctorForDetail(
-                                                    data, rowIdx, docId);
-                                              }
+                                              setState(() {
+                                                if (editMode) {
+                                                  _selectDoctorForEdit(
+                                                    data,
+                                                    rowIdx,
+                                                    docId,
+                                                  );
+                                                } else {
+                                                  _selectDoctorForDetail(
+                                                    data,
+                                                    rowIdx,
+                                                    docId,
+                                                  );
+                                                }
+                                              });
                                             },
                                             child: Container(
                                               height: rowHeight,
@@ -1232,6 +1248,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                   ],
                                 ),
                               ),
+
+                              // RIGHT: calendar & week selectors
                               Expanded(
                                 child: SingleChildScrollView(
                                   scrollDirection: Axis.horizontal,
@@ -1276,9 +1294,9 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                   height: 36,
                                                   alignment:
                                                       Alignment.center,
-                                                  child: const Text(
-                                                    "WEEK ",
-                                                    style: TextStyle(
+                                                  child: Text(
+                                                    "WEEK $w",
+                                                    style: const TextStyle(
                                                       fontWeight:
                                                           FontWeight.bold,
                                                       color: Colors.white,
@@ -1319,38 +1337,37 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                         MainAxisAlignment
                                                             .spaceEvenly,
                                                     children: List.generate(
-                                                      7,
-                                                      (d) {
-                                                        final date =
-                                                            monthGrid[w][d];
-                                                        final display = (date !=
-                                                                    null &&
-                                                                date.month ==
-                                                                    month)
-                                                            ? date.day
-                                                                .toString()
-                                                            : "";
-                                                        return SizedBox(
-                                                          width: boxSize,
-                                                          child: Center(
-                                                            child: Text(
-                                                              display,
-                                                              style:
-                                                                  const TextStyle(
-                                                                fontSize: 11,
-                                                              ),
+                                                        7, (d) {
+                                                      final date =
+                                                          _monthGrid[w][d];
+                                                      final display =
+                                                          (date != null &&
+                                                                  date.month ==
+                                                                      month)
+                                                              ? date.day
+                                                                  .toString()
+                                                              : "";
+                                                      return SizedBox(
+                                                        width: boxSize,
+                                                        child: Center(
+                                                          child: Text(
+                                                            display,
+                                                            style:
+                                                                const TextStyle(
+                                                              fontSize: 11,
                                                             ),
                                                           ),
-                                                        );
-                                                      },
-                                                    ),
+                                                        ),
+                                                      );
+                                                    }),
                                                   ),
                                                 ),
                                                 if (w < 4)
                                                   Container(
                                                     width: 1,
                                                     height: 36,
-                                                    color: Colors.grey[400],
+                                                    color:
+                                                        Colors.grey[400],
                                                   ),
                                               ],
                                             ],
@@ -1360,11 +1377,14 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                           child: ListView.builder(
                                             controller: _rightController,
                                             itemCount: doctors.length,
-                                            itemBuilder: (context, rowIdx) {
-                                              final doc = doctors[rowIdx];
+                                            itemBuilder:
+                                                (context, rowIdx) {
+                                              final doc =
+                                                  doctors[rowIdx];
                                               final docId = doc.id;
                                               final data = doc.data()
                                                   as Map<String, dynamic>;
+
                                               final freqField =
                                                   (data['freq'] ??
                                                       data['frequency']);
@@ -1372,29 +1392,32 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                       freqField
                                                               ?.toString()
                                                               .replaceAll(
-                                                                  RegExp(r'\D'),
+                                                                  RegExp(
+                                                                      r'\D'),
                                                                   '') ??
                                                           "1") ??
                                                   1;
-                                              final selList =
+
+                                              final currentWeeks =
                                                   weekSelections[docId] ??
                                                       [
                                                         for (int w = 1;
                                                             w <= 5;
                                                             w++)
                                                           (data['week_$w'] ??
-                                                              "")
+                                                                  "")
+                                                              .toString(),
                                                       ];
+                                              weekSelections[docId] =
+                                                  currentWeeks;
+
                                               final overFreq =
                                                   _isExceededFreq(
-                                                      selList, freq);
-                                              final bool isSelectedRow =
+                                                      currentWeeks,
+                                                      freq);
+                                              final isSelectedRow =
                                                   selectedDoctorIdx ==
                                                       rowIdx;
-                                              final bool isEditable =
-                                                  editMode &&
-                                                      selectedDoctorIdx ==
-                                                          rowIdx;
 
                                               return Container(
                                                 height: rowHeight,
@@ -1405,10 +1428,12 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                             isSelectedRow
                                                         ? Colors
                                                             .purple.shade100
-                                                            .withOpacity(0.9)
+                                                            .withOpacity(
+                                                                0.9)
                                                         : (isSelectedRow
                                                             ? Colors
-                                                                .purple.shade100
+                                                                .purple
+                                                                .shade100
                                                                 .withOpacity(
                                                                     0.8)
                                                             : null)),
@@ -1418,12 +1443,14 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                         w < 5;
                                                         w++) ...[
                                                       Container(
-                                                        width: weekColWidth,
+                                                        width:
+                                                            weekColWidth,
                                                         height: rowHeight,
                                                         decoration:
                                                             const BoxDecoration(
                                                           border: Border(
-                                                            bottom: BorderSide(
+                                                            bottom:
+                                                                BorderSide(
                                                               color: Color(
                                                                   0xFFDDDDDD),
                                                             ),
@@ -1433,50 +1460,69 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                             _weekInteractiveBoxes(
                                                           weekIndex: w,
                                                           currentValue:
-                                                              selList[w],
+                                                              currentWeeks[
+                                                                  w],
                                                           isEnabled:
-                                                              isEditable &&
+                                                              editMode &&
                                                                   !isOpeningScheduleDialog,
                                                           onChanged:
                                                               (newVal) async {
-                                                            if (!isEditable ||
+                                                            if (!editMode ||
                                                                 isOpeningScheduleDialog) {
                                                               return;
                                                             }
+
+                                                            if (selectedDoctorIdx !=
+                                                                    rowIdx ||
+                                                                selectedDoctorId !=
+                                                                    docId) {
+                                                              setState(
+                                                                  () {
+                                                                _selectDoctorForEdit(
+                                                                  data,
+                                                                  rowIdx,
+                                                                  docId,
+                                                                );
+                                                              });
+                                                            }
+
                                                             if (newVal
                                                                 .isEmpty) {
                                                               _handleWeekBoxTap(
-                                                                rowIdx,
                                                                 docId,
                                                                 w,
                                                                 "",
-                                                                freq,
                                                               );
                                                               return;
                                                             }
+
                                                             _handleWeekBoxTap(
-                                                              rowIdx,
                                                               docId,
                                                               w,
                                                               newVal,
-                                                              freq,
                                                             );
+
                                                             await _selectTimeForVisit(
-                                                              docId: docId,
-                                                              doctorData: data,
+                                                              docId:
+                                                                  docId,
+                                                              doctorData:
+                                                                  data,
                                                               weekIndex: w,
-                                                              dayCode: newVal,
+                                                              dayCode:
+                                                                  newVal,
                                                             );
                                                           },
-                                                          boxWidth: boxSize,
+                                                          boxWidth:
+                                                              boxSize,
                                                         ),
                                                       ),
                                                       if (w < 4)
                                                         Container(
                                                           width: 1,
-                                                          height: rowHeight,
-                                                          color:
-                                                              Colors.grey[400],
+                                                          height:
+                                                              rowHeight,
+                                                          color: Colors
+                                                              .grey[400],
                                                         ),
                                                     ],
                                                   ],
@@ -1497,7 +1543,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                           Padding(
                             padding: const EdgeInsets.all(10.0),
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
                               children: [
                                 Wrap(
                                   spacing: 16,
@@ -1505,19 +1552,23 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                   children: [
                                     _labelValue(
                                       "MD ID:",
-                                      selectedDoctorRowData?['doc_id'] ?? '',
+                                      selectedDoctorRowData?['doc_id'] ??
+                                          '',
                                     ),
                                     _labelValue(
                                       "LASTNAME:",
-                                      selectedDoctorRowData?['lastName'] ?? '',
+                                      selectedDoctorRowData?['lastName'] ??
+                                          '',
                                     ),
                                     _labelValue(
                                       "FIRSTNAME:",
-                                      selectedDoctorRowData?['firstName'] ?? '',
+                                      selectedDoctorRowData?['firstName'] ??
+                                          '',
                                     ),
                                     _labelValue(
                                       "SPECIALTY:",
-                                      selectedDoctorRowData?['specialty'] ?? '',
+                                      selectedDoctorRowData?['specialty'] ??
+                                          '',
                                     ),
                                     _labelValue(
                                       "FREQUENCY:",
@@ -1531,7 +1582,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                   children: [
                                     _labelValue(
                                       "ADDRESS:",
-                                      selectedDoctorRowData?['hospital'] ?? '',
+                                      selectedDoctorRowData?['hospital'] ??
+                                          '',
                                     ),
                                     _labelValue(
                                       "CITY:",
@@ -1557,7 +1609,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
               ),
             ),
           ),
-        // NEW: full-screen loader while opening "Schedule Overview"
         if (isOpeningScheduleDialog)
           Container(
             color: Colors.black54,
@@ -1571,19 +1622,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
       ],
     );
   }
-
-  Widget _headerCell(String text, double width) => Container(
-        width: width,
-        height: 36,
-        alignment: Alignment.center,
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.deepPurple,
-          ),
-        ),
-      );
 
   Widget _weekInteractiveBoxes({
     required int weekIndex,
@@ -1642,9 +1680,10 @@ class _TmlViewPageState extends State<TmlViewPage> {
           Text(
             label,
             style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                color: Colors.blue),
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              color: Colors.blue,
+            ),
           ),
           const SizedBox(width: 2),
           Flexible(
@@ -1657,8 +1696,3 @@ class _TmlViewPageState extends State<TmlViewPage> {
         ],
       );
 }
-
-
-// CHECK HOW THE yyyy-MM is created in the firestore database so 
-// that it can help the AI understand how it's structured and it 
-// can help read the data for it to be transfered to my app

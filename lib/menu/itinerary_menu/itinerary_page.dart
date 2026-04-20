@@ -25,24 +25,40 @@ class _ItineraryPageState extends State<ItineraryPage> {
   Map<String, String> _offFieldReasons = {};
 
   String emailKey = '';
+  String _userClientType = '';
+  String _userId = ''; // MR id that matches Daloy path
 
   int _selectedViewIndex = 2;
 
   bool _isOffline = false;
 
+  final ScrollController _doctorsScrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
-    _loadUserEmail();
+    _loadUserPrefs();
   }
 
-  Future<void> _loadUserEmail() async {
+  @override
+  void dispose() {
+    _doctorsScrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadUserPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     final userEmail = prefs.getString('userEmail') ?? '';
+    final clientType = prefs.getString('userClientType') ?? 'pharma';
+    final userId = prefs.getString('userId') ?? ''; // MR001 etc.
+
     setState(() {
-      emailKey = userEmail.replaceAll(RegExp(r'[.#$\[\\]/]'), '_');
+      emailKey = userEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
+      _userClientType = clientType;
+      _userId = userId;
     });
-    if (emailKey.isNotEmpty) {
+
+    if (_userId.isNotEmpty && _userClientType.isNotEmpty) {
       await _fetchScheduledCallsCount(_focusedDay);
       if (mounted) setState(() {});
     }
@@ -54,9 +70,41 @@ class _ItineraryPageState extends State<ItineraryPage> {
   String _monthId(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';
 
-  Future<void> _fetchScheduledCallsCount(DateTime focusedDay) async {
-    if (emailKey.isEmpty) return;
+  /// Doctors under new Daloy structure:
+  /// /DaloyClients/IVA/Users/{_userId}/Doctor
+  CollectionReference<Map<String, dynamic>> _doctorsCollectionRef() {
+    return FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc('IVA')
+        .collection('Users')
+        .doc(_userId.isEmpty ? '_DUMMY' : _userId)
+        .collection('Doctor');
+  }
 
+  /// Itinerary for a given day:
+  /// /DaloyClients/IVA/Users/{_userId}/Calendar/{yyyy-MM}/Days/{d}/Itinerary
+  CollectionReference<Map<String, dynamic>> _calendarItineraryCollectionForDay(
+    DateTime day,
+  ) {
+    final monthId = _monthId(day); // yyyy-MM
+    final dayId = day.day.toString(); // "6", etc.
+
+    return FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc('IVA')
+        .collection('Users')
+        .doc(_userId.isEmpty ? '_DUMMY' : _userId)
+        .collection('Calendar')
+        .doc(monthId)
+        .collection('Days')
+        .doc(dayId)
+        .collection('Itinerary');
+  }
+
+  Future<void> _fetchScheduledCallsCount(DateTime focusedDay) async {
+    if (_userId.isEmpty || _userClientType.isEmpty) return;
+
+    // Look at a small window of months around the focused month
     final first = DateTime.utc(focusedDay.year, focusedDay.month - 1, 20);
     final last = DateTime.utc(focusedDay.year, focusedDay.month + 2, 10);
 
@@ -65,93 +113,76 @@ class _ItineraryPageState extends State<ItineraryPage> {
     Map<String, String> offFieldReasons = {};
 
     try {
-      final doctorsSnap = await FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('users')
-          .collection(emailKey)
-          .doc('doctors')
-          .collection('doctors')
-          .get();
+      // Iterate months in window
+      DateTime cursor = DateTime(first.year, first.month, 1);
+      while (!cursor.isAfter(last)) {
+        final monthId = _monthId(cursor);
+        // Iterate days in that month
+        final monthStart = DateTime(cursor.year, cursor.month, 1);
+        final monthEnd = DateTime(cursor.year, cursor.month + 1, 0);
 
-      for (var doc in doctorsSnap.docs) {
-        final monthsRoot = doc.reference
-            .collection('scheduledVisits')
-            .doc('months')
-            .collection('months');
+        for (int day = 1; day <= monthEnd.day; day++) {
+          final currentDate = DateTime(cursor.year, cursor.month, day);
+          if (currentDate.isBefore(first) || currentDate.isAfter(last)) {
+            continue;
+          }
 
-        final monthsSnap = await monthsRoot.get();
+          final itineraryCol =
+              _calendarItineraryCollectionForDay(currentDate);
 
-        for (var monthDoc in monthsSnap.docs) {
-          final monthIdStr = monthDoc.id;
-          if (monthIdStr.length != 7 || !monthIdStr.contains('-')) continue;
-          final parts = monthIdStr.split('-');
-          final y = int.tryParse(parts[0]);
-          final m = int.tryParse(parts[1]);
-          if (y == null || m == null) continue;
+          final daySnap = await itineraryCol.get();
+          if (daySnap.docs.isEmpty) continue;
 
-          final monthStart = DateTime.utc(y, m, 1);
-          final monthEnd = DateTime.utc(y, m + 1, 0);
+          final dateString = _dateKey(currentDate);
+          int dayCount = 0;
+          colorCounts[dateString] ??= {
+            "red": 0,
+            "yellow": 0,
+            "green": 0,
+            "white": 0,
+          };
 
-          if (monthEnd.isBefore(first) || monthStart.isAfter(last)) continue;
+          for (final doc in daySnap.docs) {
+            final data = doc.data();
+            dayCount++;
 
-          final datesSnap = await monthDoc.reference.collection('dates').get();
+            final isSubmitted = data['submitted'] == true;
+            final isSurprise = data['surprise'] == true;
+            String colorKey = "white";
 
-          for (var v in datesSnap.docs) {
-            final visitData = v.data();
-            final visitDateString = visitData['scheduledDate'];
-
-            if (visitDateString != null &&
-                visitDateString is String &&
-                visitDateString.length == 10) {
-              final dt = DateTime.tryParse(visitDateString);
-              if (dt != null && !dt.isBefore(first) && !dt.isAfter(last)) {
-                counts[visitDateString] =
-                    (counts[visitDateString] ?? 0) + 1;
-
-                String colorKey = "white";
-                final bool isSubmitted = visitData['submitted'] == true;
-                final bool isSurprise = visitData['surprise'] == true;
-                final nowCut = DateTime.now();
-                DateTime? visitDate;
-
-                try {
-                  visitDate = DateTime.parse(visitDateString);
-                } catch (_) {
-                  visitDate = null;
-                }
-
-                if (isSurprise) {
-                  colorKey = "yellow";
-                } else if (isSubmitted) {
-                  colorKey = "green";
-                } else if (visitDate != null &&
-                    DateTime(nowCut.year, nowCut.month, nowCut.day)
-                        .isAfter(visitDate)) {
-                  colorKey = "red";
-                }
-
-                colorCounts[visitDateString] ??= {
-                  "red": 0,
-                  "yellow": 0,
-                  "green": 0,
-                  "white": 0
-                };
-                colorCounts[visitDateString]![colorKey] =
-                    colorCounts[visitDateString]![colorKey]! + 1;
-
-                final offFieldValue = visitData['offField'];
-                if (offFieldValue != null &&
-                    offFieldValue.toString().trim().isNotEmpty) {
-                  offFieldReasons.putIfAbsent(
-                      visitDateString, () => offFieldValue.toString().trim());
-                }
+            if (isSurprise) {
+              colorKey = "yellow";
+            } else if (isSubmitted) {
+              colorKey = "green";
+            } else {
+              // For past, not-submitted visits, mark red
+              final nowCut = DateTime.now();
+              if (DateTime(nowCut.year, nowCut.month, nowCut.day)
+                  .isAfter(currentDate)) {
+                colorKey = "red";
               }
             }
+
+            colorCounts[dateString]![colorKey] =
+                (colorCounts[dateString]![colorKey] ?? 0) + 1;
+
+            final offFieldValue = data['offField'];
+            if (offFieldValue != null &&
+                offFieldValue.toString().trim().isNotEmpty) {
+              offFieldReasons.putIfAbsent(
+                dateString,
+                () => offFieldValue.toString().trim(),
+              );
+            }
           }
+
+          counts[dateString] = (counts[dateString] ?? 0) + dayCount;
         }
+
+        cursor = DateTime(cursor.year, cursor.month + 1, 1);
       }
     } catch (e) {
-      debugPrint('Error in _fetchScheduledCallsCount: $e');
+      debugPrint('Error in _fetchScheduledCallsCount (Itinerary): $e');
     }
 
     if (!mounted) return;
@@ -162,60 +193,63 @@ class _ItineraryPageState extends State<ItineraryPage> {
     });
   }
 
-  /// Get all scheduled visits across all doctors for the selected day.
-  /// Mirrors the Firestore path from VisitsTab in doctor_detail_page.dart:
-  /// scheduledVisits/months/months/{yyyy-MM}/dates, and filters scheduledDate == yyyy-MM-dd.
+  /// Reads itinerary docs for the selected day and joins them with doctor data.
+  ///
+  /// Each itinerary doc is expected to have:
+  /// - doctorId
+  /// - scheduledDate (yyyyMMdd or yyyy-MM-dd)
+  /// - scheduledTime
+  /// - Reference: DocumentReference to this itinerary doc (already known, optional)
+  ///
+  /// We map to the same structure used by the cards in _buildScheduledDoctorsRow.
   Future<List<Map<String, dynamic>>> getAllScheduledVisitsForSelectedDay(
     List<QueryDocumentSnapshot> doctorDocs,
     DateTime selectedDay,
   ) async {
-    if (emailKey.isEmpty) return [];
+    if (_userId.isEmpty || _userClientType.isEmpty) return [];
 
     final List<Map<String, dynamic>> allVisits = [];
 
-    final targetDateKey =
-        '${selectedDay.year.toString().padLeft(4, '0')}-'
-        '${selectedDay.month.toString().padLeft(2, '0')}-'
-        '${selectedDay.day.toString().padLeft(2, '0')}';
+    final itineraryCol =
+        _calendarItineraryCollectionForDay(selectedDay);
+    final daySnap = await itineraryCol.get();
 
-    final monthId =
-        '${selectedDay.year.toString().padLeft(4, '0')}-'
-        '${selectedDay.month.toString().padLeft(2, '0')}';
+    if (daySnap.docs.isEmpty) return [];
 
-    for (var doc in doctorDocs) {
-      final docData = doc.data() as Map<String, dynamic>;
-      final doctorId = docData['doc_id'] ?? doc.id;
-      final doctorName =
-          "${docData['lastName'] ?? ''}, ${docData['firstName'] ?? ''}";
+    // Build a map of doctorId -> doctorData for quick lookup
+    final Map<String, Map<String, dynamic>> doctorById = {};
+    for (final d in doctorDocs) {
+      final data = d.data() as Map<String, dynamic>;
+      final doctorId = data['doc_id']?.toString() ?? d.id;
+      doctorById[doctorId] = data;
+    }
 
-      final monthDocRef = doc.reference
-          .collection('scheduledVisits')
-          .doc('months')
-          .collection('months')
-          .doc(monthId);
+    for (final doc in daySnap.docs) {
+      final data = doc.data();
+      final doctorId = data['doctorId']?.toString() ?? '';
+      if (doctorId.isEmpty) continue;
 
-      final datesSnap = await monthDocRef
-          .collection('dates')
-          .orderBy('scheduledDate')
-          .get();
-
-      for (var v in datesSnap.docs) {
-        final visitData = v.data() as Map<String, dynamic>;
-        final visitDateString = visitData['scheduledDate'] ?? '';
-
-        if (visitDateString == targetDateKey) {
-          allVisits.add({
-            'doctorName': doctorName,
-            'scheduledTime': visitData['scheduledTime'] ?? '',
-            'hospital': docData['hospital'] ?? '',
-            'specialty': docData['specialty'] ?? '',
-            'doctor': docData,
-            'doctorId': doctorId,
-            'visitId': v.id,
-            'visitData': visitData,
-          });
-        }
+      final doctorData = doctorById[doctorId];
+      if (doctorData == null) {
+        // Optionally, you could fetch doctor directly via ref if stored
+        continue;
       }
+
+      final doctorName =
+          "${doctorData['lastName'] ?? ''}, ${doctorData['firstName'] ?? ''}";
+      final scheduledTime = data['scheduledTime']?.toString() ?? '';
+      final hospital = doctorData['hospital']?.toString() ?? '';
+
+      allVisits.add({
+        'doctorName': doctorName,
+        'scheduledTime': scheduledTime,
+        'hospital': hospital,
+        'specialty': doctorData['specialty'] ?? '',
+        'doctor': doctorData,
+        'doctorId': doctorId,
+        'visitId': doc.id,
+        'visitData': data,
+      });
     }
 
     allVisits.sort((a, b) =>
@@ -509,7 +543,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
           ),
         ],
       ),
-      body: emailKey.isEmpty
+      body: _userId.isEmpty || _userClientType.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -526,8 +560,9 @@ class _ItineraryPageState extends State<ItineraryPage> {
                           formatButtonVisible: false,
                           titleCentered: true,
                           titleTextStyle: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold),
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         rowHeight: 105,
                         daysOfWeekHeight: 40,
@@ -716,7 +751,6 @@ class _ItineraryPageState extends State<ItineraryPage> {
                         ),
                       ),
                     ),
-                    if (_selectedDay != null) _buildDayHeader(),
                     if (selectedOffFieldReason != null &&
                         selectedOffFieldReason.isNotEmpty)
                       Padding(
@@ -743,8 +777,8 @@ class _ItineraryPageState extends State<ItineraryPage> {
                                         style: TextStyle(
                                           fontWeight:
                                               FontWeight.bold,
-                                          color: Colors
-                                              .red.shade800,
+                                          color:
+                                              Colors.red.shade800,
                                           fontSize: 15,
                                         ),
                                       ),
@@ -752,8 +786,8 @@ class _ItineraryPageState extends State<ItineraryPage> {
                                       Text(
                                         selectedOffFieldReason,
                                         style: TextStyle(
-                                          color: Colors
-                                              .red.shade900,
+                                          color:
+                                              Colors.red.shade900,
                                           fontSize: 14,
                                         ),
                                       ),
@@ -786,7 +820,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
               EdgeInsets.only(left: 6, bottom: 8, top: 8),
           child: Center(
             child: Text(
-              "Upcoming Visits",
+              "Scheduled Visits",
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.bold,
@@ -795,19 +829,14 @@ class _ItineraryPageState extends State<ItineraryPage> {
             ),
           ),
         ),
-        if (emailKey.isEmpty)
+        if (_userId.isEmpty || _userClientType.isEmpty)
           SizedBox(
             height: 160,
             child: const Center(child: CircularProgressIndicator()),
           )
         else
           FutureBuilder<QuerySnapshot>(
-            future: FirebaseFirestore.instance
-                .collection('flowDB')
-                .doc('users')
-                .collection(emailKey)
-                .doc('doctors')
-                .collection('doctors')
+            future: _doctorsCollectionRef()
                 .get()
                 .timeout(
                   const Duration(seconds: 10),
@@ -874,7 +903,6 @@ class _ItineraryPageState extends State<ItineraryPage> {
               }
 
               final doctorDocs = doctorSnapshot.data!.docs;
-
               final selectedDayForVisits =
                   _selectedDay ?? DateTime.now();
 
@@ -945,235 +973,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
                   }
 
                   final visitsForDay = visitsSnapshot.data!;
-
-                  return SizedBox(
-                    height: 160,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding:
-                          const EdgeInsets.only(left: 20, right: 0),
-                      itemCount: visitsForDay.length,
-                      itemBuilder: (context, idx) {
-                        final visit = visitsForDay[idx];
-                        final visitData =
-                            visit['visitData'] as Map<String, dynamic>;
-                        final scheduledTime =
-                            visit['scheduledTime'] ?? '';
-                        final bool isSubmitted =
-                            visitData['submitted'] == true;
-                        final bool isSurprise =
-                            visitData['surprise'] == true;
-
-                        Color cardBorderColor =
-                            Colors.grey.shade300;
-                        if (isSubmitted) {
-                          cardBorderColor =
-                              Colors.green.shade400;
-                        }
-                        Color cardColor = Colors.white;
-                        if (isSurprise) {
-                          cardColor =
-                              Colors.yellow.shade100;
-                        }
-
-                        final String doctorName =
-                            visit['doctorName'] ?? '-';
-                        final String hospital =
-                            visit['hospital'] ?? '';
-
-                        return SizedBox(
-                          width: 150,
-                          height: 150,
-                          child: Padding(
-                            padding:
-                                const EdgeInsets.only(right: 6.0),
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Container(
-                                  width: 150,
-                                  height: 150,
-                                  decoration: BoxDecoration(
-                                    color: cardColor,
-                                    border: Border.all(
-                                      color: cardBorderColor,
-                                      width:
-                                          isSubmitted ? 2.3 : 1.2,
-                                    ),
-                                    borderRadius:
-                                        BorderRadius.circular(18),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Colors.black12,
-                                        blurRadius: 6,
-                                        offset: Offset(2, 3),
-                                      ),
-                                    ],
-                                  ),
-                                  child: InkWell(
-                                    borderRadius:
-                                        BorderRadius.circular(18),
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) =>
-                                              CallDetailPage(
-                                            doctor: visit['doctor']
-                                                as Map<String,
-                                                    dynamic>,
-                                            scheduledVisitId:
-                                                visit['visitId'],
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    child: Padding(
-                                      padding:
-                                          const EdgeInsets.fromLTRB(
-                                              12, 16, 12, 10),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment
-                                                .start,
-                                        mainAxisSize:
-                                            MainAxisSize.min,
-                                        children: [
-                                          const SizedBox(
-                                              height: 18),
-                                          SizedBox(
-                                            height: 20,
-                                            child:
-                                                SingleChildScrollView(
-                                              scrollDirection:
-                                                  Axis.horizontal,
-                                              child: Text(
-                                                doctorName,
-                                                maxLines: 1,
-                                                overflow:
-                                                    TextOverflow
-                                                        .visible,
-                                                softWrap: false,
-                                                style:
-                                                    const TextStyle(
-                                                  fontWeight:
-                                                      FontWeight
-                                                          .bold,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(
-                                              height: 4),
-                                          SizedBox(
-                                            height: 16,
-                                            child: Text(
-                                              scheduledTime,
-                                              maxLines: 1,
-                                              overflow:
-                                                  TextOverflow
-                                                      .ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors
-                                                    .grey
-                                                    .shade800,
-                                              ),
-                                            ),
-                                          ),
-                                          if (hospital
-                                              .isNotEmpty) ...[
-                                            const SizedBox(
-                                                height: 4),
-                                            SizedBox(
-                                              height: 32,
-                                              child: Text(
-                                                hospital,
-                                                maxLines: 2,
-                                                overflow:
-                                                    TextOverflow
-                                                        .ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors
-                                                      .grey
-                                                      .shade700,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 10,
-                                  left: 10,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius:
-                                          BorderRadius.circular(
-                                              14),
-                                      boxShadow: const [
-                                        BoxShadow(
-                                          color: Colors
-                                              .black12,
-                                          blurRadius: 3,
-                                          offset:
-                                              Offset(1, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    padding:
-                                        const EdgeInsets.all(2),
-                                    child: const Icon(
-                                      Icons.assignment,
-                                      color: Colors.black,
-                                      size: 20,
-                                    ),
-                                  ),
-                                ),
-                                if (isSubmitted)
-                                  Positioned(
-                                    top: -8,
-                                    left: -8,
-                                    child: Container(
-                                      decoration:
-                                          BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius:
-                                            BorderRadius
-                                                .circular(14),
-                                        boxShadow: const [
-                                          BoxShadow(
-                                            color: Colors
-                                                .black12,
-                                            blurRadius: 3,
-                                            offset: Offset(
-                                                0, 1),
-                                          ),
-                                        ],
-                                      ),
-                                      padding:
-                                          const EdgeInsets.all(
-                                              2),
-                                      child: const Icon(
-                                        Icons.check_circle,
-                                        color: Colors.green,
-                                        size: 20,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  );
+                  return _buildScheduledDoctorsRow(visitsForDay);
                 },
               );
             },
@@ -1699,6 +1499,240 @@ class _ItineraryPageState extends State<ItineraryPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildScheduledDoctorsRow(
+      List<Map<String, dynamic>> visitsForDay) {
+    const double badgeOverflow = 10.0;
+    const double shadowPadding = 12.0;
+    const double minCardWidth = 280.0;
+    const double maxCardWidth = 380.0;
+    const double charsPerLine = 18.0;
+    const double extraWidthPerChar = 7.0;
+    const double cardHeight = 180.0;
+
+    final String longestName = visitsForDay
+        .map((v) => (v['doctorName'] as String? ?? ''))
+        .reduce((a, b) => a.length > b.length ? a : b);
+
+    final double cardWidth = longestName.length > charsPerLine
+        ? (minCardWidth +
+                (longestName.length - charsPerLine) *
+                    extraWidthPerChar)
+            .clamp(minCardWidth, maxCardWidth)
+        : minCardWidth;
+
+    return SizedBox(
+      height: cardHeight + badgeOverflow + shadowPadding,
+      child: ListView.builder(
+        controller: _doctorsScrollController,
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.only(
+            left: 5,
+            top: badgeOverflow,
+            bottom: shadowPadding),
+        itemCount: visitsForDay.length,
+        itemBuilder: (context, idx) {
+          final visit = visitsForDay[idx];
+          final visitData = visit['visitData'] as Map<String, dynamic>;
+          final String scheduledTime =
+              visit['scheduledTime'] as String? ?? '';
+          final String doctorName =
+              visit['doctorName'] as String? ?? '-';
+          final String hospital =
+              visit['hospital'] as String? ?? '';
+          final bool isUnplanned = visitData['unplanned'] == true;
+          final String visitTypeLabel =
+              isUnplanned ? '(Unplanned)' : '(Planned)';
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 12.0),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: cardWidth + badgeOverflow,
+                height: cardHeight,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      left: badgeOverflow,
+                      top: 0,
+                      child: Container(
+                        width: cardWidth,
+                        height: cardHeight,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius:
+                              BorderRadius.circular(18),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black
+                                  .withValues(alpha: 0.07),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: InkWell(
+                          borderRadius:
+                              BorderRadius.circular(18),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    CallDetailPage(
+                                  doctor: visit['doctor']
+                                      as Map<String, dynamic>,
+                                  scheduledVisitId:
+                                      visit['visitId'] as String,
+                                ),
+                              ),
+                            );
+                          },
+                          child: Padding(
+                            padding:
+                                const EdgeInsets.fromLTRB(
+                                    12, 14, 12, 12),
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration:
+                                          BoxDecoration(
+                                        color:
+                                            const Color(0xFFF0F0F2),
+                                        borderRadius:
+                                            BorderRadius
+                                                .circular(8),
+                                      ),
+                                      child: const Icon(
+                                        Icons
+                                            .assignment_outlined,
+                                        size: 26,
+                                        color:
+                                            Color(0xFF5A5A7A),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment
+                                                .start,
+                                        mainAxisSize:
+                                            MainAxisSize.min,
+                                        children: [
+                                          const Text(
+                                            "Doctor's Visit",
+                                            style: TextStyle(
+                                              fontFamily:
+                                                  'OpenSauce',
+                                              fontWeight:
+                                                  FontWeight
+                                                      .w600,
+                                              fontSize: 12,
+                                              color: Colors
+                                                  .black87,
+                                            ),
+                                          ),
+                                          Text(
+                                            visitTypeLabel,
+                                            style: TextStyle(
+                                              fontFamily:
+                                                  'OpenSauce',
+                                              fontWeight:
+                                                  FontWeight
+                                                      .w500,
+                                              fontSize: 10,
+                                              color: Colors
+                                                  .grey.shade500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  doctorName,
+                                  maxLines: 2,
+                                  overflow:
+                                      TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: 'OpenSauce',
+                                    fontWeight:
+                                        FontWeight.w700,
+                                    fontSize: 16,
+                                    color: Colors.black87,
+                                    height: 1.2,
+                                    shadows: [
+                                      Shadow(
+                                        color: Colors.black
+                                            .withValues(
+                                                alpha: 0.15),
+                                        blurRadius: 0,
+                                        offset:
+                                            const Offset(0.4, 0),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  scheduledTime,
+                                  style: TextStyle(
+                                    fontFamily: 'OpenSauce',
+                                    fontWeight:
+                                        FontWeight.w400,
+                                    fontSize: 14,
+                                    color:
+                                        Colors.grey.shade700,
+                                  ),
+                                ),
+                                if (hospital.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    hospital,
+                                    maxLines: 2,
+                                    overflow:
+                                        TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontFamily:
+                                          'OpenSauce',
+                                      fontWeight:
+                                          FontWeight.w400,
+                                      fontSize: 12,
+                                      color: Colors
+                                          .grey.shade600,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

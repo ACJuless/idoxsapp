@@ -1,52 +1,78 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// Theme constants
+const Color kPrimary     = Color(0xFF5958B2);
+const Color kPrimaryDark = Color(0xFF4A2371);
+const Color kSurface     = Color(0xFFF9F5FF);
+const Color kCard        = Color(0xFFFFFFFF);
+const Color kBorder      = Color(0xFFE9E3F5);
+const Color kMuted       = Color(0xFF2B2B2B);
+const Color kRed         = Color(0xFFDC2626);
+const Color kGreen       = Color(0xFF059669);
+const Color kFieldFill   = Color(0x0A6B21C8);
+const Color kEmpty       = Color(0xFF9CA3AF);
+
 class SalesOrderFormPage extends StatefulWidget {
-  final Map<String, dynamic>? formData;
+  final Map<String, dynamic> formData;
+  final String docId;
   final bool readonly;
-  SalesOrderFormPage({this.formData, this.readonly = false});
+
+  const SalesOrderFormPage({
+    Key? key,
+    required this.formData,
+    required this.docId,
+    this.readonly = true,
+  }) : super(key: key);
 
   @override
-  _SalesOrderFormPageState createState() => _SalesOrderFormPageState();
+  State<SalesOrderFormPage> createState() => _SalesOrderFormPageState();
 }
 
 class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
-  String mrName = "",
-      soldTo = "",
-      dateOfOrder = "",
-      salesOrderNo = "",
-      address = "",
-      shipTo = "",
-      telNo = "",
-      terms = "";
-  String specialNote = '',
-      specialInstruction = '',
-      notedBy1 = '',
-      notedBy2 = '',
-      discount = '';
-  double grossAmount = 0.0;
-  double netAmount = 0.0;
-  final List<String> termsOptions = [
-    "COD CASH",
-    "COD-CHECK",
-    "I.S. 60DAYS",
-    "NET 30 DAYS",
-    "PDC 30 DAYS",
-    "PDC 60 DAYS"
-  ];
-  final Map<String, List<String>> pharmaMapping = {
-        "Indofil 800 WP": ["800WP", "Vitamin B1 + B6 + B12", "1 kg", "1500.00"],
-        "Indofil 600 OS": ["600 OS", "Vitamin B1 + B6 + B12", "60L Drum", "2500.00"],
-        "Indofil 455 F": ["455 F", "Mancozeb 455 g/L", "100L Drum", "3500.00"],
-        "Indofil 750 WDG": ["750 WDG", "Mancozeb 750g/Kg", "25Kg bag", "1500.00"],
-        "Proviso 250 EC": ["250 EC", "Propiconazole 250 g/L", "100 L Drum", "3500.00"],
-        "Moximate 505 WP": ["505 WP", "Cymoxanil 40 g/Kg + Mancozeb 465 g/Kg", "500 g and 1 kg pouch", "2500.00"],
-        "Matco 720 WP": ["720 WP", "Metalaxyl 80 g/Kg + Mancozeb 640 g/Kg WP", "100 g pouch and 25 Kg bag", "1500.00"],
-        "Nexa 250 EC": ["250 EC", "Difenoconazole 250 g/L", "250 ml & 500 ml bottle and 200 L drum", "1500.00"],
-        "Grifon SC": ["SC", "Copper hydroxide 223 g/L + Copper oxychloride 239 g/L", "500 ml Bottle", "2500.00"],
+  final _formKey = GlobalKey<FormState>();
 
-// ============================================================================================
+  late TextEditingController _mrNameCtrl;
+  late TextEditingController _soldToCtrl;
+  late TextEditingController _dateOfOrderCtrl;
+  late TextEditingController _salesOrderNoCtrl;
+  late TextEditingController _addressCtrl;
+  late TextEditingController _shipToCtrl;
+  late TextEditingController _telNoCtrl;
+  late TextEditingController _specialNoteCtrl;
+  late TextEditingController _specialInstructionCtrl;
+  late TextEditingController _notedBy1Ctrl;
+  late TextEditingController _discountCtrl;
+  late ScrollController _scrollCtrl;
+
+  String _terms   = '';
+  bool _submitted = false;
+  bool _isSaving  = false;
+  bool _isEditMode = false;
+
+  // Catalogs
+  static const List<String> kTermsOptions = [
+    'COD - Cash', 
+    'COD - Check', 
+    'I.S. 60 Days',
+    'Net 30 Days', 
+    'PDC 30 Days', 
+    'PDC 60 Days',
+  ];
+
+  static const Map<String, List<String>> kFungicideCatalog = {
+    'Indofil 800 WP':  ['800WP',   'Mancozeb 800 g/Kg',                                      '1 kg pouch',                             '1500.00'],
+    'Indofil 600 OS':  ['600 OS',  'Mancozeb 600 g/L',                                       '60 L Drum',                              '2500.00'],
+    'Indofil 455 F':   ['455 F',   'Mancozeb 455 g/L',                                       '100 L Drum',                             '3500.00'],
+    'Indofil 750 WDG': ['750 WDG', 'Mancozeb 750 g/Kg',                                      '25 Kg bag',                              '1500.00'],
+    'Proviso 250 EC':  ['250 EC',  'Propiconazole 250 g/L',                                  '100 L Drum',                             '3500.00'],
+    'Moximate 505 WP': ['505 WP',  'Cymoxanil 40 g/Kg + Mancozeb 465 g/Kg',                '500 g and 1 kg pouch',                   '2500.00'],
+    'Matco 720 WP':    ['720 WP',  'Metalaxyl 80 g/Kg + Mancozeb 640 g/Kg WP',             '100 g pouch and 25 Kg bag',              '1500.00'],
+    'Nexa 250 EC':     ['250 EC',  'Difenoconazole 250 g/L',                                '250 ml & 500 ml bottle and 200 L drum',  '1500.00'],
+    'Grifon SC':       ['SC',      'Copper hydroxide 223 g/L + Copper oxychloride 239 g/L', '500 ml Bottle',                          '2500.00'],
+    // ============================================================================================
 
     // "Cramin Forte Caps": ["CRA1", "Vitamin B1 + B6 + B12", "100pcs", "1500.00"],
     // "Dayzinc Drops": [
@@ -200,621 +226,1266 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
     // "SGX Cap": ["SGX2", "Salbutamol + Guaifanesin", "100pcs", "650"],
     // "CFC 50 PFOD": ["CFC1", "Cefactor", "20mL", "200"],
   };
-  final Map<String, List<String>> dermaMapping = {
-    "Akostar 480 SL": ["480 SL", "Glyphosate as Isopropylamine salt 480 g/L", "200mL", "1350.00"],
-    "Glowstar 150 SL": ["150 SL", "Glufosinate ammonium 150 g/L", "	1 L and 4 L bottle and 200 L drum", "3350.00"],
 
-    // "Dermatonics Dry Skin Balm": ["DRB03", "", "200mL", "1350"],
-    // "Ultraveen Relief Cream": ["ULC01", "", "125mL", "975"],
-    // "Dermatonics Heel Balm w/ Manuka Honey": ["DRB01", "", "60mL", "695"],
-    // "Dermatonics Ultracool Foot Gel": ["DRB02", "", "60mL", "695"],
-    // "Dermatonics Soothing Foot Cream": ["DRC01", "", "60mL", "695"],
-    // "Dermatonics Hard Skin Removing Balm": ["DRG01", "", "60mL", "710"],
+  static const Map<String, List<String>> kHerbicideCatalog = {
+    'Akostar 480 SL':  ['480 SL', 'Glyphosate as Isopropylamine salt 480 g/L', '200 mL',                             '1350.00'],
+    'Glowstar 150 SL': ['150 SL', 'Glufosinate ammonium 150 g/L',              '1 L and 4 L bottle and 200 L drum',  '3350.00'],
   };
 
-  List<Map<String, dynamic>> pharmaRows = [];
-  List<Map<String, dynamic>> dermaRows = [];
+  // Product rows
+  List<Map<String, dynamic>> _fungicideRows = [];
+  List<Map<String, dynamic>> _herbicideRows = [];
+
+  double _grossAmount = 0.0;
+  double _netAmount   = 0.0;
+
+  final Map<String, bool> _expanded = {};
 
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    final todayString =
-        "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+    _scrollCtrl = ScrollController();
+    _isEditMode = !widget.readonly; // start in edit if not readonly
+    _initControllers(widget.formData);
+  }
 
-    if (widget.formData != null) {
-      final d = widget.formData!;
-      mrName = d['mrName'] ?? "";
-      soldTo = d['soldTo'] ?? "";
-      dateOfOrder =
-          d['dateOfOrder'] ?? todayString; // fallback to today if missing
-      salesOrderNo = d['salesOrderNo'] ?? "";
-      address = d['address'] ?? "";
-      shipTo = d['shipTo'] ?? "";
-      telNo = d['telNo'] ?? "";
-      terms = d['terms'] ?? "";
-      specialNote = d['specialNote'] ?? "";
-      specialInstruction = d['specialInstruction'] ?? "";
-      notedBy1 = d['notedBy1'] ?? "";
-      notedBy2 = d['notedBy2'] ?? "";
-      discount = d['discount']?.toString() ?? '';
-      pharmaRows = List<Map<String, dynamic>>.from(d['pharmaRows'] ?? []);
-      dermaRows = List<Map<String, dynamic>>.from(d['dermaRows'] ?? []);
-    } else {
-      // New form: always set Date of Order to today's date
-      dateOfOrder = todayString;
+  void _initControllers(Map<String, dynamic> d) {
+    _mrNameCtrl             = TextEditingController(text: d['mrName']            ?? '');
+    _soldToCtrl             = TextEditingController(text: d['soldTo']             ?? '');
+    _dateOfOrderCtrl        = TextEditingController(text: d['dateOfOrder']        ?? '');
+    _salesOrderNoCtrl       = TextEditingController(text: d['salesOrderNo']       ?? '');
+    _addressCtrl            = TextEditingController(text: d['address']            ?? '');
+    _shipToCtrl             = TextEditingController(text: d['shipTo']             ?? '');
+    _telNoCtrl              = TextEditingController(text: d['telNo']              ?? '');
+    _specialNoteCtrl        = TextEditingController(text: d['specialNote']        ?? '');
+    _specialInstructionCtrl = TextEditingController(text: d['specialInstruction'] ?? '');
+    _notedBy1Ctrl           = TextEditingController(text: d['notedBy1']           ?? '');
+    _discountCtrl           = TextEditingController(text: d['discount']?.toString() ?? '');
+    _terms         = _resolveTerms(d['terms'] ?? '');
+    _fungicideRows = _sanitize(List<Map<String, dynamic>>.from(d['pharmaRows'] ?? []));
+    _herbicideRows = _sanitize(List<Map<String, dynamic>>.from(d['dermaRows']  ?? []));
+    _recalc();
+  }
+
+  void _populateFromData(Map<String, dynamic> d) {
+    _mrNameCtrl.text             = d['mrName']            ?? '';
+    _soldToCtrl.text             = d['soldTo']             ?? '';
+    _dateOfOrderCtrl.text        = d['dateOfOrder']        ?? '';
+    _salesOrderNoCtrl.text       = d['salesOrderNo']       ?? '';
+    _addressCtrl.text            = d['address']            ?? '';
+    _shipToCtrl.text             = d['shipTo']             ?? '';
+    _telNoCtrl.text              = d['telNo']              ?? '';
+    _specialNoteCtrl.text        = d['specialNote']        ?? '';
+    _specialInstructionCtrl.text = d['specialInstruction'] ?? '';
+    _notedBy1Ctrl.text           = d['notedBy1']           ?? '';
+    _discountCtrl.text           = d['discount']?.toString() ?? '';
+    _terms         = _resolveTerms(d['terms'] ?? '');
+    _fungicideRows = _sanitize(List<Map<String, dynamic>>.from(d['pharmaRows'] ?? []));
+    _herbicideRows = _sanitize(List<Map<String, dynamic>>.from(d['dermaRows']  ?? []));
+    _expanded.clear();
+  }
+
+  String _resolveTerms(String raw) => kTermsOptions.firstWhere(
+    (t) => t.toLowerCase() == raw.toLowerCase(),
+    orElse: () => '',
+  );
+
+  List<Map<String, dynamic>> _sanitize(List<Map<String, dynamic>> rows) =>
+      rows.map((r) => {
+        ...r,
+        'reg':    (r['reg']    as num?)?.toInt()    ?? 0,
+        'free':   (r['free']   as num?)?.toInt()    ?? 0,
+        'price':  (r['price']  ?? r['unitPrice'] ?? '0').toString(),
+        'amount': (r['amount'] as num?)?.toDouble() ?? 0.0,
+      }).toList();
+
+  @override
+  void dispose() {
+    _mrNameCtrl.dispose();
+    _soldToCtrl.dispose();
+    _dateOfOrderCtrl.dispose();
+    _salesOrderNoCtrl.dispose();
+    _addressCtrl.dispose();
+    _shipToCtrl.dispose();
+    _telNoCtrl.dispose();
+    _specialNoteCtrl.dispose();
+    _specialInstructionCtrl.dispose();
+    _notedBy1Ctrl.dispose();
+    _discountCtrl.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _recalc() {
+    double gross = 0;
+    for (final r in [..._fungicideRows, ..._herbicideRows]) {
+      final reg   = (r['reg'] as int? ?? 0).toDouble();
+      final price = double.tryParse(r['price'].toString()) ?? 0.0;
+      r['amount'] = reg * price;
+      gross += r['amount'] as double;
     }
+    _grossAmount = gross;
+    final disc = double.tryParse(_discountCtrl.text) ?? 0.0;
+    _netAmount  = disc > 0 ? gross * (1 - disc / 100) : gross;
   }
 
-  double computeGross() => [...pharmaRows, ...dermaRows]
-      .map((r) => r["amount"] as double? ?? 0)
-      .fold(0.0, (a, b) => a + b);
+  // Validation
+  bool get _hasProducts => _fungicideRows.isNotEmpty || _herbicideRows.isNotEmpty;
 
-  double computeNet(double gross) {
-    if (discount.isEmpty || double.tryParse(discount) == 0) return gross;
-    double disc = double.tryParse(discount) ?? 0.0;
-    return gross * (1.0 - disc / 100.0);
+  bool _runValidation() {
+    setState(() => _submitted = true);
+    final formOk  = _formKey.currentState?.validate() ?? false;
+    final termsOk = _terms.isNotEmpty;
+    final prodsOk = _hasProducts;
+    bool rowsOk   = true;
+    for (final r in [..._fungicideRows, ..._herbicideRows]) {
+      if ((r['reg'] as int? ?? 0) <= 0) rowsOk = false;
+    }
+    if (!prodsOk) {
+      _toast('Please add at least one Fungicide or Herbicide.', error: true);
+    } else if (!rowsOk) {
+      _toast('Each product must have Qty (Reg) greater than 0.', error: true);
+    } else if (!termsOk) {
+      _toast('Please select Terms.', error: true);
+    } else if (!formOk) {
+      _toast('Please fill out all required fields.', error: true);
+    }
+    return formOk && termsOk && prodsOk && rowsOk;
   }
 
-  void _addPharmaProduct() async {
-    final selected = await showDialog<String>(
+  void _toast(String msg, {bool error = false}) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Row(children: [
+          Icon(error ? Icons.error_outline : Icons.check_circle_outline,
+              color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(msg,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          ),
+        ]),
+        backgroundColor: error ? kRed : kGreen,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 3),
+      ));
+  }
+
+  // Reset
+  Future<void> _resetForm() async {
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => SimpleDialog(
-        title: Text('Select Fungicides'/**'Select Pharma Product' */),
-        children: pharmaMapping.keys
-            .map((prod) => SimpleDialogOption(
-                  child: Text(prod),
-                  onPressed: () => Navigator.pop(context, prod),
-                ))
-            .toList(),
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Reset Form',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        content: const Text(
+          'This will restore all fields to their last saved values. Continue?',
+          style: TextStyle(fontSize: 14, color: Colors.black54),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Reset',
+                style: TextStyle(color: kRed, fontWeight: FontWeight.w700)),
+          ),
+        ],
       ),
     );
-    if (selected != null) {
-      final entry = pharmaMapping[selected]!;
-      setState(() {
-        pharmaRows.add({
-          "desc": selected,
-          "code": entry[0],
-          "generic": entry[1],
-          "pack": entry[2],
-          "reg": 0,
-          "free": 0,
-          "price": entry[3],
-          "amount": 0.0,
-        });
-        _recalcAmounts();
-      });
-    }
-  }
-
-  void _addDermaProduct() async {
-    final selected = await showDialog<String>(
-      context: context,
-      builder: (_) => SimpleDialog(
-        title: Text('Select Herbicides'/**'Select Derma Product' */),
-        children: dermaMapping.keys
-            .map((prod) => SimpleDialogOption(
-                  child: Text(prod),
-                  onPressed: () => Navigator.pop(context, prod),
-                ))
-            .toList(),
-      ),
-    );
-    if (selected != null) {
-      final entry = dermaMapping[selected]!;
-      setState(() {
-        dermaRows.add({
-          "desc": selected,
-          "code": entry[0],
-          "generic": entry[1],
-          "pack": entry[2],
-          "reg": 0,
-          "free": 0,
-          "price": entry[3],
-          "amount": 0.0,
-        });
-        _recalcAmounts();
-      });
-    }
-  }
-
-  void _recalcAmounts() {
-    for (var row in pharmaRows) {
-      final reg = int.tryParse(row["reg"].toString()) ?? 0;
-      final price = double.tryParse(row["price"].toString()) ?? 0.0;
-      row["amount"] = reg * price;
-    }
-    for (var row in dermaRows) {
-      final reg = int.tryParse(row["reg"].toString()) ?? 0;
-      final price = double.tryParse(row["price"].toString()) ?? 0.0;
-      row["amount"] = reg * price;
-    }
-    grossAmount = computeGross();
-    netAmount = computeNet(grossAmount);
-  }
-
-  void _resetForm() {
+    if (confirmed != true) return;
     setState(() {
-      mrName = soldTo = salesOrderNo = address = shipTo = telNo = terms =
-          specialNote = specialInstruction = notedBy1 = notedBy2 = discount = "";
-      pharmaRows.clear();
-      dermaRows.clear();
-      grossAmount = netAmount = 0.0;
+      _submitted = false;
+      _populateFromData(widget.formData);
+      _recalc();
+    });
+    _toast('Form has been reset.');
+  }
 
-      final now = DateTime.now();
-      dateOfOrder =
-          "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+  // Submit
+  Future<void> _submit() async {
+    if (_isSaving) return;
+    if (!_runValidation()) return;
+
+    setState(() => _isSaving = true);
+    _recalc();
+
+    final data = {
+      'mrName':             _mrNameCtrl.text.trim(),
+      'soldTo':             _soldToCtrl.text.trim(),
+      'dateOfOrder':        _dateOfOrderCtrl.text.trim(),
+      'salesOrderNo':       _salesOrderNoCtrl.text.trim(),
+      'address':            _addressCtrl.text.trim(),
+      'shipTo':             _shipToCtrl.text.trim(),
+      'telNo':              _telNoCtrl.text.trim(),
+      'terms':              _terms,
+      'specialNote':        _specialNoteCtrl.text.trim(),
+      'specialInstruction': _specialInstructionCtrl.text.trim(),
+      'notedBy1':           _notedBy1Ctrl.text.trim(),
+      'notedBy2':           '',
+      'discount':           _discountCtrl.text.trim(),
+      'pharmaRows':         _fungicideRows,
+      'dermaRows':          _herbicideRows,
+      'grossAmount':        _grossAmount,
+      'netAmount':          _netAmount,
+      'timestamp':          FieldValue.serverTimestamp(),
+    };
+
+    try {
+      final prefs     = await SharedPreferences.getInstance();
+      final userEmail = prefs.getString('userEmail') ?? '';
+      final userKey   = userEmail.replaceAll(RegExp(r'[.#\$\\\[\]/]'), '_');
+      await FirebaseFirestore.instance
+          .collection('flowDB').doc('users')
+          .collection(userKey).doc('sales_orders')
+          .collection('sales_orders')
+          .doc(widget.docId)
+          .update(data);
+
+      if (mounted) {
+        _toast('Form updated successfully.');
+        setState(() {
+          _isEditMode = false;
+          _submitted  = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        _toast('Save failed: ${e.toString()}', error: true);
+        setState(() => _isSaving = false);
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  // Product helpers
+  void _addProduct(bool isFungicide) async {
+    final catalog = isFungicide ? kFungicideCatalog : kHerbicideCatalog;
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (_) => SimpleDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(isFungicide ? 'Select Fungicide' : 'Select Herbicide'),
+        children: catalog.keys
+            .map((k) => SimpleDialogOption(
+                  child: Text(k),
+                  onPressed: () => Navigator.pop(context, k),
+                ))
+            .toList(),
+      ),
+    );
+    if (selected == null) return;
+    final meta = catalog[selected]!;
+    setState(() {
+      final row = {
+        'desc': selected, 'code': meta[0], 'generic': meta[1],
+        'pack': meta[2],  'price': meta[3], 'reg': 0, 'free': 0, 'amount': 0.0,
+      };
+      if (isFungicide) {
+        _fungicideRows.add(row);
+        _expanded['f-${_fungicideRows.length - 1}'] = true;
+      } else {
+        _herbicideRows.add(row);
+        _expanded['h-${_herbicideRows.length - 1}'] = true;
+      }
+      _recalc();
     });
   }
 
-  Future<String> getSanitizedUserEmail() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userEmail = prefs.getString('userEmail') ?? '';
-    return userEmail.replaceAll(RegExp(r'[.#\$\\\[\]/]'), '_');
-  }
-
-  Future<void> _submit() async {
-    _recalcAmounts();
-    final data = {
-      "mrName": mrName,
-      "soldTo": soldTo,
-      "dateOfOrder": dateOfOrder,
-      "salesOrderNo": salesOrderNo,
-      "address": address,
-      "shipTo": shipTo,
-      "telNo": telNo,
-      "terms": terms,
-      "specialNote": specialNote,
-      "specialInstruction": specialInstruction,
-      "notedBy1": notedBy1,
-      "notedBy2": notedBy2,
-      "discount": discount,
-      "pharmaRows": pharmaRows,
-      "dermaRows": dermaRows,
-      "grossAmount": grossAmount,
-      "netAmount": netAmount,
-      "timestamp": FieldValue.serverTimestamp(),
-    };
-    final userKey = await getSanitizedUserEmail();
-    await FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(userKey)
-        .doc('sales_orders')
-        .collection('sales_orders')
-        .add(data);
-    Navigator.pop(context, true);
-  }
-
-  // ---- UI WIDGETS BELOW (no logic skipped) ----
-
-  InputDecoration _inputDeco(String label) => InputDecoration(
-        labelText: label,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        filled: true,
-        fillColor: Colors.cyan.shade50,
-      );
-
-  Widget _scrollTableArea({required Widget child}) => Scrollbar(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minWidth: 800),
-            child: child,
-          ),
+  Future<void> _confirmRemove(bool isFungicide, int idx, String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Remove Product',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        content: Text(
+          name.isNotEmpty ? 'Remove "$name" from the list?' : 'Remove this product row?',
+          style: const TextStyle(fontSize: 14, color: Colors.black54),
         ),
-      );
-
-  Widget _tableHeader() => Row(
-        children: [
-          _tableCell("Product Code", true),
-          _tableCell("Product Description", true),
-          _tableCell("Active Ingredient"/**"Generic Name"*/, true),
-          _tableCell("Pack Size", true),
-          Container(
-            width: 130,
-            child: Column(
-              children: [
-                Text("Quantity", style: TextStyle(fontWeight: FontWeight.bold)),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    Expanded(
-                        child: Center(
-                            child:
-                                Text("Reg", style: TextStyle(fontSize: 13)))),
-                    Expanded(
-                        child: Center(
-                            child:
-                                Text("Free", style: TextStyle(fontSize: 13)))),
-                  ],
-                ),
-              ],
-            ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
-          _tableCell("Unit Price", true),
-          _tableCell("Amount", true),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove',
+                style: TextStyle(color: kRed, fontWeight: FontWeight.w700)),
+          ),
         ],
-      );
-
-  Widget _yellowSection(String title) => Container(
-        width: 830,
-        color: Colors.yellow.shade100,
-        padding: EdgeInsets.symmetric(vertical: 9),
-        child: Center(
-            child: Text(title,
-                style:
-                    TextStyle(fontWeight: FontWeight.w600, fontSize: 17))),
-      );
-
-  Widget _rowTable(List<Map<String, dynamic>> products) => Column(
-        children: products.asMap().entries.map((e) {
-          return Row(
-            children: [
-              _tableCell(e.value["code"] ?? ""),
-              _tableCell(e.value["desc"] ?? ""),
-              _tableCell(e.value["generic"] ?? ""),
-              _tableCell(e.value["pack"] ?? ""),
-              _tableCellWidget(
-                  child: Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      initialValue: e.value["reg"].toString(),
-                      readOnly: widget.readonly,
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      decoration: InputDecoration(
-                        contentPadding:
-                            EdgeInsets.symmetric(vertical: 0, horizontal: 0),
-                        border: InputBorder.none,
-                      ),
-                      onChanged: widget.readonly
-                          ? null
-                          : (v) {
-                              setState(() {
-                                e.value["reg"] = int.tryParse(v) ?? 0;
-                                e.value["amount"] =
-                                    (e.value["reg"] as int) *
-                                        double.parse(e.value["price"]);
-                                _recalcAmounts();
-                              });
-                            },
-                      style: TextStyle(fontSize: 15),
-                    ),
-                  ),
-                  VerticalDivider(width: 1, thickness: 1),
-                  Expanded(
-                    child: TextFormField(
-                      initialValue: e.value["free"].toString(),
-                      readOnly: widget.readonly,
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      decoration: InputDecoration(
-                        contentPadding:
-                            EdgeInsets.symmetric(vertical: 0, horizontal: 0),
-                        border: InputBorder.none,
-                      ),
-                      onChanged: widget.readonly
-                          ? null
-                          : (v) {
-                              setState(() {
-                                e.value["free"] = int.tryParse(v) ?? 0;
-                              });
-                            },
-                      style: TextStyle(fontSize: 15),
-                    ),
-                  ),
-                ],
-              )),
-              _tableCell(e.value["price"].toString()),
-              _tableCell((e.value["amount"] ?? 0.0).toStringAsFixed(2)),
-            ],
-          );
-        }).toList(),
-      );
-
-  Widget _tableCellWidget({required Widget child, bool header = false}) =>
-      Container(
-        width: 120,
-        height: header ? 50 : 48,
-        padding: EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-        decoration: BoxDecoration(
-          color: header ? Colors.cyan[100] : Colors.white,
-          border: Border.all(color: Colors.grey.shade300),
-        ),
-        child: Center(child: child),
-      );
-
-  Widget _tableCell(String text, [bool header = false]) => Container(
-        width: 120,
-        height: header ? 50 : null,
-        padding: EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-        color: header ? Colors.cyan[100] : null,
-        child: Center(
-          child: Text(text,
-              style: TextStyle(
-                  fontSize: header ? 10 : 15,
-                  fontWeight:
-                      header ? FontWeight.bold : FontWeight.normal)),
-        ),
-      );
-
-  Widget _inputBox(String label, String value, void Function(String) onChanged,
-          {bool readOnly = false, TextInputType? type}) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 10.0),
-        child: TextFormField(
-          initialValue: value,
-          readOnly: readOnly,
-          keyboardType: type,
-          onChanged: readOnly ? null : onChanged,
-          style: TextStyle(fontSize: 16),
-          decoration: _inputDeco(label),
-        ),
-      );
-
-  Widget _readOnlyField(String label, String value, {Color? color}) => Padding(
-        padding: const EdgeInsets.only(bottom: 8.0, top: 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: TextStyle(
-                    color: color ?? Colors.black54,
-                    fontWeight: FontWeight.w600)),
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-              margin: EdgeInsets.only(top: 2),
-              decoration: BoxDecoration(
-                  color: Colors.cyan.shade100,
-                  borderRadius: BorderRadius.circular(7)),
-              child: Text(value,
-                  style:
-                      TextStyle(fontSize: 18, color: color ?? Colors.black)),
-            ),
-          ],
-        ),
-      );
+      ),
+    );
+    if (ok == true) {
+      setState(() {
+        if (isFungicide) _fungicideRows.removeAt(idx);
+        else             _herbicideRows.removeAt(idx);
+        _recalc();
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    grossAmount = computeGross();
-    netAmount = computeNet(grossAmount);
-    final isReadonly = widget.readonly;
+    _recalc();
+    final appTitle = _mrNameCtrl.text.trim().isEmpty
+        ? 'Sales Order'
+        : _mrNameCtrl.text.trim();
 
     return Scaffold(
+      backgroundColor: kSurface,
       appBar: AppBar(
-        title: Text(isReadonly ? "View Sales Order" : "Sales Order Form"),
-        backgroundColor: Color(0xFF5958b2),
-      ),
-      backgroundColor: Colors.white,
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(14),
-        child: Column(
-          children: [
-            Wrap(
-              runSpacing: 10,
-              children: [
-                _inputBox("Name", mrName,
-                    (v) => setState(() => mrName = v),
-                    readOnly: isReadonly),
-                _inputBox("Sold To", soldTo,
-                    (v) => setState(() => soldTo = v),
-                    readOnly: isReadonly),
-
-                // Date of Order: always date, never editable
-                _inputBox(
-                  "Date of Order",
-                  dateOfOrder,
-                  (_) {},
-                  readOnly: true,
-                ),
-
-                _inputBox("Sales Order No.", salesOrderNo,
-                    (v) => setState(() => salesOrderNo = v),
-                    readOnly: isReadonly),
-                _inputBox("Address", address,
-                    (v) => setState(() => address = v),
-                    readOnly: isReadonly),
-                _inputBox("Ship To", shipTo,
-                    (v) => setState(() => shipTo = v),
-                    readOnly: isReadonly),
-                _inputBox("Tel No.", telNo,
-                    (v) => setState(() => telNo = v),
-                    readOnly: isReadonly),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: DropdownButtonFormField<String>(
-                    decoration: _inputDeco("Terms"),
-                    value: terms.isNotEmpty ? terms : null,
-                    items: termsOptions
-                        .map((opt) =>
-                            DropdownMenuItem(value: opt, child: Text(opt)))
-                        .toList(),
-                    onChanged: isReadonly
-                        ? null
-                        : (val) {
-                            setState(() => terms = val!);
-                          },
-                  ),
-                ),
-                _inputBox(
-                    "Special Notes on Invoice",
-                    specialNote,
-                    (v) => setState(() => specialNote = v),
-                    readOnly: isReadonly),
-              ],
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        centerTitle: false,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [kPrimaryDark, kPrimaryDark, kPrimary],
+              stops: [0, 0.55, 1],
             ),
-            SizedBox(height: 8),
-            _scrollTableArea(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _tableHeader(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    children: [
-                      if (!isReadonly)
-                        ElevatedButton(
-                          onPressed: _addPharmaProduct,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green.shade300,
-                            foregroundColor: Colors.black,
-                            minimumSize: const Size(32, 32),
-                            padding: EdgeInsets.zero,
-                          ),
-                          child: const Text(
-                            "+",
-                            style: TextStyle(fontSize: 24),
-                          ),
-                        ),
-                      const SizedBox(width: 8),
-                      _yellowSection("Fungicides"),
-                    ],
-                  ),
-                  _rowTable(pharmaRows),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    children: [
-                      if (!isReadonly)
-                        ElevatedButton(
-                          onPressed: _addDermaProduct,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green.shade300,
-                            foregroundColor: Colors.black,
-                            minimumSize: const Size(32, 32),
-                            padding: EdgeInsets.zero,
-                          ),
-                          child: const Text(
-                            "+",
-                            style: TextStyle(fontSize: 24),
-                          ),
-                        ),
-                      const SizedBox(width: 8),
-                      _yellowSection("Herbicides"),
-                    ],
-                  ),
-                  _rowTable(dermaRows),
-                ],
+            borderRadius: BorderRadius.only(
+              bottomLeft:  Radius.circular(22),
+              bottomRight: Radius.circular(22),
+            ),
+          ),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.chevron_left, color: Colors.white, size: 30),
+          onPressed: () => Navigator.of(context).maybePop(),
+          tooltip: 'Back',
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'SALES ORDER FORM',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.white60,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
               ),
             ),
-            SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(child: _readOnlyField("Gross Amount", grossAmount.toStringAsFixed(2))),
-                SizedBox(width: 8),
-                Expanded(
-                  child: _inputBox(
-                    "Discount (%)",
-                    discount,
-                    (v) {
-                      setState(() {
-                        discount = v;
-                        _recalcAmounts();
-                      });
-                    },
-                    readOnly: isReadonly,
-                    type: TextInputType.number,
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: _readOnlyField(
-                    "Net Amount",
-                    netAmount.toStringAsFixed(2),
-                    color: Colors.red,
-                  ),
-                ),
-              ],
+            Text(
+              appTitle.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
-            SizedBox(height: 16),
-            // Signature and Noted By
-            // Container(
-            //   height: 100,
-            //   decoration: BoxDecoration(
-            //     border: Border.all(color: Colors.grey),
-            //     borderRadius: BorderRadius.circular(15),
-            //   ),
-            //   margin: EdgeInsets.only(bottom: 10),
-            //   child: Center(
-            //     child: Text(
-            //       isReadonly ? "Signature Pad (View only)" : "Signature Pad",
-            //     ),
-            //   ),
-            // ),
-            Row(
-              children: [
-                Expanded(
-                  child: _inputBox(
-                    "Noted By",
-                    notedBy1,
-                    (v) => setState(() => notedBy1 = v),
-                    readOnly: isReadonly,
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: _inputBox(
-                    "Special Instructions",
-                    specialInstruction,
-                    (v) => setState(() => specialInstruction = v),
-                    readOnly: isReadonly,
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 80),
           ],
         ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: TextButton(
+              onPressed: _isSaving ? null : () {
+                if (_isEditMode) {
+                  setState(() {
+                    _populateFromData(widget.formData);
+                    _recalc();
+                    _submitted  = false;
+                    _isEditMode = false;
+                  });
+                } else {
+                  setState(() => _isEditMode = true);
+                }
+              },
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.white.withValues(alpha: 0.22),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+              ),
+              child: Text(
+                _isEditMode ? 'CANCEL' : 'EDIT',
+                style: TextStyle(
+                  color: _isEditMode ? Colors.white60 : Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
 
-      // PERSISTENT FLOATING RESET/SUBMIT BUTTONS
-      persistentFooterButtons: !isReadonly
-          ? [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 140,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.grey.shade300,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 4,
-                      ),
-                      onPressed: _resetForm,
-                      child: const Text(
-                        "Reset",
-                        style: TextStyle(color: Colors.black),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  SizedBox(
-                    width: 140,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 4,
-                      ),
-                      onPressed: _submit,
-                      child: const Text(
-                        "Submit",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ]
-          : null,
+      body: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          controller: _scrollCtrl,
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 40),
+          child: _isEditMode ? _editBody() : _viewBody(),
+        ),
+      ),
     );
+  }
+
+  Widget _footer() => Padding(
+        padding: const EdgeInsets.fromLTRB(0, 24, 0, 28),
+        child: Row(children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: _isSaving ? null : _resetForm,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: kPrimary,
+                backgroundColor: kSurface,
+                side: const BorderSide(color: kPrimary, width: 2),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15)),
+                padding: const EdgeInsets.symmetric(vertical: 15),
+              ),
+              child: const Text('RESET',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: _gradBtn('UPDATE FORM', _submit)),
+        ]),
+      );
+
+  Widget _gradBtn(String label, VoidCallback onTap) => Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(15),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(15),
+          onTap: _isSaving ? null : onTap,
+          child: Ink(
+            height: 52,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [kPrimaryDark, kPrimaryDark, kPrimary],
+                stops: [0, 0.55, 1],
+              ),
+              borderRadius: BorderRadius.circular(15),
+              boxShadow: [
+                BoxShadow(
+                    color: kPrimary.withValues(alpha: 0.44),
+                    blurRadius: 18,
+                    offset: const Offset(0, 5))
+              ],
+            ),
+            child: Center(
+              child: _isSaving
+                  ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.2, color: Colors.white))
+                  : Text(label,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ),
+      );
+
+  // View
+  Widget _viewBody() {
+    final disc    = double.tryParse(_discountCtrl.text) ?? 0.0;
+    final discAmt = _grossAmount * disc / 100;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _secLabel('Order Information', first: true),
+        _card([
+          _vFull('Name', _mrNameCtrl.text),
+          _vFull('Sold To', _soldToCtrl.text),
+          _vTwo('Date of Order', _fmtDate(_dateOfOrderCtrl.text),
+                'Sales Order No.', _salesOrderNoCtrl.text),
+          _vFull('Address', _addressCtrl.text),
+          _vFull('Ship To', _shipToCtrl.text),
+          _vTwo('Tel No.', _telNoCtrl.text, 'Terms', _terms),
+          _vFull('Special Notes on Invoice', _specialNoteCtrl.text, last: true),
+        ]),
+
+        _secLabel('Fungicides'),
+        ..._fungicideRows.isEmpty
+            ? [_emptyNote('No fungicide entries recorded.')]
+            : _fungicideRows.asMap().entries.map((e) => _viewProdCard(e.value, e.key, 'f')),
+
+        _secLabel('Herbicides'),
+        ..._herbicideRows.isEmpty
+            ? [_emptyNote('No herbicide entries recorded.')]
+            : _herbicideRows.asMap().entries.map((e) => _viewProdCard(e.value, e.key, 'h')),
+
+        _secLabel('Summary'),
+        _card([
+          _sView('Gross Amount',
+              _grossAmount > 0 ? '₱ ${_fmt(_grossAmount)}' : null),
+          _sView('Discount',
+              disc > 0 ? '${_discountCtrl.text}% (₱ ${_fmt(discAmt)})' : null),
+          _sView('Net Amount',
+              _netAmount > 0 ? '₱ ${_fmt(_netAmount)}' : null,
+              valueColor: kRed, last: true),
+        ]),
+
+        _secLabel('Additional Details'),
+        _card([
+          _vTwo('Noted By', _notedBy1Ctrl.text,
+                'Special Instructions', _specialInstructionCtrl.text, last: true),
+        ]),
+      ],
+    );
+  }
+
+  Widget _viewProdCard(Map<String, dynamic> row, int idx, String prefix) {
+    final key    = '$prefix-$idx';
+    final isOpen = _expanded[key] ?? false;
+    final label  = row['desc']?.toString().isNotEmpty == true
+        ? row['desc'].toString()
+        : 'Product ${idx + 1}';
+
+    return _collapsibleCard(
+      key: key, label: label, index: idx, isOpen: isOpen,
+      trailing: const SizedBox.shrink(),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 18),
+        child: Column(children: [
+          Row(children: [
+            Expanded(child: _pfView('Product Code',        row['code']    ?? '')),
+            const SizedBox(width: 12),
+            Expanded(child: _pfView('Product Description', row['desc']    ?? '')),
+          ]),
+          const SizedBox(height: 14),
+          _pfView('Active Ingredient', row['generic'] ?? ''),
+          const SizedBox(height: 14),
+          _pfView('Pack Size', row['pack'] ?? ''),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: _pfView('Qty Regular', row['reg']?.toString()  ?? '0')),
+            const SizedBox(width: 10),
+            Expanded(child: _pfView('Qty Free',    row['free']?.toString() ?? '0')),
+          ]),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: _pfView('Unit Price', row['price']?.toString() ?? '')),
+            const SizedBox(width: 10),
+            Expanded(child: _pfView('Amount',
+                row['amount'] != null && (row['amount'] as double) > 0
+                    ? '₱ ${_fmt(row['amount'] as double)}'
+                    : '')),
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  // Edit
+  Widget _editBody() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _secLabel('Order Information', first: true),
+          _card([
+            _eFull(_eField('Name', _mrNameCtrl, req: true)),
+            _eFull(_eField('Sold To', _soldToCtrl, req: true)),
+            _eTwo(
+              _eField('Date of Order', _dateOfOrderCtrl, req: true, readOnly: true),
+              _eField('Sales Order No.', _salesOrderNoCtrl, req: true),
+            ),
+            _eFull(_eField('Address', _addressCtrl, req: true)),
+            _eFull(_eField('Ship To', _shipToCtrl, req: true)),
+            _eTwo(
+              _eField('Tel No.', _telNoCtrl,
+                  req: true,
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9+()\-\s]'))
+                  ]),
+              _eTerms(),
+            ),
+            Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: Color(0xFFF0EBF9)))),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: _eField('Special Notes on Invoice', _specialNoteCtrl, maxLines: 2),
+              ),
+            ),
+          ]),
+
+          Padding(
+            padding: const EdgeInsets.only(top: 20),
+            child: _pfBar('Fungicides', onAdd: () => _addProduct(true)),
+          ),
+          ..._fungicideRows.asMap().entries.map((e) => _editProdCard(e.value, e.key, true)),
+          if (_submitted && !_hasProducts)
+            const Padding(
+              padding: EdgeInsets.only(left: 4, bottom: 10),
+              child: Text('At least one product is required.',
+                  style: TextStyle(color: kRed, fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+
+          _pfBar('Herbicides', onAdd: () => _addProduct(false)),
+          ..._herbicideRows.asMap().entries.map((e) => _editProdCard(e.value, e.key, false)),
+
+          _secLabel('Summary'),
+          _card([
+            _sSummaryDisplay('Gross Amount', '₱ ${_fmt(_grossAmount)}'),
+            _sDiscountRow(),
+            _sSummaryDisplay('Net Amount', '₱ ${_fmt(_netAmount)}',
+                valueColor: kRed, last: true),
+          ]),
+
+          _secLabel('Additional Details'),
+          _card([
+            _eTwo(
+              _eField('Noted By', _notedBy1Ctrl, req: true),
+              _eField('Special Instructions', _specialInstructionCtrl),
+              last: true,
+            ),
+          ]),
+
+          _footer(),
+        ],
+      );
+
+  Widget _editProdCard(Map<String, dynamic> row, int idx, bool isFungicide) {
+    final catalog = isFungicide ? kFungicideCatalog : kHerbicideCatalog;
+    final prefix  = isFungicide ? 'f' : 'h';
+    final key     = '$prefix-$idx';
+    final isOpen  = _expanded[key] ?? false;
+    final label   = row['desc']?.toString().isNotEmpty == true
+        ? row['desc'].toString()
+        : 'Product ${idx + 1}';
+
+    final descErr = _submitted && (row['desc'] == null || row['desc'].toString().isEmpty);
+    final regErr  = _submitted && (row['reg'] as int? ?? 0) <= 0;
+
+    final regCtrl  = TextEditingController(text: row['reg']?.toString()  ?? '');
+    final freeCtrl = TextEditingController(text: row['free']?.toString() ?? '');
+
+    return _collapsibleCard(
+      key: key, label: label, index: idx, isOpen: isOpen,
+      trailing: GestureDetector(
+        onTap: () => _confirmRemove(isFungicide, idx, row['desc']?.toString() ?? ''),
+        child: Container(
+          padding: const EdgeInsets.all(5),
+          child: const Icon(Icons.delete_outline, color: kRed, size: 18),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 18),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: _pfDropdown(
+              label: 'Product Description',
+              required: true,
+              hasError: descErr,
+              value: row['desc']?.toString().isNotEmpty == true ? row['desc'] : null,
+              items: catalog.keys.toList(),
+              onChanged: (v) {
+                if (v == null) return;
+                final meta = catalog[v]!;
+                setState(() {
+                  row['desc']    = v;
+                  row['code']    = meta[0];
+                  row['generic'] = meta[1];
+                  row['pack']    = meta[2];
+                  row['price']   = meta[3];
+                  if (isFungicide) _fungicideRows[idx] = row;
+                  else             _herbicideRows[idx] = row;
+                  _recalc();
+                });
+              },
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: _pfDisabled('Product Code', row['code'] ?? '')),
+          ]),
+          const SizedBox(height: 14),
+          _pfDisabled('Active Ingredient', row['generic'] ?? ''),
+          const SizedBox(height: 14),
+          _pfDisabled('Pack Size', row['pack'] ?? ''),
+          const SizedBox(height: 14),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: _pfTextInput(
+              label: 'Qty Regular',
+              required: true,
+              hasError: regErr,
+              controller: regCtrl,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              onChanged: (v) {
+                row['reg'] = int.tryParse(v) ?? 0;
+                if (isFungicide) _fungicideRows[idx]['reg'] = row['reg'];
+                else             _herbicideRows[idx]['reg'] = row['reg'];
+                setState(_recalc);
+              },
+            )),
+            const SizedBox(width: 10),
+            Expanded(child: _pfTextInput(
+              label: 'Qty Free',
+              controller: freeCtrl,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              onChanged: (v) {
+                row['free'] = int.tryParse(v) ?? 0;
+                if (isFungicide) _fungicideRows[idx]['free'] = row['free'];
+                else             _herbicideRows[idx]['free'] = row['free'];
+              },
+            )),
+          ]),
+          const SizedBox(height: 14),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: _pfDisabled('Unit Price', row['price'] ?? '')),
+            const SizedBox(width: 10),
+            Expanded(child: _pfDisabled('Amount',
+                (row['amount'] as double? ?? 0) > 0
+                    ? _fmt(row['amount'] as double)
+                    : '')),
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  Widget _secLabel(String t, {bool first = false}) => Padding(
+        padding: EdgeInsets.only(left: 8, bottom: 8, top: first ? 4 : 20),
+        child: Text(t.toUpperCase(),
+            style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: kPrimary,
+                letterSpacing: 0.5)),
+      );
+
+  Widget _card(List<Widget> children) => Container(
+        decoration: BoxDecoration(
+          color: kCard,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 14,
+                offset: const Offset(0, 3))
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(children: children),
+      );
+
+  Widget _collapsibleCard({
+    required String key,
+    required String label,
+    required int index,
+    required bool isOpen,
+    required Widget trailing,
+    required Widget body,
+  }) =>
+      Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: kCard,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 14,
+                offset: const Offset(0, 3))
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(children: [
+          InkWell(
+            onTap: () => setState(() => _expanded[key] = !isOpen),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [
+                  kPrimaryDark.withValues(alpha: 0.07),
+                  kPrimary.withValues(alpha: 0.03),
+                ]),
+              ),
+              child: Row(children: [
+                Container(
+                  width: 26, height: 26,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(colors: [kPrimaryDark, kPrimary]),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text('${index + 1}',
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(label,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w700, color: kPrimary),
+                      overflow: TextOverflow.ellipsis),
+                ),
+                trailing,
+                const SizedBox(width: 4),
+                AnimatedRotation(
+                  turns: isOpen ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 250),
+                  child: const Icon(Icons.keyboard_arrow_down, color: kPrimary, size: 20),
+                ),
+              ]),
+            ),
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox(width: double.infinity, height: 0),
+            secondChild: body,
+            crossFadeState: isOpen ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 220),
+          ),
+        ]),
+      );
+
+  Widget _pfBar(String title, {required VoidCallback onAdd}) => Padding(
+      padding: const EdgeInsets.only(left: 8, bottom: 8, top: 8), // added left: 8
+      child: Row(children: [
+        Text(title.toUpperCase(),
+            style: const TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w700,
+                color: kPrimary, letterSpacing: 0.5)),
+        const Spacer(),
+        GestureDetector(
+          onTap: onAdd,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [kPrimaryDark, kPrimary]),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                    color: kPrimary.withValues(alpha: 0.35),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2))
+              ],
+            ),
+            child: const Row(children: [
+              Icon(Icons.add, color: Colors.white, size: 14),
+              SizedBox(width: 4),
+              Text('ADD ROW',
+                  style: TextStyle(
+                      color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        ),
+      ]),
+    );
+
+  Widget _emptyNote(String msg) => Padding(
+        padding: const EdgeInsets.only(left: 8, bottom: 12, top: 2),
+        child: Text(msg, style: const TextStyle(color: kEmpty, fontSize: 14)),
+      );
+
+  // View cells
+  Widget _vTwo(String l1, String v1, String l2, String v2, {bool last = false}) =>
+      Container(
+        decoration: BoxDecoration(
+            border: last ? null : const Border(bottom: BorderSide(color: Color(0xFFF0EBF9)))),
+        child: IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(child: _vCell(l1, v1, rightBorder: true)),
+            Expanded(child: _vCell(l2, v2)),
+          ]),
+        ),
+      );
+
+  Widget _vFull(String label, String val, {bool last = false}) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        decoration: BoxDecoration(
+            border: last ? null : const Border(bottom: BorderSide(color: Color(0xFFF0EBF9)))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _uppercase(label),
+          const SizedBox(height: 2),
+          Text(val.trim().isEmpty ? 'No data' : val,
+              style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: val.trim().isEmpty ? kEmpty : Colors.black87)),
+        ]),
+      );
+
+  Widget _vCell(String label, String val, {bool rightBorder = false}) => Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        decoration: BoxDecoration(
+            border: rightBorder
+                ? const Border(right: BorderSide(color: Color(0xFFF0EBF9)))
+                : null),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _uppercase(label),
+          const SizedBox(height: 2),
+          Text(val.trim().isEmpty ? 'No data' : val,
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: val.trim().isEmpty ? kEmpty : Colors.black87)),
+        ]),
+      );
+
+  Widget _sView(String label, String? val, {Color? valueColor, bool last = false}) =>
+      Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        decoration: BoxDecoration(
+            border: last ? null : const Border(bottom: BorderSide(color: Color(0xFFF0EBF9)))),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          _uppercase(label),
+          Text(val ?? 'No data',
+              style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: valueColor ?? (val == null ? kEmpty : Colors.black87))),
+        ]),
+      );
+
+  // Edit cells
+  Widget _eTwo(Widget left, Widget right, {bool last = false}) => Container(
+        decoration: BoxDecoration(
+            border: last ? null : const Border(bottom: BorderSide(color: Color(0xFFF0EBF9)))),
+        child: IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(child: _ePad(left, rightBorder: true)),
+            Expanded(child: _ePad(right)),
+          ]),
+        ),
+      );
+
+  Widget _eFull(Widget child, {bool last = false}) => Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+            border: last ? null : const Border(bottom: BorderSide(color: Color(0xFFF0EBF9)))),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        child: child,
+      );
+
+  Widget _ePad(Widget child, {bool rightBorder = false}) => Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        decoration: BoxDecoration(
+            border: rightBorder
+                ? const Border(right: BorderSide(color: Color(0xFFF0EBF9)))
+                : null),
+        child: child,
+      );
+
+  Widget _eField(
+    String label,
+    TextEditingController ctrl, {
+    bool req = false,
+    bool readOnly = false,
+    int maxLines = 1,
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+  }) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _uppercaseReq(label, req),
+        const SizedBox(height: 4),
+        TextFormField(
+          controller: ctrl,
+          readOnly: readOnly,
+          maxLines: maxLines,
+          keyboardType: keyboardType,
+          inputFormatters: inputFormatters,
+          style: const TextStyle(
+              fontSize: 15, fontWeight: FontWeight.w500, color: Colors.black87),
+          decoration: _eDeco(),
+          validator: req
+              ? (v) {
+                  if (!_submitted) return null;
+                  return (v == null || v.trim().isEmpty)
+                      ? 'This field is required.'
+                      : null;
+                }
+              : null,
+          onChanged: (_) {
+            if (_submitted) setState(() {});
+          },
+        ),
+      ]);
+
+  Widget _eTerms() =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _uppercaseReq('Terms', true),
+        const SizedBox(height: 4),
+        DropdownButtonFormField<String>(
+          value: _terms.isNotEmpty ? _terms : null,
+          decoration: _eDeco(),
+          hint: const Text('Select Terms',
+              style: TextStyle(color: Color(0xFFB0A8C8), fontSize: 15)),
+          items: kTermsOptions
+              .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+              .toList(),
+          onChanged: (v) => setState(() => _terms = v ?? ''),
+          validator: (_) {
+            if (!_submitted) return null;
+            return _terms.isEmpty ? 'This field is required.' : null;
+          },
+        ),
+      ]);
+
+  InputDecoration _eDeco() => InputDecoration(
+        filled: true,
+        fillColor: kFieldFill,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(9),
+            borderSide: BorderSide(color: kPrimary.withValues(alpha: 0.25), width: 1.5)),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(9),
+            borderSide: BorderSide(color: kPrimary.withValues(alpha: 0.25), width: 1.5)),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(9),
+            borderSide: const BorderSide(color: kPrimary, width: 1.5)),
+        errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(9),
+            borderSide: const BorderSide(color: kRed, width: 1.5)),
+        focusedErrorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(9),
+            borderSide: const BorderSide(color: kRed, width: 1.5)),
+        errorStyle: const TextStyle(
+            fontSize: 11.5, fontWeight: FontWeight.w600, color: kRed),
+        isDense: true,
+      );
+
+  Widget _sSummaryDisplay(String label, String value,
+      {Color? valueColor, bool last = false}) =>
+      Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        decoration: BoxDecoration(
+            border: last ? null : const Border(bottom: BorderSide(color: Color(0xFFF0EBF9)))),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          _uppercase(label),
+          Container(
+            width: 160, height: 38,
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.symmetric(horizontal: 11),
+            decoration: BoxDecoration(
+              color: kFieldFill,
+              border: Border.all(color: kPrimary.withValues(alpha: 0.25), width: 1.5),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Text(value,
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: valueColor ?? Colors.black87)),
+          ),
+        ]),
+      );
+
+  Widget _sDiscountRow() => Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFF0EBF9)))),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          _uppercase('Discount'),
+          SizedBox(
+            width: 160, height: 38,
+            child: TextFormField(
+              controller: _discountCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+              ],
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.w500, color: Colors.black87),
+              decoration: _eDeco().copyWith(
+                hintText: 'e.g., 5',
+                hintStyle: const TextStyle(
+                    color: Color(0xFFB0A8C8), fontWeight: FontWeight.w400),
+              ),
+              onChanged: (_) => setState(_recalc),
+            ),
+          ),
+        ]),
+      );
+
+  // Product card helpers
+  Widget _pfView(String label, String val) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _pfLabel(label),
+          const SizedBox(height: 4),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF9F7FD),
+              border: Border.all(color: kBorder),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              val.trim().isEmpty ? 'No data' : val,
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: val.trim().isEmpty ? kEmpty : Colors.black87),
+            ),
+          ),
+        ],
+      );
+
+  Widget _pfDropdown({
+    required String label,
+    required String? value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+    bool required = false,
+    bool hasError = false,
+  }) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _pfLabelReq(label, required),
+        const SizedBox(height: 4),
+        DropdownButtonFormField<String>(
+          value: value,
+          decoration: _pfDeco(hasError: hasError),
+          isExpanded: true,
+          hint: const Text('Select Product',
+              style: TextStyle(color: Color(0xFFB0A8C8), fontSize: 13)),
+          items: items
+              .map((k) => DropdownMenuItem(
+                  value: k,
+                  child: Text(k, style: const TextStyle(fontSize: 13))))
+              .toList(),
+          onChanged: onChanged,
+          validator: required
+              ? (v) {
+                  if (!_submitted) return null;
+                  return (v == null || v.isEmpty) ? 'Required.' : null;
+                }
+              : null,
+        ),
+      ]);
+
+  Widget _pfDisabled(String label, String val) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _pfLabel(label),
+          const SizedBox(height: 4),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            decoration: BoxDecoration(
+              color: kPrimary.withValues(alpha: 0.02),
+              border: Border.all(color: kPrimary.withValues(alpha: 0.18), width: 1.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(val.trim().isEmpty ? '—' : val,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: val.trim().isEmpty ? const Color(0xFFB0A8C8) : Colors.black54)),
+          ),
+        ],
+      );
+
+  Widget _pfTextInput({
+    required String label,
+    required TextEditingController controller,
+    bool required = false,
+    bool hasError = false,
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+    ValueChanged<String>? onChanged,
+  }) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _pfLabelReq(label, required),
+        const SizedBox(height: 4),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          inputFormatters: inputFormatters,
+          style: const TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w500, color: Colors.black87),
+          decoration: _pfDeco(hasError: hasError),
+          onChanged: onChanged,
+          validator: required
+              ? (v) {
+                  if (!_submitted) return null;
+                  if (v == null || v.trim().isEmpty) return 'Required.';
+                  if (int.tryParse(v) != null && int.parse(v) <= 0)
+                    return 'Required.';
+                  return null;
+                }
+              : null,
+        ),
+      ]);
+
+  InputDecoration _pfDeco({bool hasError = false}) => InputDecoration(
+        filled: true,
+        fillColor: hasError ? const Color(0x0ADC2626) : kPrimary.withValues(alpha: 0.03),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: hasError ? kRed : kPrimary.withValues(alpha: 0.22), width: 1.5)),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: hasError ? kRed : kPrimary.withValues(alpha: 0.22), width: 1.5)),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: hasError ? kRed : kPrimary, width: 1.5)),
+        errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: kRed, width: 1.5)),
+        errorStyle: const TextStyle(
+            fontSize: 11, fontWeight: FontWeight.w600, color: kRed),
+        isDense: true,
+      );
+
+  Widget _uppercase(String t) => Text(t.toUpperCase(),
+      style: const TextStyle(
+          fontSize: 11, fontWeight: FontWeight.w700,
+          color: kMuted, letterSpacing: 0.5));
+
+  Widget _uppercaseReq(String t, bool req) => Row(children: [
+        _uppercase(t),
+        if (req)
+          const Text(' *',
+              style: TextStyle(color: kRed, fontSize: 11, fontWeight: FontWeight.w700)),
+      ]);
+
+  Widget _pfLabel(String t) => Text(t.toUpperCase(),
+      style: const TextStyle(
+          fontSize: 10.5, fontWeight: FontWeight.w700,
+          color: kMuted, letterSpacing: 0.4));
+
+  Widget _pfLabelReq(String t, bool req) => Row(children: [
+        _pfLabel(t),
+        if (req)
+          const Text(' *',
+              style: TextStyle(color: kRed, fontSize: 10.5, fontWeight: FontWeight.w700)),
+      ]);
+
+  String _fmt(double n) => n
+      .toStringAsFixed(2)
+      .replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
+
+  String _fmtDate(String raw) {
+    if (raw.isEmpty) return '';
+    try {
+      final d = DateTime.parse(raw);
+      const months = [
+        '', 'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      return '${months[d.month]} ${d.day.toString().padLeft(2, '0')}, ${d.year}';
+    } catch (_) { return raw; }
   }
 }

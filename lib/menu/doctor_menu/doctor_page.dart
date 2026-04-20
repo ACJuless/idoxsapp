@@ -15,7 +15,8 @@ class _DoctorPageState extends State<DoctorPage>
   String _search = '';
   String userEmail = '';
   String emailKey = '';
-  String _userClientType = ''; // NEW: client type from SharedPreferences
+  String _userClientType = ''; // client type from SharedPreferences
+  String _userId = ''; // MR ID (e.g. MR00001) from SharedPreferences
 
   late AnimationController _fabController;
   late Animation<double> _fadeAnimation;
@@ -72,15 +73,17 @@ class _DoctorPageState extends State<DoctorPage>
     super.dispose();
   }
 
-  // Load emailKey and clientType from SharedPreferences
+  // Load emailKey, clientType, and MR userId from SharedPreferences
   Future<void> _loadUserPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     userEmail = prefs.getString('userEmail') ?? '';
     final clientType = prefs.getString('userClientType') ?? 'both';
+    final userId = prefs.getString('userId') ?? ''; // MR00001, etc.
 
     setState(() {
       emailKey = userEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
       _userClientType = clientType;
+      _userId = userId;
     });
   }
 
@@ -210,17 +213,38 @@ class _DoctorPageState extends State<DoctorPage>
     }
   }
 
+  // Logical name (for labels only)
+  String _collectionName() {
+    if (_userClientType == 'pharma') return 'doctors';
+    if (_userClientType == 'farmers') return 'farmers';
+    return 'doctors';
+  }
+
+  /// Get the doctors collection reference for the logged-in MR:
+  /// /DaloyClients/IVA/Users/{_userId}/Doctor
+  CollectionReference<Map<String, dynamic>> _doctorsCollectionRef() {
+    if (_userId.isEmpty) {
+      // Dummy path while prefs are loading
+      return FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('Users')
+          .doc('_dummy')
+          .collection('Doctor');
+    }
+
+    return FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc('IVA')
+        .collection('Users')
+        .doc(_userId)
+        .collection('Doctor');
+  }
+
   Future<void> _deleteDoctor(String docId) async {
     try {
-      final collectionName = _collectionName();
-      await FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('users')
-          .collection(emailKey)
-          .doc(collectionName)
-          .collection(collectionName)
-          .doc(docId)
-          .delete();
+      final doctorsCollection = _doctorsCollectionRef();
+      await doctorsCollection.doc(docId).delete();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${_entitySingular()} deleted')),
       );
@@ -229,14 +253,6 @@ class _DoctorPageState extends State<DoctorPage>
         SnackBar(content: Text('Failed to delete: $e')),
       );
     }
-  }
-
-  // Decide which collection to use based on client type
-  String _collectionName() {
-    if (_userClientType == 'pharma') return 'doctors';
-    if (_userClientType == 'farmers') return 'farmers';
-    // 'both' or unknown: default to doctors for now; you can handle both in UI if needed
-    return 'doctors';
   }
 
   Future<bool> _showDeleteConfirmDialog(String entityName) async {
@@ -616,16 +632,10 @@ class _DoctorPageState extends State<DoctorPage>
               ),
             ),
             Expanded(
-              child: emailKey.isEmpty || _userClientType.isEmpty
+              child: _userId.isEmpty || _userClientType.isEmpty
                   ? const Center(child: CircularProgressIndicator())
                   : StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore.instance
-                          .collection('flowDB')
-                          .doc('users')
-                          .collection(emailKey)
-                          .doc(_collectionName())
-                          .collection(_collectionName())
-                          .snapshots(),
+                      stream: _doctorsCollectionRef().snapshots(),
                       builder: (context, snapshot) {
                         if (!snapshot.hasData) {
                           return const Center(
@@ -663,7 +673,10 @@ class _DoctorPageState extends State<DoctorPage>
 
                         if (filteredDoctorsWithId.isEmpty) {
                           return Center(
-                              child: Text("No ${_entityPlural().toLowerCase()} found"));
+                            child: Text(
+                              "No ${_entityPlural().toLowerCase()} found",
+                            ),
+                          );
                         }
 
                         final groupedDoctors =
@@ -675,22 +688,27 @@ class _DoctorPageState extends State<DoctorPage>
                           itemCount: sortedInitials.length,
                           itemBuilder: (context, idx) {
                             String initial = sortedInitials[idx];
-                            var doctorsForLetter = groupedDoctors[initial]!;
+                            var doctorsForLetter =
+                                groupedDoctors[initial]!;
                             return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
                               children: [
                                 Container(
-                                  margin: const EdgeInsets.symmetric(
+                                  margin:
+                                      const EdgeInsets.symmetric(
                                     horizontal: 12,
                                     vertical: 6,
                                   ),
                                   decoration: BoxDecoration(
-                                    color:
-                                        const Color.fromRGBO(152, 16, 250, 1),
-                                    borderRadius: BorderRadius.circular(18),
+                                    color: const Color.fromRGBO(
+                                        152, 16, 250, 1),
+                                    borderRadius:
+                                        BorderRadius.circular(18),
                                   ),
                                   width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(
+                                  padding:
+                                      const EdgeInsets.symmetric(
                                     horizontal: 20,
                                     vertical: 8,
                                   ),
@@ -711,7 +729,8 @@ class _DoctorPageState extends State<DoctorPage>
                                             ? _buildEditLeading(doc)
                                             : const Icon(
                                                 Icons.person,
-                                                color: Color(0xFF5958b2),
+                                                color:
+                                                    Color(0xFF5958b2),
                                               )),
                                     title: Text(
                                       "${doc["lastName"]}, ${doc["firstName"]}",
@@ -721,17 +740,20 @@ class _DoctorPageState extends State<DoctorPage>
                                           CrossAxisAlignment.start,
                                       children: [
                                         const SizedBox(height: 2),
-                                        Text(doc["specialty"] ?? ''),
+                                        Text(
+                                            doc["specialty"] ?? ''),
                                         Text(
                                           doc["city"] ?? '',
                                           style: TextStyle(
-                                            color: Colors.grey.shade700,
+                                            color:
+                                                Colors.grey.shade700,
                                           ),
                                         ),
                                       ],
                                     ),
                                     onTap: () {
-                                      if (_isDeleteMode || _isEditMode) {
+                                      if (_isDeleteMode ||
+                                          _isEditMode) {
                                         return;
                                       }
                                       _navigateToDoctorDetail(
