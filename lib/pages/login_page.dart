@@ -139,8 +139,7 @@ class _LoginPageState extends State<LoginPage> {
           throw Exception('Invalid email, password, or territory');
         }
 
-        final userData =
-            userDocSnap.data() as Map<String, dynamic>? ?? {};
+        final userData = userDocSnap.data() as Map<String, dynamic>? ?? {};
 
         // Check territory
         if (userData['territoryId'] != _selectedTerritory) {
@@ -212,8 +211,6 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isLand =
-        MediaQuery.of(context).orientation == Orientation.landscape;
     final gradientColors = [
       Color(0xFF4b2874),
       Color(0xFF4b2874),
@@ -224,14 +221,6 @@ class _LoginPageState extends State<LoginPage> {
       Color(0xFFFFFFFF),
       Color(0xFFFFFFFF),
     ];
-
-    final args =
-        ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
-
-    final userEmail = args?['userEmail'];
-    final userId = args?['userId'];
-    final territoryId = args?['territoryId'];
-    final userName = args?['userName'];
 
     return Scaffold(
       body: Container(
