@@ -8,7 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class CallSignaturePage extends StatefulWidget {
   final String doctorId;
-  final String scheduledVisitId; // EXPECTED to be yyyy-MM-dd for this doctor
+  // EXPECTED: yyyyMMdd (e.g. 20260422) for this doctor
+  final String scheduledVisitId;
   final void Function(bool drawing)? onDrawing;
 
   const CallSignaturePage({
@@ -33,7 +34,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
   bool _saving = false;
   bool _hasSignature = false;
 
-  // New flag: whether allocations have been successfully saved at least once.
+  // Flag: whether allocations have been successfully saved at least once.
   bool _allocationsSavedOnce = false;
 
   List<String> sampleProducts = [];
@@ -51,6 +52,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
 
   String? emailKey;
   String userClientType = ''; // pharma / farmers / legacy
+  String _userId = '';        // MR00001 (MR code)
 
   @override
   void initState() {
@@ -63,13 +65,15 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
     final prefs = await SharedPreferences.getInstance();
     final userEmail = prefs.getString('userEmail') ?? '';
     final storedClientType = prefs.getString('userClientType') ?? '';
+    final storedUserId = prefs.getString('userId') ?? '';
 
     setState(() {
       emailKey = userEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
       userClientType = storedClientType;
+      _userId = storedUserId;
     });
 
-    if (emailKey != null && emailKey!.isNotEmpty) {
+    if (_userId.isNotEmpty) {
       _loadExistingSignature();
     }
   }
@@ -80,136 +84,133 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
     super.dispose();
   }
 
-  /// Build the Firestore doc ref where this visit data is stored.
-  /// Path (matches HomePage / VisitsTab addressing):
-  ///   pharma  : flowDB/users/RR/{emailKey}/doctors/doctors/doctors/{doctorId}/scheduledVisits/...
-  ///   farmers: flowDB/users/INDOFIL/{emailKey}/doctors/doctors/doctors/{doctorId}/scheduledVisits/...
-  ///   else   : flowDB/users/{emailKey}/doctors/doctors/{doctorId}/scheduledVisits/...
-  DocumentReference<Map<String, dynamic>> _visitDocRef() {
-    final dateId = widget.scheduledVisitId; // assumed yyyy-MM-dd
-    final year = dateId.substring(0, 4);
-    final month = dateId.substring(5, 7);
-    final monthId = '$year-$month'; // yyyy-MM
-
-    final root = FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users');
-
-    CollectionReference<Map<String, dynamic>> doctorsCollection;
-
+  /// Decide which Daloy segment to use based on clientType and email.
+  String _getClientSegment(String userClientType, String userEmail) {
+    if (userClientType == 'farmers') return 'INDOFIL';
     if (userClientType == 'pharma') {
-      doctorsCollection = root
-          .collection('RR')
-          .doc(emailKey!)
-          .collection('doctors')
-          .doc('doctors')
-          .collection('doctors');
-    } else if (userClientType == 'farmers') {
-      doctorsCollection = root
-          .collection('INDOFIL')
-          .doc(emailKey!)
-          .collection('doctors')
-          .doc('doctors')
-          .collection('doctors');
-    } else {
-      // legacy / default path
-      doctorsCollection = root
-          .collection(emailKey!)
-          .doc('doctors')
-          .collection('doctors');
+      final lower = userEmail.toLowerCase();
+      if (lower.endsWith('@wert.com')) return 'WERT';
+      return 'IVA';
     }
+    return 'IVA';
+  }
 
-    return doctorsCollection
-        .doc(widget.doctorId)
-        .collection('scheduledVisits')
-        .doc('months')
-        .collection('months')
-        .doc(monthId)
-        .collection('dates')
-        .doc(dateId);
+  /// Base doctor document:
+  ///   /DaloyClients/{SEGMENT}/Users/{MR00001}/Doctor/{doctorId}
+  DocumentReference<Map<String, dynamic>> _doctorDocRef() {
+    final userEmail = emailKey?.replaceAll('_', '.') ?? '';
+    final segment = _getClientSegment(userClientType, userEmail);
+
+    return FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc(segment)
+        .collection('Users')
+        .doc(_userId)
+        .collection('Doctor')
+        .doc(widget.doctorId);
+  }
+
+  /// Visit document (schedule meta only):
+  ///   /Doctor/{doctorId}/Visits/{visitId}
+  DocumentReference<Map<String, dynamic>> _visitDocRef() {
+    final visitId = widget.scheduledVisitId; // yyyyMMdd
+    return _doctorDocRef()
+        .collection('Visits')
+        .doc(visitId);
+  }
+
+  /// SampleAllocations document (samples + signature):
+  ///   /Doctor/{doctorId}/SampleAllocations/{visitId}
+  DocumentReference<Map<String, dynamic>> _sampleAllocationsDocRef() {
+    final visitId = widget.scheduledVisitId; // yyyyMMdd
+    return _doctorDocRef()
+        .collection('SampleAllocations')
+        .doc(visitId);
   }
 
   Future<void> _loadExistingSignature() async {
-    if (emailKey == null) return;
+    if (_userId.isEmpty) return;
+
     try {
-      final visitDoc = await _visitDocRef().get();
+      final sampleAllocRef = _sampleAllocationsDocRef();
+      final sampleAllocDoc = await sampleAllocRef.get();
 
-      if (visitDoc.exists) {
-        final data = visitDoc.data();
-        // ===== LOAD SAMPLE ALLOCATIONS IF PRESENT =====
-        Map<String, int> loadedSampleQty = {};
-        List<String> loadedSamples = [];
-        if (data != null && data.containsKey('sampleAllocations')) {
-          final sampleMap =
-              Map<String, dynamic>.from(data['sampleAllocations']);
-          sampleMap.forEach((key, val) {
+      if (!sampleAllocDoc.exists) {
+        // Nothing saved yet.
+        return;
+      }
+
+      final data = sampleAllocDoc.data() ?? {};
+
+      // ===== LOAD SAMPLE ALLOCATIONS MAP =====
+      Map<String, int> loadedSampleQty = {};
+      List<String> loadedSamples = [];
+
+      if (data.containsKey('sampleAllocations')) {
+        final allocMap =
+            Map<String, dynamic>.from(data['sampleAllocations'] as Map);
+        allocMap.forEach((key, val) {
+          final qty =
+              val is int ? val : int.tryParse(val.toString()) ?? 0;
+          if (qty > 0) {
             loadedSamples.add(key);
-            loadedSampleQty[key] =
-                val is int ? val : int.tryParse(val.toString()) ?? 1;
-          });
-        }
+            loadedSampleQty[key] = qty;
+          }
+        });
+      }
 
-        // If there are any allocations in Firestore, treat as "saved once"
-        if (loadedSamples.isNotEmpty) {
-          _allocationsSavedOnce = true;
-        }
+      if (loadedSamples.isNotEmpty) {
+        _allocationsSavedOnce = true;
+      }
 
-        // ===== LOAD SIGNATURE AS BEFORE =====
-        if (data != null && data.containsKey('signaturePoints')) {
-          final signatureData =
-              data['signaturePoints'] as List<dynamic>;
-          final List<Point> points =
-              signatureData.map((pointData) {
-            final map =
-                pointData as Map<String, dynamic>;
-            return Point(
-              Offset(map['x'] as double, map['y'] as double),
-              PointType.values[map['type'] as int],
-              map['pressure'] as double? ?? 1.0,
-            );
-          }).toList();
+      // ===== LOAD SIGNATURE POINTS FROM SampleAllocations DOC =====
+      if (data.containsKey('signaturePoints')) {
+        final signatureData = data['signaturePoints'] as List<dynamic>;
+        final List<Point> points = signatureData.map((pointData) {
+          final map = pointData as Map<String, dynamic>;
+          return Point(
+            Offset(map['x'] as double, map['y'] as double),
+            PointType.values[map['type'] as int],
+            map['pressure'] as double? ?? 1.0,
+          );
+        }).toList();
 
-          setState(() {
-            samples = loadedSamples;
-            sampleQty = loadedSampleQty;
-            _controller.points = points;
-            _hasSignature = true;
-            _controller.disabled = true;
-          });
-          return;
-        }
-
-        // No signature, but allocations exist
         setState(() {
           samples = loadedSamples;
           sampleQty = loadedSampleQty;
+          _controller.points = points;
+          _hasSignature = true;
+          _controller.disabled = true;
         });
+        return;
       }
+
+      // No signature, but allocations exist
+      setState(() {
+        samples = loadedSamples;
+        sampleQty = loadedSampleQty;
+      });
     } catch (e) {
       print('Error loading signature/sample allocations: $e');
     }
   }
 
   Future<void> _deleteSignature() async {
-    if (emailKey == null) return;
+    if (_userId.isEmpty) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('Delete Signature'),
-          content: Text(
-              'Are you sure you want to delete this signature?'),
+          content: Text('Are you sure you want to delete this signature?'),
           actions: [
             TextButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(false),
+              onPressed: () => Navigator.of(context).pop(false),
               child: Text('Cancel'),
             ),
             TextButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(true),
-              style: TextButton.styleFrom(
-                  foregroundColor: Colors.red),
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
               child: Text('Yes'),
             ),
           ],
@@ -219,11 +220,13 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
 
     if (confirmed == true) {
       try {
-        await _visitDocRef().set(
+        // Remove signature fields from SampleAllocations doc
+        await _sampleAllocationsDocRef().set(
           {
             'signaturePoints': FieldValue.delete(),
             'signatureSavedAt': FieldValue.delete(),
             'submitted': false,
+            'submittedAt': FieldValue.delete(),
           },
           SetOptions(merge: true),
         );
@@ -236,16 +239,14 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content:
-                Text('Signature deleted successfully'),
+            content: Text('Signature deleted successfully'),
             backgroundColor: Colors.orange,
           ),
         );
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                'Error deleting signature: ${e.toString()}'),
+            content: Text('Error deleting signature: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -254,55 +255,100 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
   }
 
   Future<void> _saveSignatureAndSubmit() async {
-    if (emailKey == null) return;
+    if (_userId.isEmpty) return;
+
     if (samples.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-              'You must add at least one sample allocation.'),
+          content: Text('You must add at least one sample allocation.'),
           backgroundColor: Colors.red,
         ),
       );
       return;
     }
     setState(() => _saving = true);
+
     try {
-      // build base update data
-      Map<String, dynamic> updateData = {
-        'sampleAllocations': sampleQty,
-      };
+      final visitRef = _visitDocRef();
+      final sampleAllocRef = _sampleAllocationsDocRef();
 
-      // always make sure scheduledDate is present on this doc
-      final dateId = widget.scheduledVisitId; // yyyy-MM-dd
-      updateData['scheduledDate'] = dateId;
-
-      // optionally, if you pass scheduledTime via route or store it:
-      // updateData['scheduledTime'] = someTimeString;
-
-      if (_controller.isNotEmpty) {
-        final points = _controller.points;
-        final signatureData = points.map((point) {
-          return {
-            'x': point.offset.dx,
-            'y': point.offset.dy,
-            'type': point.type.index,
-            'pressure': point.pressure,
-          };
-        }).toList();
-        updateData.addAll({
-          'signaturePoints': signatureData,
-          'signatureSavedAt': FieldValue.serverTimestamp(),
-          'submitted': true,
-          'submittedAt': FieldValue.serverTimestamp(),
-        });
-      }
-
-      // Use set(..., merge: true) so doc is created if missing,
-      // and updated otherwise.
-      await _visitDocRef().set(
-        updateData,
+      // 1) Ensure the visit meta doc has scheduledDate (and optional time)
+      final String dateId = widget.scheduledVisitId; // yyyyMMdd
+      await visitRef.set(
+        {
+          'scheduledDate': dateId,
+          // 'scheduledTime': someTimeString, // if you have it
+        },
         SetOptions(merge: true),
       );
+
+      // 2) Build the allocations map we want to keep
+      final Map<String, dynamic> allocMapToSave = {};
+      sampleQty.forEach((key, value) {
+        if (value > 0) {
+          allocMapToSave[key] = value;
+        }
+      });
+
+      // 3) If there is a signature, we also purge old int64 fields (per-sample)
+      //    and then write sampleAllocations + signature in one go.
+      if (_controller.isNotEmpty) {
+        await FirebaseFirestore.instance.runTransaction((txn) async {
+          final currentSnap = await txn.get(sampleAllocRef);
+          Map<String, dynamic> existing = {};
+          if (currentSnap.exists) {
+            existing = Map<String, dynamic>.from(currentSnap.data() ?? {});
+          }
+
+          // Reserved keys we want to keep; everything else at top level is considered legacy
+          const reservedKeys = {
+            'sampleAllocations',
+            'signaturePoints',
+            'signatureSavedAt',
+            'submitted',
+            'submittedAt',
+          };
+
+          final Map<String, dynamic> cleaned = {};
+
+          // Copy only reserved keys from existing (we will override some of them below anyway)
+          existing.forEach((key, value) {
+            if (reservedKeys.contains(key)) {
+              cleaned[key] = value;
+            }
+          });
+
+          // Now override with the latest allocations and signature data
+          cleaned['sampleAllocations'] = allocMapToSave;
+
+          final points = _controller.points;
+          final signatureData = points.map((point) {
+            return {
+              'x': point.offset.dx,
+              'y': point.offset.dy,
+              'type': point.type.index,
+              'pressure': point.pressure,
+            };
+          }).toList();
+
+          cleaned['signaturePoints'] = signatureData;
+          cleaned['signatureSavedAt'] = FieldValue.serverTimestamp();
+          cleaned['submitted'] = true;
+          cleaned['submittedAt'] = FieldValue.serverTimestamp();
+
+          // Write back the cleaned document (legacy int64 fields are gone)
+          txn.set(sampleAllocRef, cleaned);
+        });
+      } else {
+        // No signature yet -> just write/merge sampleAllocations.
+        await sampleAllocRef.set(
+          {
+            'sampleAllocations': allocMapToSave,
+            'submitted': false,
+          },
+          SetOptions(merge: true),
+        );
+      }
 
       // Mark allocations as saved at least once
       if (!_allocationsSavedOnce) {
@@ -349,10 +395,8 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
   }
 
   Future<void> _loadPdfSampleProducts() async {
-    final manifestContent =
-        await rootBundle.loadString('AssetManifest.json');
-    final Map<String, dynamic> manifestMap =
-        jsonDecode(manifestContent);
+    final manifestContent = await rootBundle.loadString('AssetManifest.json');
+    final Map<String, dynamic> manifestMap = jsonDecode(manifestContent);
     final pdfs = manifestMap.keys
         .where((String key) =>
             key.startsWith('assets/marketing_tools/') &&
@@ -368,9 +412,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
               .replaceAll('.pdf', '')
               .replaceAll('_', ' '))
           .toList();
-      sampleCounts = {
-        for (final s in sampleProducts) s: 0
-      };
+      sampleCounts = {for (final s in sampleProducts) s: 0};
     });
   }
 
@@ -394,8 +436,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                     .toList(),
                 onChanged: (newVal) {
                   if (newVal != null) {
-                    setStateDialog(
-                        () => dropdownValue = newVal);
+                    setStateDialog(() => dropdownValue = newVal);
                   }
                 },
                 decoration: InputDecoration(
@@ -411,21 +452,18 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                     icon: Icon(Icons.remove_circle_outline,
                         color: Colors.red, size: 28),
                     onPressed: tempQty > 1
-                        ? () =>
-                            setStateDialog(() => tempQty--)
+                        ? () => setStateDialog(() => tempQty--)
                         : null,
                   ),
                   Text(
                     '$tempQty',
                     style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold),
+                        fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   IconButton(
                     icon: Icon(Icons.add_circle_outline,
                         color: Colors.green, size: 28),
-                    onPressed: () =>
-                        setStateDialog(() => tempQty++),
+                    onPressed: () => setStateDialog(() => tempQty++),
                   ),
                 ],
               ),
@@ -433,8 +471,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
           ),
           actions: [
             TextButton(
-              onPressed: () =>
-                  Navigator.pop(context),
+              onPressed: () => Navigator.pop(context),
               child: Text('Cancel'),
             ),
             ElevatedButton(
@@ -457,7 +494,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
 
   @override
   Widget build(BuildContext context) {
-    if (emailKey == null || emailKey!.isEmpty) {
+    if (_userId.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: Text('Signature')),
         body: Center(child: CircularProgressIndicator()),
@@ -471,27 +508,23 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
         builder: (context, constraints) {
           return SingleChildScrollView(
             child: Padding(
-              padding:
-                  const EdgeInsets.fromLTRB(24, 32, 24, 24),
+              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // ================================
                   //       PROMO MATERIALS FIRST
                   // ================================
                   Text(
                     'Promo Materials Allocated:',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16),
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                   SizedBox(height: 16),
                   ...samples.map(
                     (sample) => Card(
                       elevation: 0,
-                      margin:
-                          EdgeInsets.symmetric(vertical: 2),
+                      margin: EdgeInsets.symmetric(vertical: 2),
                       child: ListTile(
                         leading: IconButton(
                           icon: Icon(Icons.close,
@@ -504,31 +537,57 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                                     sampleQty.remove(sample);
                                   });
 
-                                  if (emailKey != null &&
-                                      emailKey!
-                                          .isNotEmpty) {
-                                    final docRef =
-                                        _visitDocRef();
+                                  if (_userId.isNotEmpty) {
+                                    final sampleAllocRef =
+                                        _sampleAllocationsDocRef();
+                                    final current =
+                                        (await sampleAllocRef.get()).data() ??
+                                            {};
 
-                                    await docRef.update({
-                                      'sampleAllocations.$sample':
-                                          FieldValue
-                                              .delete(),
-                                    });
+                                    if (current.containsKey('sampleAllocations')) {
+                                      final allocMap =
+                                          Map<String, dynamic>.from(
+                                              current['sampleAllocations']
+                                                  as Map);
+                                      allocMap.remove(sample);
+                                      current['sampleAllocations'] = allocMap;
+
+                                      final hasAllocations = allocMap.isNotEmpty;
+                                      final hasSignature =
+                                          current.containsKey('signaturePoints');
+
+                                      if (!hasAllocations && !hasSignature) {
+                                        await sampleAllocRef.delete();
+                                      } else {
+                                        await sampleAllocRef.set(
+                                          current,
+                                          SetOptions(merge: false),
+                                        );
+                                      }
+                                    } else {
+                                      final hasSignature =
+                                          current.containsKey('signaturePoints');
+                                      if (!hasSignature) {
+                                        await sampleAllocRef.delete();
+                                      } else {
+                                        await sampleAllocRef.set(
+                                          current,
+                                          SetOptions(merge: false),
+                                        );
+                                      }
+                                    }
                                   }
                                 },
                         ),
                         title: Text(
                           sample,
                           style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500),
+                              fontSize: 15, fontWeight: FontWeight.w500),
                         ),
                         trailing: Text(
                           'Qty: ${sampleQty[sample] ?? 1}',
                           style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold),
+                              fontSize: 16, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
@@ -536,26 +595,19 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                   SizedBox(height: 16),
                   Center(
                     child: ElevatedButton.icon(
-                      onPressed: _hasSignature
-                          ? null
-                          : _showAddSampleDialog,
+                      onPressed:
+                          _hasSignature ? null : _showAddSampleDialog,
                       icon: Icon(Icons.add),
                       label: Text(
                         'Add ProMats',
                         style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16),
+                            fontWeight: FontWeight.bold, fontSize: 16),
                       ),
-                      style:
-                          ElevatedButton.styleFrom(
+                      style: ElevatedButton.styleFrom(
                         padding: EdgeInsets.symmetric(
-                            horizontal: 28,
-                            vertical: 14),
-                        shape:
-                            RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(
-                                  12),
+                            horizontal: 28, vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                     ),
@@ -567,13 +619,11 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                   //   1) has samples
                   //   2) user pressed Save & Submit at least once
                   // ================================
-                  if (samples.isNotEmpty &&
-                      _allocationsSavedOnce) ...[
+                  if (samples.isNotEmpty && _allocationsSavedOnce) ...[
                     Text(
                       "Draw the doctor's signature below:",
                       style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16),
+                          fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                     SizedBox(height: 8),
                     if (_hasSignature)
@@ -581,33 +631,25 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                         padding: EdgeInsets.symmetric(
                             horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: Colors
-                              .green.shade100,
-                          borderRadius:
-                              BorderRadius.circular(
-                                  12),
+                          color: Colors.green.shade100,
+                          borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                              color: Colors
-                                  .green.shade700),
+                              color: Colors.green.shade700),
                         ),
                         child: Row(
-                          mainAxisSize:
-                              MainAxisSize.min,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
                               Icons.check_circle,
-                              color: Colors
-                                  .green.shade700,
+                              color: Colors.green.shade700,
                               size: 18,
                             ),
                             SizedBox(width: 6),
                             Text(
                               'Signature Saved & Submitted',
                               style: TextStyle(
-                                color: Colors
-                                    .green.shade700,
-                                fontWeight:
-                                    FontWeight.bold,
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.bold,
                                 fontSize: 13,
                               ),
                             ),
@@ -617,75 +659,46 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                     SizedBox(height: 12),
                     Listener(
                       onPointerDown: (_) =>
-                          widget.onDrawing
-                              ?.call(true),
+                          widget.onDrawing?.call(true),
                       onPointerUp: (_) =>
-                          widget.onDrawing
-                              ?.call(false),
+                          widget.onDrawing?.call(false),
                       child: Stack(
                         children: [
                           Container(
                             height: signPadHeight,
                             decoration: BoxDecoration(
-                              borderRadius:
-                                  BorderRadius.circular(
-                                      10),
+                              borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                  color: Colors
-                                      .black45,
-                                  width: 2),
+                                  color: Colors.black45, width: 2),
                               color: Colors.white,
                             ),
                             child: Signature(
-                              controller:
-                                  _controller,
-                              backgroundColor:
-                                  Colors
-                                      .transparent,
+                              controller: _controller,
+                              backgroundColor: Colors.transparent,
                             ),
                           ),
                           if (_hasSignature)
                             Positioned.fill(
                               child: Container(
-                                decoration:
-                                    BoxDecoration(
-                                  borderRadius:
-                                      BorderRadius
-                                          .circular(
-                                              10),
-                                  color: Colors
-                                      .grey
-                                      .withOpacity(
-                                          0.1),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(10),
+                                  color: Colors.grey.withOpacity(0.1),
                                 ),
                                 child: Center(
                                   child: Container(
-                                    padding: EdgeInsets
-                                        .symmetric(
-                                            horizontal:
-                                                16,
-                                            vertical:
-                                                8),
-                                    decoration:
-                                        BoxDecoration(
-                                      color: Colors
-                                          .black54,
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
                                       borderRadius:
-                                          BorderRadius
-                                              .circular(
-                                                  8),
+                                          BorderRadius.circular(8),
                                     ),
                                     child: Text(
                                       'Signature Locked',
-                                      style:
-                                          TextStyle(
-                                        color: Colors
-                                            .white,
-                                        fontWeight:
-                                            FontWeight
-                                                .bold,
-                                        fontSize:
-                                            14,
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
                                       ),
                                     ),
                                   ),
@@ -705,44 +718,28 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                     child: SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed:
-                            (_saving ||
-                                    samples
-                                        .isEmpty)
-                                ? null
-                                : _saveSignatureAndSubmit,
+                        onPressed: (_saving || samples.isEmpty)
+                            ? null
+                            : _saveSignatureAndSubmit,
                         icon: _saving
                             ? SizedBox(
                                 width: 16,
                                 height: 16,
-                                child:
-                                    CircularProgressIndicator(
-                                  color:
-                                      Colors.white,
-                                  strokeWidth:
-                                      2,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
                                 ),
                               )
                             : Icon(Icons.check),
                         label: Text(
-                          _saving
-                              ? "Saving..."
-                              : "Save & Submit",
+                          _saving ? "Saving..." : "Save & Submit",
                         ),
-                        style:
-                            ElevatedButton.styleFrom(
-                          backgroundColor:
-                              Colors.green
-                                  .shade700,
-                          foregroundColor:
-                              Colors.white,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green.shade700,
+                          foregroundColor: Colors.white,
                           padding:
-                              EdgeInsets
-                                  .symmetric(
-                            vertical: 14,
-                          ),
-                          disabledBackgroundColor:
-                              Colors.grey,
+                              EdgeInsets.symmetric(vertical: 14),
+                          disabledBackgroundColor: Colors.grey,
                         ),
                       ),
                     ),
