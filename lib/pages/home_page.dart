@@ -159,141 +159,244 @@ Map<int, bool> checkedStates = {};
 
 // CALL PERFORMANCE STATS
 
-// MONTHLY CALL PERFORMANCE
-Future<Map<String, int>> _getAccomplishedVisitsForMonth(
-    String emailKey, String userName) async {
-  final now = DateTime.now();
-  final String monthPrefix =
-      '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}';
-  int totalCount = 0;
-  int accomplishedCount = 0;
+// Helper: derive segment from client type + email
+String _getClientSegment(String userClientType, String userEmail) {
+  if (userClientType == 'farmers') return 'INDOFIL';
+  if (userClientType == 'pharma') {
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@wert.com')) return 'WERT';
+    return 'IVA';
+  }
+  return 'IVA';
+}
 
-  final doctorSnapshot = await FirebaseFirestore.instance
-      .collection('flowDB')
-      .doc('users')
-      .collection(emailKey)
-      .doc('doctors')
-      .collection('doctors')
-      .get();
+  Future<List<Map<String, dynamic>>> getAllScheduledVisitsForToday({
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs,
+    required DateTime selectedDay,
+  }) async {
+    // If there are no doctors, nothing to do.
+    if (doctorDocs.isEmpty) return [];
 
-  for (var doc in doctorSnapshot.docs) {
-    var scheduledVisitsSnap =
-        await doc.reference.collection('scheduledVisits').get();
+    final List<Map<String, dynamic>> allVisits = [];
 
-    for (var v in scheduledVisitsSnap.docs) {
-      final visitData = v.data();
-      final visitDateString = visitData['scheduledDate'] ?? '';
-      if (visitDateString.startsWith(monthPrefix)) {
-        totalCount += 1;
-        if (visitData.containsKey('signaturePoints') &&
-            visitData['signaturePoints'] != null &&
-            (visitData['signaturePoints'] as List).isNotEmpty) {
-          accomplishedCount += 1;
+    // Today formatted as "yyyyMMdd" to match VisitsTab and Daloy Visit docs.
+    final String targetDateKey = DateFormat('yyyyMMdd').format(selectedDay); // [web:9]
+
+    for (final doc in doctorDocs) {
+      final Map<String, dynamic> docData = doc.data();
+      final String doctorId = docData['doc_id']?.toString() ?? doc.id;
+      final String doctorName =
+          "${docData['lastName'] ?? ''}, ${docData['firstName'] ?? ''}";
+
+      final String hospital = (docData['hospital'] ?? '').toString();
+      final String specialty = (docData['specialty'] ?? '').toString();
+
+      // New structure:
+      // /DaloyClients/{segment}/Users/{_userId}/Doctor/{docId}/Visits/{yyyyMMdd}
+      final visitsColRef = doc.reference.collection('Visits');
+
+      // Only visits scheduled for today:
+      // scheduledDate == targetDateKey ("yyyyMMdd"), order by scheduledTime string.[web:1][web:5]
+      final QuerySnapshot<Map<String, dynamic>> visitsSnap =
+          await visitsColRef
+              .where('scheduledDate', isEqualTo: targetDateKey)
+              .orderBy('scheduledTime')
+              .get();
+
+      for (final v in visitsSnap.docs) {
+        final Map<String, dynamic> visitData = v.data();
+
+        // Field or doc id (yyyyMMdd), similar to VisitsTab.
+        final String scheduledDateRaw =
+            (visitData['scheduledDate'] ?? v.id).toString();
+
+        // Defensive check: skip if not exactly today.
+        if (scheduledDateRaw != targetDateKey) continue;
+
+        final String scheduledTime =
+            (visitData['scheduledTime'] ?? '').toString();
+
+        allVisits.add({
+          'doctorName': doctorName,
+          'scheduledTime': scheduledTime,
+          'hospital': hospital,
+          'specialty': specialty,
+          'doctor': docData,
+          'doctorId': doctorId,
+          'visitId': v.id,       // yyyyMMdd
+          'visitData': visitData,
+        });
+      }
+    }
+
+    // Safety: final sort by time string (HH:mm).[web:1]
+    allVisits.sort(
+      (a, b) => (a['scheduledTime'] ?? '').compareTo(b['scheduledTime'] ?? ''),
+    );
+
+    return allVisits;
+  }
+
+// Today's Accomplished
+  Future<Map<String, int>> getAccomplishedVisitsForToday({
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs,
+    required DateTime selectedDay,
+  }) async {
+    // Call the existing getAllScheduledVisitsForToday method
+    final List<Map<String, dynamic>> allVisits = await getAllScheduledVisitsForToday(
+      doctorDocs: doctorDocs,
+      selectedDay: selectedDay,
+    );
+    
+    // Count how many have submitted == true
+    final int submittedCount = allVisits.where((visit) {
+      final visitData = visit['visitData'] as Map<String, dynamic>?;
+      return visitData?['submitted'] == true;
+    }).length;
+    
+    // Return both counts
+    return {
+      'total': allVisits.length,
+      'submitted': submittedCount,
+    };
+  }
+
+// Monthly Call Performance
+  Future<Map<String, int>> _getAccomplishedVisitsForMonth(
+      String emailKey, String userName) async {
+    final now = DateTime.now();
+    final String monthPrefix =
+        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}';
+    int totalCount = 0;
+    int accomplishedCount = 0;
+
+    final doctorSnapshot = await FirebaseFirestore.instance
+        .collection('flowDB')
+        .doc('users')
+        .collection(emailKey)
+        .doc('doctors')
+        .collection('doctors')
+        .get();
+
+    for (var doc in doctorSnapshot.docs) {
+      var scheduledVisitsSnap =
+          await doc.reference.collection('scheduledVisits').get();
+
+      for (var v in scheduledVisitsSnap.docs) {
+        final visitData = v.data();
+        final visitDateString = visitData['scheduledDate'] ?? '';
+        if (visitDateString.startsWith(monthPrefix)) {
+          totalCount += 1;
+          if (visitData.containsKey('signaturePoints') &&
+              visitData['signaturePoints'] != null &&
+              (visitData['signaturePoints'] as List).isNotEmpty) {
+            accomplishedCount += 1;
+          }
         }
       }
     }
-  }
-  return {
-    "total": totalCount,
-    "accomplished": accomplishedCount,
-  };
+    return {
+      "total": totalCount,
+      "accomplished": accomplishedCount,
+    };
 }
 
 // Call Reach
-Future<Map<String, dynamic>> _getCallReachStats(
-    String emailKey, String userName) async {
-  final doctorsSnap = await FirebaseFirestore.instance
-      .collection('flowDB')
-      .doc('users')
-      .collection(emailKey)
-      .doc('doctors')
-      .collection('doctors')
-      .get();
+  Future<Map<String, dynamic>> _getCallReachStats(
+      String emailKey, String userName) async {
+    final doctorsSnap = await FirebaseFirestore.instance
+        .collection('flowDB')
+        .doc('users')
+        .collection(emailKey)
+        .doc('doctors')
+        .collection('doctors')
+        .get();
 
-  int totalDoctors = doctorsSnap.docs.length;
-  int visitedDoctors = 0;
+    int totalDoctors = doctorsSnap.docs.length;
+    int visitedDoctors = 0;
 
-  for (final doc in doctorsSnap.docs) {
-    final scheduledSnapshots =
-        await doc.reference.collection('scheduledVisits').get();
+    for (final doc in doctorsSnap.docs) {
+      final scheduledSnapshots =
+          await doc.reference.collection('scheduledVisits').get();
 
-    bool hasSignaturePoints = false;
+      bool hasSignaturePoints = false;
 
-    for (final visit in scheduledSnapshots.docs) {
-      final visitData = visit.data();
-      if (visitData.containsKey('signaturePoints') &&
-          visitData['signaturePoints'] != null &&
-          (visitData['signaturePoints'] as List).isNotEmpty) {
-        hasSignaturePoints = true;
-        break;
+      for (final visit in scheduledSnapshots.docs) {
+        final visitData = visit.data();
+        if (visitData.containsKey('signaturePoints') &&
+            visitData['signaturePoints'] != null &&
+            (visitData['signaturePoints'] as List).isNotEmpty) {
+          hasSignaturePoints = true;
+          break;
+        }
       }
+
+      if (hasSignaturePoints) visitedDoctors++;
     }
 
-    if (hasSignaturePoints) visitedDoctors++;
-  }
+    double callReach = 0.0;
+    if (totalDoctors > 0) {
+      callReach = (visitedDoctors / totalDoctors) * 100.0;
+    }
 
-  double callReach = 0.0;
-  if (totalDoctors > 0) {
-    callReach = (visitedDoctors / totalDoctors) * 100.0;
-  }
-
-  return {
-    'callReach': callReach,
-    'totalDoctors': totalDoctors,
-    'visitedDoctors': visitedDoctors,
-  };
+    return {
+      'callReach': callReach,
+      'totalDoctors': totalDoctors,
+      'visitedDoctors': visitedDoctors,
+    };
 }
 
 // Call Frequency
-Future<Map<String, dynamic>> _getCallFrequencyStats(
-    String emailKey, String userName) async {
-  final now = DateTime.now();
-  final String monthPrefix =
-      '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}';
+  Future<Map<String, dynamic>> _getCallFrequencyStats(
+      String emailKey, String userName) async {
+    final now = DateTime.now();
+    final String monthPrefix =
+        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}';
 
-  final doctorsSnap = await FirebaseFirestore.instance
-      .collection('flowDB')
-      .doc('users')
-      .collection(emailKey)
-      .doc('doctors')
-      .collection('doctors')
-      .get();
+    final doctorsSnap = await FirebaseFirestore.instance
+        .collection('flowDB')
+        .doc('users')
+        .collection(emailKey)
+        .doc('doctors')
+        .collection('doctors')
+        .get();
 
-  int totalDoctors = doctorsSnap.docs.length;
-  int completedFrequency = 0;
+    int totalDoctors = doctorsSnap.docs.length;
+    int completedFrequency = 0;
 
-  for (final doc in doctorsSnap.docs) {
-    final scheduledVisitsSnap =
-        await doc.reference.collection('scheduledVisits').get();
+    for (final doc in doctorsSnap.docs) {
+      final scheduledVisitsSnap =
+          await doc.reference.collection('scheduledVisits').get();
 
-    final thisMonthVisits = scheduledVisitsSnap.docs.where((v) {
-      final visitData = v.data();
-      final visitDateString = visitData['scheduledDate'] ?? '';
-      return visitDateString.startsWith(monthPrefix);
-    }).toList();
+      final thisMonthVisits = scheduledVisitsSnap.docs.where((v) {
+        final visitData = v.data();
+        final visitDateString = visitData['scheduledDate'] ?? '';
+        return visitDateString.startsWith(monthPrefix);
+      }).toList();
 
-    if (thisMonthVisits.isEmpty) continue;
+      if (thisMonthVisits.isEmpty) continue;
 
-    bool allVisited = thisMonthVisits.every((visit) {
-      final visitData = visit.data();
-      return visitData.containsKey('signaturePoints') &&
-          visitData['signaturePoints'] != null &&
-          (visitData['signaturePoints'] as List).isNotEmpty;
-    });
+      bool allVisited = thisMonthVisits.every((visit) {
+        final visitData = visit.data();
+        return visitData.containsKey('signaturePoints') &&
+            visitData['signaturePoints'] != null &&
+            (visitData['signaturePoints'] as List).isNotEmpty;
+      });
 
-    if (allVisited) completedFrequency++;
-  }
+      if (allVisited) completedFrequency++;
+    }
 
-  double frequencyPercent = 0.0;
-  if (totalDoctors > 0) {
-    frequencyPercent = (completedFrequency / totalDoctors) * 100.0;
-  }
-  return {
-    'frequencyPercent': frequencyPercent,
-    'totalDoctors': totalDoctors,
-    'completedFrequency': completedFrequency,
-  };
+    double frequencyPercent = 0.0;
+    if (totalDoctors > 0) {
+      frequencyPercent = (completedFrequency / totalDoctors) * 100.0;
+    }
+    return {
+      'frequencyPercent': frequencyPercent,
+      'totalDoctors': totalDoctors,
+      'completedFrequency': completedFrequency,
+    };
 }
+
 
 class _DonutPainter extends CustomPainter {
   final double progress; // 0.0 â€“ 1.0
@@ -361,13 +464,14 @@ class _HomePageState extends State<HomePage> {
   MapController? _mapController;
 // bool _isHeaderCollapsed = false; 
 
+  String mrCode = ''; 
   String userName = '';
   String userEmail = '';
   String emailKey = '';
   String _userId = '';
   bool _hasSubmittedSignature = false;
   bool _isLoading = true;
-  String userClientType = ''; // 'pharma', 'farmers', or legacy/other
+  String userClientType = ''; 
 
   int _selectedIndex = 0;
   bool _isOffline = false;
@@ -471,6 +575,9 @@ String? _selectedGender;
     String storedClientType = prefs.getString('userClientType') ?? '';
     String fetchEmailKey = storedEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
     String storedUserId = prefs.getString('userId') ?? '';
+    mrCode = prefs.getString('mrCode') ?? ''; // e.g. "MR00001"
+
+    
 
     bool online = await _hasNetwork();
     bool wentOffline = !online;
@@ -1641,43 +1748,6 @@ SingleChildScrollView(
     );
 
     return allVisits;
-  }
-
-  Future<Map<String, int>> getAccomplishedVisitsForToday(
-      String emailKey, String userName) async {
-    final String todayKey =
-        DateFormat('yyyy-MM-dd').format(DateTime.now());
-    int totalCount = 0;
-    int accomplishedCount = 0;
-
-    final doctorSnapshot = await FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
-        .get(); 
-
-    for (var doc in doctorSnapshot.docs) {
-      var scheduledVisitsSnap =
-          await doc.reference.collection('scheduledVisits').get();
-      for (var v in scheduledVisitsSnap.docs) {
-        final visitData = v.data();
-        final visitDateString = visitData['scheduledDate'] ?? '';
-        if (visitDateString == todayKey) {
-          totalCount += 1;
-          if (visitData.containsKey('signaturePoints') &&
-              visitData['signaturePoints'] != null &&
-              (visitData['signaturePoints'] as List).isNotEmpty) {
-            accomplishedCount += 1;
-          }
-        }
-      }
-    }
-    return {
-      "total": totalCount,
-      "accomplished": accomplishedCount,
-    };
   }
 
   Future<void> _refreshDashboard() async {
@@ -4212,6 +4282,7 @@ void _openCreateEFormDialog() {
                                             ),
                                           ),
                                         ),
+                                      
                                       ],
                                     ),
                                   ),
@@ -4268,7 +4339,7 @@ void _openCreateEFormDialog() {
                                   // Build the Doctor collection for this MR using the same logic as DoctorDetailPage.[file:11]
                                   final doctorsCol = _doctorCollectionRefForHome(
                                     userClientType: userClientType,
-                                    userId: _userId, // MR00001 from SharedPreferences
+                                    userId: _userId, 
                                   );
 
                                   return doctorsCol.get().timeout(
@@ -4471,6 +4542,8 @@ void _openCreateEFormDialog() {
 
                               SizedBox(height: 24),
                               
+                              // CALL PERFORMANCE SECTION
+
                               Padding(
                                 padding: EdgeInsets.only(left: 20),
                                 child: Text(
@@ -4504,26 +4577,35 @@ void _openCreateEFormDialog() {
                                           ),
                                         ],
                                       ),
-                                      child: FutureBuilder<Map<String, int>>(
-                                        future: getAccomplishedVisitsForToday(emailKey, userName)
-                                            .timeout(
-                                              Duration(seconds: 10),
-                                              onTimeout: () {
-                                                print('Timeout loading today accomplished');
-                                                return {"total": 0, "accomplished": 0};
-                                              },
-                                            ),
-                                        builder: (context, snapshot) {
-                                          if (snapshot.hasError) {
-                                            print('Error loading today accomplished: ${snapshot.error}');
-                                            return Container(
+                                      child: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                                        future: (() {
+                                          final doctorsCol = _doctorCollectionRefForHome(
+                                            userClientType: userClientType,
+                                            userId: _userId,
+                                          );
+
+                                          return doctorsCol.get().timeout(
+                                            const Duration(seconds: 10),
+                                            onTimeout: () {
+                                              throw TimeoutException('Failed to load doctors data');
+                                            },
+                                          );
+                                        })(),
+                                        builder: (context, doctorSnapshot) {
+                                          if (doctorSnapshot.hasError) {
+                                            print('Error loading doctors for count: ${doctorSnapshot.error}');
+                                            return SizedBox(
                                               height: 120,
                                               child: Column(
                                                 mainAxisAlignment: MainAxisAlignment.center,
                                                 children: [
-                                                  Icon(Icons.error_outline, color: Colors.red, size: 24),
-                                                  SizedBox(height: 4),
-                                                  Text(
+                                                  const Icon(
+                                                    Icons.error_outline,
+                                                    color: Colors.red,
+                                                    size: 24,
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  const Text(
                                                     'Error loading data',
                                                     textAlign: TextAlign.center,
                                                     style: TextStyle(color: Colors.red, fontSize: 11),
@@ -4532,15 +4614,17 @@ void _openCreateEFormDialog() {
                                                     onPressed: () {
                                                       setState(() {});
                                                     },
-                                                    child: Text('Retry', style: TextStyle(fontSize: 10)),
+                                                    child: const Text(
+                                                      'Retry',
+                                                      style: TextStyle(fontSize: 10),
+                                                    ),
                                                   ),
                                                 ],
                                               ),
                                             );
                                           }
 
-                                          if (snapshot.connectionState == ConnectionState.waiting &&
-                                              !snapshot.hasData) {
+                                          if (doctorSnapshot.connectionState == ConnectionState.waiting) {
                                             return const SizedBox(
                                               height: 120,
                                               child: Center(
@@ -4549,14 +4633,14 @@ void _openCreateEFormDialog() {
                                             );
                                           }
 
-                                          if (!snapshot.hasData) {
+                                          if (!doctorSnapshot.hasData || doctorSnapshot.data!.docs.isEmpty) {
                                             return SizedBox(
                                               height: 120,
                                               child: Center(
                                                 child: Text(
                                                   _isOffline
-                                                      ? "Offline: showing last known performance from cache."
-                                                      : "Unable to load today's data.",
+                                                      ? "Offline: showing last known data."
+                                                      : "No doctors found.",
                                                   textAlign: TextAlign.center,
                                                   style: TextStyle(
                                                     color: Colors.grey[700],
@@ -4567,95 +4651,148 @@ void _openCreateEFormDialog() {
                                             );
                                           }
 
-                                          final Map<String, int> data = snapshot.data!;
-                                          final int total = data['total'] ?? 0;
-                                          final int accomplished = data['accomplished'] ?? 0;
-                                          final double ratio = total == 0 ? 0.0 : accomplished / total;
-                                          final double percent = ratio.clamp(0.0, 1.0);
+                                          final List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs =
+                                              doctorSnapshot.data!.docs;
 
-                                          return Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                "Today's Accomplished",
-                                                style: TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          return FutureBuilder<Map<String, int>>(
+                                            future: getAccomplishedVisitsForToday(
+                                              doctorDocs: doctorDocs,
+                                              selectedDay: DateTime.now(),
+                                            ).timeout(
+                                              const Duration(seconds: 10),
+                                              onTimeout: () {
+                                                print('Timeout counting scheduled visits');
+                                                return {'total': 0, 'submitted': 0};
+                                              },
+                                            ),
+                                            builder: (context, countSnapshot) {
+                                              if (countSnapshot.hasError) {
+                                                print('Error counting visits: ${countSnapshot.error}');
+                                                return SizedBox(
+                                                  height: 120,
+                                                  child: Column(
+                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                    children: [
+                                                      const Icon(
+                                                        Icons.error_outline,
+                                                        color: Colors.red,
+                                                        size: 24,
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      const Text(
+                                                        'Error loading count',
+                                                        textAlign: TextAlign.center,
+                                                        style: TextStyle(color: Colors.red, fontSize: 11),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                              }
+
+                                              if (countSnapshot.connectionState == ConnectionState.waiting &&
+                                                  !countSnapshot.hasData) {
+                                                return const SizedBox(
+                                                  height: 120,
+                                                  child: Center(
+                                                    child: CircularProgressIndicator(),
+                                                  ),
+                                                );
+                                              }
+
+                                              final Map<String, int> counts = countSnapshot.data ?? {'total': 0, 'submitted': 0};
+                                              final int scheduledCount = counts['total'] ?? 0;
+                                              final int submittedCount = counts['submitted'] ?? 0;
+
+                                              final double ratio = scheduledCount == 0
+                                                  ? 0.0
+                                                  : submittedCount / scheduledCount;
+                                              final double percent = ratio.clamp(0.0, 1.0);
+
+                                              return Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
-                                                  const SizedBox.shrink(),
-                                                  Container(
-                                                    width: 26,
-                                                    height: 26,
-                                                    decoration: const BoxDecoration(
-                                                      color: Color(0xFFF5F4FF),
-                                                      shape: BoxShape.circle,
+                                                  const Text(
+                                                    "Today's Accomplished",
+                                                    style: TextStyle(
+                                                      fontFamily: 'Lato',
+                                                      fontSize: 16,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: Colors.black,
                                                     ),
-                                                    child: Icon(
-                                                      Icons.speed,
-                                                      size: 16,
-                                                      color: Colors.purple.shade400,
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      const SizedBox.shrink(),
+                                                      Container(
+                                                        width: 26,
+                                                        height: 26,
+                                                        decoration: const BoxDecoration(
+                                                          color: Color(0xFFF5F4FF),
+                                                          shape: BoxShape.circle,
+                                                        ),
+                                                        child: Icon(
+                                                          Icons.speed,
+                                                          size: 16,
+                                                          color: Colors.purple.shade400,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  SizedBox(
+                                                    height: 96,
+                                                    child: Row(
+                                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                                      children: [
+                                                        Expanded(
+                                                          child: Text(
+                                                            ratio.toStringAsFixed(2),
+                                                            maxLines: 1,
+                                                            overflow: TextOverflow.ellipsis,
+                                                            style: const TextStyle(
+                                                              fontFamily: 'Lato',
+                                                              fontSize: 32,
+                                                              fontWeight: FontWeight.w900,
+                                                              color: Colors.black,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 8),
+                                                        SizedBox(
+                                                          width: 70,
+                                                          height: 70,
+                                                          child: CustomPaint(
+                                                            painter: _DonutPainter(
+                                                              progress: percent,
+                                                              color: Colors.green.shade500,
+                                                              strokeWidth: 12,
+                                                              backgroundColor: const Color(0xFFE8ECEF),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    '$submittedCount / $scheduledCount',
+                                                    style: const TextStyle(
+                                                      fontFamily: 'Lato',
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Colors.black,
                                                     ),
                                                   ),
                                                 ],
-                                              ),
-                                              const SizedBox(height: 4),
-                                              SizedBox(
-                                                height: 96,
-                                                child: Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                                  children: [
-                                                    Expanded(
-                                                      child: Text(
-                                                        ratio.toStringAsFixed(2),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: const TextStyle(
-                                                          fontFamily: 'Lato',
-                                                          fontSize: 32,
-                                                          fontWeight: FontWeight.w900,
-                                                          color: Colors.black,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    SizedBox(
-                                                      width: 70,
-                                                      height: 70,
-                                                      child: CustomPaint(
-                                                        painter: _DonutPainter(
-                                                          progress: percent,
-                                                          color: Colors.green.shade500,
-                                                          strokeWidth: 12,
-                                                          backgroundColor: const Color(0xFFE8ECEF),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '$accomplished / $total',
-                                                style: const TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                            ],
-                                          );
+                                              );
+                                            },
+                                          );                                        
                                         },
                                       ),
-                                    ),
-
+                                    ),                                    
+                                    
                                     // MONTH'S ACCOMPLISHED
                                     Container(
                                       width: 220,
@@ -5170,9 +5307,11 @@ void _openCreateEFormDialog() {
                                         },
                                       ),
                                     ),
+                                  
                                   ],
                                 ),
                               ),
+                            
                             ],
                           ),
                         ),

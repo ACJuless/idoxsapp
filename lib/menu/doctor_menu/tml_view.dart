@@ -138,6 +138,30 @@ class _TmlViewPageState extends State<TmlViewPage> {
         .doc(doctorId);
   }
 
+  /// SampleAllocations reference:
+  /// /DaloyClients/IVA/Users/{_userId}/Doctor/{doctorId}/SampleAllocations/{yyyyMMdd}
+  DocumentReference<Map<String, dynamic>> _sampleAllocationsRefForVisit(
+    String doctorId,
+    String dateId,
+  ) {
+    return _doctorsCollectionRef()
+        .doc(doctorId)
+        .collection('SampleAllocations')
+        .doc(dateId);
+  }
+
+  /// CallNotes reference:
+  /// /DaloyClients/IVA/Users/{_userId}/Doctor/{doctorId}/CallNotes/{yyyyMMdd}
+  DocumentReference<Map<String, dynamic>> _callNotesRefForVisit(
+    String doctorId,
+    String dateId,
+  ) {
+    return _doctorsCollectionRef()
+        .doc(doctorId)
+        .collection('CallNotes')
+        .doc(dateId);
+  }
+
   void _goToAddDoctor() async {
     final added = await Navigator.push(
       context,
@@ -197,7 +221,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
 
   /// Update week_1..week_5 for a doctor, then sync that doctor's Visits + Itinerary.
   /// For each week there will be at most one Visits/{yyyyMMdd} entry and one
-  /// matching Itinerary doc (linked by Reference).
+  /// matching Itinerary doc (linked by ItineraryReference field).
   Future<void> _saveEditedWeeksWithTimes(
     Map<String, dynamic> originalData,
     List<String> editedWeeks,
@@ -242,11 +266,14 @@ class _TmlViewPageState extends State<TmlViewPage> {
   /// Behaviour per week index (0–4):
   /// - At most one visit doc in Visits for that calendar week.
   /// - When a new date in that week is selected, any existing visit in that
-  ///   calendar week is deleted, and its referenced Itinerary doc (Reference)
+  ///   calendar week is deleted, and its referenced Itinerary doc (via ItineraryReference)
   ///   is also deleted.
   /// - For the new date, a visit doc is created/merged and an Itinerary doc
-  ///   is created/merged, and the visit's "Reference" field stores the
-  ///   DocumentReference to that itinerary doc. [web:47][web:82][web:190][web:64]
+  ///   is created/merged, and the visit's "ItineraryReference" field stores the
+  ///   DocumentReference to that itinerary doc.
+  /// - Additionally, each visit doc stores:
+  ///   "SampleAllocationsReference" -> /DaloyClients/IVA/Users/{_userId}/Doctor/{docId}/SampleAllocations/{yyyyMMdd}
+  ///   "CallNotesReference" -> /DaloyClients/IVA/Users/{_userId}/Doctor/{docId}/CallNotes/{yyyyMMdd}
   Future<void> _syncVisitsWithTmlScheduleAndTimes(
     String docId,
     Map<String, dynamic> doctorData,
@@ -300,7 +327,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
 
     // 3. For each week, delete any old visit in the same calendar week
     //    but with a different dateId, and also delete its referenced
-    //    Itinerary document via the Reference field.
+    //    Itinerary document via the ItineraryReference field.
     for (final entry in desiredDatePerWeek.entries) {
       final newDate = entry.value;
       final newDateId = DateFormat("yyyyMMdd").format(newDate);
@@ -321,21 +348,22 @@ class _TmlViewPageState extends State<TmlViewPage> {
           // Delete the visit doc
           await visitsRootRef.doc(existingId).delete();
 
-          // If it has a Reference to an itinerary doc, delete that too
-          final refField = existingData['Reference'];
+          // If it has an ItineraryReference to an itinerary doc, delete that too
+          final refField = existingData['ItineraryReference'];
           if (refField is DocumentReference) {
             try {
               await refField.delete();
             } catch (e) {
               debugPrint(
-                  'Failed to delete itinerary doc via Reference for $existingId: $e');
+                  'Failed to delete itinerary doc via ItineraryReference for $existingId: $e');
             }
           }
         }
       }
     }
 
-    // 4. (Re)create visit docs per week with times and Reference field.
+    // 4. (Re)create visit docs per week with times and ItineraryReference,
+    //    SampleAllocationsReference, CallNotesReference.
     for (int w = 0; w < 5; w++) {
       final dt = desiredDatePerWeek[w];
       if (dt == null) continue;
@@ -347,7 +375,11 @@ class _TmlViewPageState extends State<TmlViewPage> {
       // Build itinerary document reference for Calendar path
       final itineraryRef = _calendarItineraryRef(dt, docId);
 
-      // Ensure calendar itinerary doc exists/updated (merge to not overwrite). [web:82]
+      // Build SampleAllocations and CallNotes references for this visit
+      final sampleAllocRef = _sampleAllocationsRefForVisit(docId, dateId);
+      final callNotesRef = _callNotesRefForVisit(docId, dateId);
+
+      // Ensure calendar itinerary doc exists/updated (merge to not overwrite).
       await itineraryRef.set(
         {
           'doctorId': docId,
@@ -362,7 +394,9 @@ class _TmlViewPageState extends State<TmlViewPage> {
         "Visit": true,
         "submitted": false,
         "surprise": false,
-        "Reference": itineraryRef, // Firestore DocumentReference
+        "ItineraryReference": itineraryRef, // renamed from "Reference"
+        "SampleAllocationsReference": sampleAllocRef,
+        "CallNotesReference": callNotesRef,
       };
       if (finalTime != null) {
         flatData["scheduledTime"] = finalTime;
@@ -412,8 +446,13 @@ class _TmlViewPageState extends State<TmlViewPage> {
 
     final finalTime = existingTime.isNotEmpty ? existingTime : "09:00";
 
-    // Also wire the Reference / Calendar doc here in case auto-set runs alone.
+    // Also wire the ItineraryReference / Calendar doc here in case auto-set runs alone.
     final itineraryRef = _calendarItineraryRef(visitDate, docId);
+
+    // Build SampleAllocations and CallNotes references for this visit
+    final sampleAllocRef = _sampleAllocationsRefForVisit(docId, dateId);
+    final callNotesRef = _callNotesRefForVisit(docId, dateId);
+
     await itineraryRef.set(
       {
         'doctorId': docId,
@@ -430,7 +469,9 @@ class _TmlViewPageState extends State<TmlViewPage> {
         "Visit": true,
         "submitted": false,
         "surprise": false,
-        "Reference": itineraryRef,
+        "ItineraryReference": itineraryRef,
+        "SampleAllocationsReference": sampleAllocRef,
+        "CallNotesReference": callNotesRef,
       },
       SetOptions(merge: true),
     );
@@ -528,6 +569,11 @@ class _TmlViewPageState extends State<TmlViewPage> {
 
       // Ensure calendar itinerary doc exists
       final itineraryRef = _calendarItineraryRef(visitDate, docId);
+
+      // Build SampleAllocations and CallNotes references for this visit
+      final sampleAllocRef = _sampleAllocationsRefForVisit(docId, dateId);
+      final callNotesRef = _callNotesRefForVisit(docId, dateId);
+
       await itineraryRef.set(
         {
           'doctorId': docId,
@@ -543,7 +589,9 @@ class _TmlViewPageState extends State<TmlViewPage> {
         "Visit": true,
         "submitted": false,
         "surprise": false,
-        "Reference": itineraryRef,
+        "ItineraryReference": itineraryRef,
+        "SampleAllocationsReference": sampleAllocRef,
+        "CallNotesReference": callNotesRef,
       }, SetOptions(merge: true));
 
       setState(() {
@@ -1164,8 +1212,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                               weekSelections[docId] ??
                                                   [
                                                     for (int w = 1; w <= 5; w++)
-                                                      (data['week_$w'] ??
-                                                              "")
+                                                      (data['week_$w'] ?? "")
                                                           .toString(),
                                                   ];
                                           weekSelections[docId] =
@@ -1340,13 +1387,13 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                         7, (d) {
                                                       final date =
                                                           _monthGrid[w][d];
-                                                      final display =
-                                                          (date != null &&
-                                                                  date.month ==
-                                                                      month)
-                                                              ? date.day
-                                                                  .toString()
-                                                              : "";
+                                                      final display = (date !=
+                                                                  null &&
+                                                              date.month ==
+                                                                  month)
+                                                          ? date.day
+                                                              .toString()
+                                                          : "";
                                                       return SizedBox(
                                                         width: boxSize,
                                                         child: Center(
@@ -1507,7 +1554,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                                   docId,
                                                               doctorData:
                                                                   data,
-                                                              weekIndex: w,
+                                                              weekIndex:
+                                                                  w,
                                                               dayCode:
                                                                   newVal,
                                                             );
@@ -1519,8 +1567,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                       if (w < 4)
                                                         Container(
                                                           width: 1,
-                                                          height:
-                                                              rowHeight,
+                                                          height: rowHeight,
                                                           color: Colors
                                                               .grey[400],
                                                         ),
