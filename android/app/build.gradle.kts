@@ -51,7 +51,7 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
     
     // Firebase Analytics (optional but recommended)
-    implementation("com.google.firebase:firebase-analytics-ktx")
+    implementation("com.google.firebase:firebase-analytics")
     
     // Firebase Auth and Firestore are handled by Flutter plugins
     // but we include the BOM for version consistency

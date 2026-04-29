@@ -27,16 +27,13 @@ import 'menu/marketing_page.dart';
 import 'menu/e_forms_menu/forms_page.dart';
 import 'menu/doctor_menu/tml_view.dart';
 // If you generated firebase_options.dart via FlutterFire CLI, uncomment this:
-// import 'firebase_options.dart';
+import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize Firebase
-  await Firebase.initializeApp(
-      // If using FlutterFire CLI config, prefer this form:
-      // options: DefaultFirebaseOptions.currentPlatform,
-      );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // Explicitly configure Firestore offline cache (mobile).
   // On Android/iOS persistence is on by default, but this lets you control cache size. [web:97][web:84]
@@ -105,8 +102,7 @@ class MyApp extends StatelessWidget {
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(AppSizes.radiusM),
-            borderSide:
-                BorderSide(color: AppColors.textLight.withOpacity(0.3)),
+            borderSide: BorderSide(color: AppColors.textLight.withOpacity(0.3)),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(AppSizes.radiusM),
@@ -156,14 +152,12 @@ class AuthWrapper extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   CircularProgressIndicator(
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(AppColors.primary),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      AppColors.primary,
+                    ),
                   ),
                   SizedBox(height: AppSizes.paddingL),
-                  Text(
-                    'Loading...',
-                    style: AppTextStyles.body1,
-                  ),
+                  Text('Loading...', style: AppTextStyles.body1),
                 ],
               ),
             ),
