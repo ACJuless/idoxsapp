@@ -23,11 +23,15 @@ class FormsPage extends StatefulWidget {
 }
 
 class _FormsPageState extends State<FormsPage> {
-  // 0 = Attendance, 1 = SCP, 2 = ABR, 3 = In-Field Coaching, 4 = Incidental Coverage, 5 = Sales Order
+  // Selected chip index (within the visible list for that domain)
   int _selectedIndex = -1;
 
   // userKey for Firestore path (shared by all forms)
   String _userKey = '';
+
+  // Email + domain classification
+  String _userEmail = '';
+  String _domainType = ''; // 'iva', 'indofil', 'wert'
 
   /// Direct Firebase Storage URLs for the ZIP E-Forms.
   static const String _attendanceZipUrl =
@@ -51,14 +55,29 @@ class _FormsPageState extends State<FormsPage> {
   @override
   void initState() {
     super.initState();
-    _loadEmailKey();
+    _loadEmailAndDomain();
   }
 
-  Future<void> _loadEmailKey() async {
+  Future<void> _loadEmailAndDomain() async {
     final prefs = await SharedPreferences.getInstance();
     final userEmail = prefs.getString('userEmail') ?? '';
+    final userKey = userEmail.replaceAll(RegExp(r'[.#\$\[\]/]'), '_');
+
+    String domainType = '';
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@iva.com')) {
+      domainType = 'iva';
+    } else if (lower.endsWith('@indofil.com')) {
+      domainType = 'indofil';
+    } else if (lower.endsWith('@wert.com')) {
+      domainType = 'wert';
+    }
+
     setState(() {
-      _userKey = userEmail.replaceAll(RegExp(r'[.#\$\\\[\]/]'), '_');
+      _userEmail = userEmail;
+      _userKey = userKey;
+      _domainType = domainType;
+      _selectedIndex = -1;
     });
   }
 
@@ -70,39 +89,38 @@ class _FormsPageState extends State<FormsPage> {
     final Color selectedColor = const Color(0xFF4A2371);
     final Color unselectedColor = Colors.grey.shade400;
 
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () {
-            setState(() {
-              _selectedIndex = index;
-            });
-          },
-          child: Ink(
-            decoration: BoxDecoration(
-              color: isSelected ? selectedColor : unselectedColor,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-              alignment: Alignment.center,
-              child: Text(
-                title,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: isSelected ? Colors.white : Colors.black87,
-                ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+        child: Ink(
+          decoration: BoxDecoration(
+            color: isSelected ? selectedColor : unselectedColor,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+            alignment: Alignment.center,
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : Colors.black87,
               ),
             ),
           ),
@@ -139,14 +157,16 @@ class _FormsPageState extends State<FormsPage> {
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
+                      color: const Color(0xFF4A2371)
+                          .withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -159,11 +179,10 @@ class _FormsPageState extends State<FormsPage> {
                   const Text(
                     'No attendance forms yet',
                     style: TextStyle(
-                      fontSize: 16,
-                      fontFamily: 'OpenSauce',
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1A2E)
-                    ),
+                        fontSize: 16,
+                        fontFamily: 'OpenSauce',
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1A2E)),
                   ),
                   const SizedBox(height: 16),
                   const Text(
@@ -180,18 +199,23 @@ class _FormsPageState extends State<FormsPage> {
             ),
           );
         }
-        
+
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 16, vertical: 8),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: docs.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          separatorBuilder: (_, __) =>
+              const SizedBox(height: 10),
           itemBuilder: (context, idx) {
             final doc = docs[idx];
-            final data = doc.data() as Map<String, dynamic>;
-            final String eventName = data["eventName"] ?? "Unnamed Event";
-            final String date = _formatReadableDate(data["date"]);
+            final data =
+                doc.data() as Map<String, dynamic>;
+            final String eventName =
+                data["eventName"] ?? "Unnamed Event";
+            final String date =
+                _formatReadableDate(data["date"]);
 
             return Material(
               color: Colors.white,
@@ -202,7 +226,8 @@ class _FormsPageState extends State<FormsPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => AttendanceFormReadonlyPage(
+                      builder: (context) =>
+                          AttendanceFormReadonlyPage(
                         formData: data,
                         docId: doc.id,
                         userKey: _userKey,
@@ -211,7 +236,8 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
@@ -220,7 +246,8 @@ class _FormsPageState extends State<FormsPage> {
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
+                        color: Colors.black
+                            .withValues(alpha: 0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -228,15 +255,17 @@ class _FormsPageState extends State<FormsPage> {
                     color: Colors.white,
                   ),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    crossAxisAlignment:
+                        CrossAxisAlignment.center,
                     children: [
-                      // Icon
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(12),
+                          color: const Color(0xFF4A2371)
+                              .withValues(alpha: 0.10),
+                          borderRadius:
+                              BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           LucideIcons.fileText,
@@ -245,17 +274,17 @@ class _FormsPageState extends State<FormsPage> {
                         ),
                       ),
                       const SizedBox(width: 14),
-
-                      // Text
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               eventName,
                               maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              overflow:
+                                  TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontFamily: 'OpenSauce',
@@ -270,8 +299,10 @@ class _FormsPageState extends State<FormsPage> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontFamily: 'OpenSauce',
-                                fontWeight: FontWeight.w400,
-                                color: Colors.grey.shade500,
+                                fontWeight:
+                                    FontWeight.w400,
+                                color: Colors
+                                    .grey.shade500,
                               ),
                             ),
                           ],
@@ -294,8 +325,7 @@ class _FormsPageState extends State<FormsPage> {
   Widget _buildScpHistorySection(BuildContext context) {
     if (_userKey.isEmpty) {
       return const Center(
-        child: CircularProgressIndicator()
-      );
+          child: CircularProgressIndicator());
     }
 
     return StreamBuilder<QuerySnapshot>(
@@ -312,22 +342,23 @@ class _FormsPageState extends State<FormsPage> {
                 ConnectionState.waiting ||
             !snapshot.hasData) {
           return const Center(
-            child: CircularProgressIndicator()
-          );
+              child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),              
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
+                      color: const Color(0xFF4A2371)
+                          .withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -351,9 +382,9 @@ class _FormsPageState extends State<FormsPage> {
                     'Tap + in the SCP page to create a new form.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 13, 
+                      fontSize: 13,
                       fontFamily: 'OpenSauce',
-                      color: Colors.grey
+                      color: Colors.grey,
                     ),
                   ),
                 ],
@@ -363,17 +394,23 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return ListView.separated(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 16, vertical: 8),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: docs.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          separatorBuilder: (_, __) =>
+              const SizedBox(height: 10),
           itemBuilder: (context, idx) {
             final doc = docs[idx];
-            final data = doc.data() as Map<String, dynamic>;
-            final String farmerName = data['farmerName'] ?? 'Unnamed Farmer';
-            final String dateOfEvent = _formatReadableDate(data['dateOfEvent']);
-            final String cropsPlanted = data['cropsPlanted'] ?? '';
+            final data =
+                doc.data() as Map<String, dynamic>;
+            final String farmerName =
+                data['farmerName'] ?? 'Unnamed Farmer';
+            final String dateOfEvent =
+                _formatReadableDate(data['dateOfEvent']);
+            final String cropsPlanted =
+                data['cropsPlanted'] ?? '';
 
             return Material(
               color: Colors.white,
@@ -384,7 +421,8 @@ class _FormsPageState extends State<FormsPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => ScpFormReadonlyPage(
+                      builder: (context) =>
+                          ScpFormReadonlyPage(
                         formData: data,
                         docId: doc.id,
                         userKey: _userKey,
@@ -393,16 +431,17 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: Colors.grey.shade200,
-                      width: 1
-                    ),
+                        color: Colors.grey.shade200,
+                        width: 1),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
+                        color: Colors.black
+                            .withValues(alpha: 0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -410,15 +449,17 @@ class _FormsPageState extends State<FormsPage> {
                     color: Colors.white,
                   ),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    crossAxisAlignment:
+                        CrossAxisAlignment.center,
                     children: [
-                      // Icon
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(12),
+                          color: const Color(0xFF4A2371)
+                              .withValues(alpha: 0.10),
+                          borderRadius:
+                              BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           LucideIcons.fileText,
@@ -427,17 +468,17 @@ class _FormsPageState extends State<FormsPage> {
                         ),
                       ),
                       const SizedBox(width: 14),
-
-                      // Text
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               farmerName,
                               maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              overflow:
+                                  TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontFamily: 'OpenSauce',
@@ -451,12 +492,18 @@ class _FormsPageState extends State<FormsPage> {
                               Text(
                                 cropsPlanted,
                                 maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                overflow:
+                                    TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  fontFamily: 'OpenSauce',
-                                  fontWeight: FontWeight.w500,
-                                  color: const Color(0xFF4A2371).withValues(alpha: 0.8),
+                                  fontFamily:
+                                      'OpenSauce',
+                                  fontWeight:
+                                      FontWeight.w500,
+                                  color: const Color(
+                                          0xFF4A2371)
+                                      .withValues(
+                                          alpha: 0.8),
                                 ),
                               ),
                             Text(
@@ -464,8 +511,10 @@ class _FormsPageState extends State<FormsPage> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontFamily: 'OpenSauce',
-                                fontWeight: FontWeight.w400,
-                                color: Colors.grey.shade500,
+                                fontWeight:
+                                    FontWeight.w400,
+                                color: Colors
+                                    .grey.shade500,
                               ),
                             ),
                           ],
@@ -474,9 +523,9 @@ class _FormsPageState extends State<FormsPage> {
                     ],
                   ),
                 ),
-              )
+              ),
             );
-          }
+          },
         );
       },
     );
@@ -488,8 +537,7 @@ class _FormsPageState extends State<FormsPage> {
   Widget _buildAbrHistorySection(BuildContext context) {
     if (_userKey.isEmpty) {
       return const Center(
-        child: CircularProgressIndicator()
-      );
+          child: CircularProgressIndicator());
     }
 
     return StreamBuilder<QuerySnapshot>(
@@ -506,22 +554,23 @@ class _FormsPageState extends State<FormsPage> {
                 ConnectionState.waiting ||
             !snapshot.hasData) {
           return const Center(
-            child: CircularProgressIndicator()
-          );
+              child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
+                      color: const Color(0xFF4A2371)
+                          .withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -545,9 +594,9 @@ class _FormsPageState extends State<FormsPage> {
                     'Tap + in the ABR page to create a new form.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 13, 
+                      fontSize: 13,
                       fontFamily: 'OpenSauce',
-                      color: Colors.grey
+                      color: Colors.grey,
                     ),
                   ),
                 ],
@@ -557,20 +606,36 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return ListView.separated(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 16, vertical: 8),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: docs.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          separatorBuilder: (_, __) =>
+              const SizedBox(height: 10),
           itemBuilder: (context, idx) {
             final doc = docs[idx];
-            final data = doc.data() as Map<String, dynamic>;
-            final String activityName = (data['agronomist'] as String?) ?? 'No agronomist';            
-            final String location = (data['plannedLocation'] as String?) ?? (data['plannedActivityLocation'] as String?) ?? (data['location'] as String?) ?? '';
-            final String plannedDate = (data['plannedDate'] as String?) ?? (data['plannedActivityDate'] as String?) ?? '';
+            final data =
+                doc.data() as Map<String, dynamic>;
+            final String activityName =
+                (data['agronomist'] as String?) ??
+                    'No agronomist';
+            final String location =
+                (data['plannedLocation'] as String?) ??
+                    (data['plannedActivityLocation']
+                            as String?) ??
+                    (data['location'] as String?) ??
+                    '';
+            final String plannedDate =
+                (data['plannedDate'] as String?) ??
+                    (data['plannedActivityDate']
+                        as String?) ??
+                    '';
             final String date = _formatReadableDate(
               data['timestamp'],
-              fallback: plannedDate.isNotEmpty ? _formatReadableDate(plannedDate) : '-',
+              fallback: plannedDate.isNotEmpty
+                  ? _formatReadableDate(plannedDate)
+                  : '-',
             );
 
             return Material(
@@ -580,9 +645,10 @@ class _FormsPageState extends State<FormsPage> {
                 borderRadius: BorderRadius.circular(14),
                 onTap: () {
                   Navigator.push(
-                    context, 
+                    context,
                     MaterialPageRoute(
-                      builder: (context) => AbrFormReadonlyPage(
+                      builder: (context) =>
+                          AbrFormReadonlyPage(
                         formData: data,
                         docId: doc.id,
                         userKey: _userKey,
@@ -591,51 +657,56 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 14),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius:
+                        BorderRadius.circular(14),
                     border: Border.all(
                       color: Colors.grey.shade200,
-                      width: 1
+                      width: 1,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
+                        color: Colors.black
+                            .withValues(alpha: 0.04),
                         blurRadius: 8,
-                        offset: const Offset(0, 2)
+                        offset: const Offset(0, 2),
                       ),
                     ],
-                    color: Colors.white
+                    color: Colors.white,
                   ),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    crossAxisAlignment:
+                        CrossAxisAlignment.center,
                     children: [
-                      // Icon
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(12)
+                          color: const Color(0xFF4A2371)
+                              .withValues(alpha: 0.10),
+                          borderRadius:
+                              BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           LucideIcons.fileText,
                           color: Color(0xFF4A2371),
-                          size: 22
+                          size: 22,
                         ),
                       ),
                       const SizedBox(width: 14),
-
-                      // Text
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               activityName,
                               maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              overflow:
+                                  TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontFamily: 'OpenSauce',
@@ -649,12 +720,18 @@ class _FormsPageState extends State<FormsPage> {
                               Text(
                                 location,
                                 maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                overflow:
+                                    TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  fontFamily: 'OpenSauce',
-                                  fontWeight: FontWeight.w500,
-                                  color: const Color(0xFF4A2371).withValues(alpha: 0.8),
+                                  fontFamily:
+                                      'OpenSauce',
+                                  fontWeight:
+                                      FontWeight.w500,
+                                  color: const Color(
+                                          0xFF4A2371)
+                                      .withValues(
+                                          alpha: 0.8),
                                 ),
                               ),
                             Text(
@@ -662,8 +739,10 @@ class _FormsPageState extends State<FormsPage> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontFamily: 'OpenSauce',
-                                fontWeight: FontWeight.w400,
-                                color: Colors.grey.shade500,
+                                fontWeight:
+                                    FontWeight.w400,
+                                color: Colors
+                                    .grey.shade500,
                               ),
                             ),
                           ],
@@ -711,14 +790,16 @@ class _FormsPageState extends State<FormsPage> {
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
+                      color: const Color(0xFF4A2371)
+                          .withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -754,18 +835,26 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 16, vertical: 8),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: docs.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          separatorBuilder: (_, __) =>
+              const SizedBox(height: 10),
           itemBuilder: (context, idx) {
             final doc = docs[idx];
-            final data = doc.data() as Map<String, dynamic>;
-            final String evaluator = data['evaluator'] ?? '';
-            final String position = data['position'] ?? '';
-            final String date = _formatReadableDate(data['date']);
-            final String title = evaluator.isNotEmpty ? evaluator : 'Unnamed Evaluator';
+            final data =
+                doc.data() as Map<String, dynamic>;
+            final String evaluator =
+                data['evaluator'] ?? '';
+            final String position =
+                data['position'] ?? '';
+            final String date =
+                _formatReadableDate(data['date']);
+            final String title = evaluator.isNotEmpty
+                ? evaluator
+                : 'Unnamed Evaluator';
 
             return Material(
               color: Colors.white,
@@ -776,7 +865,8 @@ class _FormsPageState extends State<FormsPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => InFieldCoachingFormReadonlyPage(
+                      builder: (_) =>
+                          InFieldCoachingFormReadonlyPage(
                         formData: data,
                         docId: doc.id,
                         userKey: _userKey,
@@ -785,16 +875,18 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius:
+                        BorderRadius.circular(14),
                     border: Border.all(
-                      color: Colors.grey.shade200, 
-                      width: 1
-                    ),
+                        color: Colors.grey.shade200,
+                        width: 1),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
+                        color: Colors.black
+                            .withValues(alpha: 0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -802,15 +894,17 @@ class _FormsPageState extends State<FormsPage> {
                     color: Colors.white,
                   ),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    crossAxisAlignment:
+                        CrossAxisAlignment.center,
                     children: [
-                      // Icon badge
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(12),
+                          color: const Color(0xFF4A2371)
+                              .withValues(alpha: 0.10),
+                          borderRadius:
+                              BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           LucideIcons.fileText,
@@ -819,17 +913,17 @@ class _FormsPageState extends State<FormsPage> {
                         ),
                       ),
                       const SizedBox(width: 14),
-
-                      // Text
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               title,
                               maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              overflow:
+                                  TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontFamily: 'OpenSauce',
@@ -843,12 +937,18 @@ class _FormsPageState extends State<FormsPage> {
                               Text(
                                 position,
                                 maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                overflow:
+                                    TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  fontFamily: 'OpenSauce',
-                                  fontWeight: FontWeight.w500,
-                                  color: const Color(0xFF4A2371).withValues(alpha: 0.8),
+                                  fontFamily:
+                                      'OpenSauce',
+                                  fontWeight:
+                                      FontWeight.w500,
+                                  color: const Color(
+                                          0xFF4A2371)
+                                      .withValues(
+                                          alpha: 0.8),
                                 ),
                               ),
                             Text(
@@ -856,8 +956,10 @@ class _FormsPageState extends State<FormsPage> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontFamily: 'OpenSauce',
-                                fontWeight: FontWeight.w400,
-                                color: Colors.grey.shade500,
+                                fontWeight:
+                                    FontWeight.w400,
+                                color: Colors
+                                    .grey.shade500,
                               ),
                             ),
                           ],
@@ -881,8 +983,7 @@ class _FormsPageState extends State<FormsPage> {
       BuildContext context) {
     if (_userKey.isEmpty) {
       return const Center(
-        child: CircularProgressIndicator()
-      );
+          child: CircularProgressIndicator());
     }
 
     return StreamBuilder<QuerySnapshot>(
@@ -899,22 +1000,23 @@ class _FormsPageState extends State<FormsPage> {
             snapshot.connectionState ==
                 ConnectionState.waiting) {
           return const Center(
-            child: CircularProgressIndicator()
-          );
+              child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
+                      color: const Color(0xFF4A2371)
+                          .withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -950,19 +1052,28 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 16, vertical: 8),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: docs.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          separatorBuilder: (_, __) =>
+              const SizedBox(height: 10),
           itemBuilder: (context, index) {
             final doc = docs[index];
-            final data = doc.data() as Map<String, dynamic>;
-            final String lastName = data['lastName'] ?? '';
-            final String firstName = data['firstName'] ?? '';
-            final String fullName = '$lastName $firstName'.trim();
-            final String title = fullName.isNotEmpty ? fullName : 'Unnamed Coverage';
-            final String date = _formatReadableDate(data['dateOfCover']);
+            final data =
+                doc.data() as Map<String, dynamic>;
+            final String lastName =
+                data['lastName'] ?? '';
+            final String firstName =
+                data['firstName'] ?? '';
+            final String fullName =
+                '$lastName $firstName'.trim();
+            final String title = fullName.isNotEmpty
+                ? fullName
+                : 'Unnamed Coverage';
+            final String date =
+                _formatReadableDate(data['dateOfCover']);
 
             return Material(
               color: Colors.white,
@@ -973,25 +1084,28 @@ class _FormsPageState extends State<FormsPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => IncidentalCoverageFormPage(                      
+                      builder: (context) =>
+                          IncidentalCoverageFormPage(
                         formData: data,
-                        // readonly: true,
-                        docId:    doc.id,
-                        userKey:  _userKey,
+                        docId: doc.id,
+                        userKey: _userKey,
                       ),
                     ),
                   );
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius:
+                        BorderRadius.circular(14),
                     border: Border.all(
-                      color: Colors.grey.shade200, 
-                      width: 1),
+                        color: Colors.grey.shade200,
+                        width: 1),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
+                        color: Colors.black
+                            .withValues(alpha: 0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -999,15 +1113,17 @@ class _FormsPageState extends State<FormsPage> {
                     color: Colors.white,
                   ),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    crossAxisAlignment:
+                        CrossAxisAlignment.center,
                     children: [
-                      // Icon badge
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(12),
+                          color: const Color(0xFF4A2371)
+                              .withValues(alpha: 0.10),
+                          borderRadius:
+                              BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           LucideIcons.fileText,
@@ -1016,17 +1132,17 @@ class _FormsPageState extends State<FormsPage> {
                         ),
                       ),
                       const SizedBox(width: 14),
-
-                      // Text
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               title,
                               maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              overflow:
+                                  TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontFamily: 'OpenSauce',
@@ -1041,8 +1157,10 @@ class _FormsPageState extends State<FormsPage> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontFamily: 'OpenSauce',
-                                fontWeight: FontWeight.w400,
-                                color: Colors.grey.shade500,
+                                fontWeight:
+                                    FontWeight.w400,
+                                color: Colors
+                                    .grey.shade500,
                               ),
                             ),
                           ],
@@ -1083,22 +1201,23 @@ class _FormsPageState extends State<FormsPage> {
             snapshot.connectionState ==
                 ConnectionState.waiting) {
           return const Center(
-            child: CircularProgressIndicator()
-          );
+              child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
+                      color: const Color(0xFF4A2371)
+                          .withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -1134,17 +1253,23 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 16, vertical: 8),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: docs.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          separatorBuilder: (_, __) =>
+              const SizedBox(height: 10),
           itemBuilder: (context, idx) {
             final doc = docs[idx];
-            final data = doc.data() as Map<String, dynamic>;
-            final String mrName = data['mrName'] ?? 'Unnamed Sales Order';
-            final String soldTo = data['soldTo'] ?? '';
-            final String dateOfOrder = _formatReadableDate(data['dateOfOrder']);
+            final data =
+                doc.data() as Map<String, dynamic>;
+            final String mrName =
+                data['mrName'] ?? 'Unnamed Sales Order';
+            final String soldTo =
+                data['soldTo'] ?? '';
+            final String dateOfOrder =
+                _formatReadableDate(data['dateOfOrder']);
 
             return Material(
               color: Colors.white,
@@ -1155,7 +1280,8 @@ class _FormsPageState extends State<FormsPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => SalesOrderFormPage(
+                      builder: (context) =>
+                          SalesOrderFormPage(
                         formData: data,
                         readonly: true,
                         docId: doc.id,
@@ -1164,16 +1290,18 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius:
+                        BorderRadius.circular(14),
                     border: Border.all(
-                      color: Colors.grey.shade200, 
-                      width: 1
-                    ),
+                        color: Colors.grey.shade200,
+                        width: 1),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
+                        color: Colors.black
+                            .withValues(alpha: 0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -1181,15 +1309,17 @@ class _FormsPageState extends State<FormsPage> {
                     color: Colors.white,
                   ),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    crossAxisAlignment:
+                        CrossAxisAlignment.center,
                     children: [
-                      // Icon badge
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(12),
+                          color: const Color(0xFF4A2371)
+                              .withValues(alpha: 0.10),
+                          borderRadius:
+                              BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           LucideIcons.fileText,
@@ -1198,17 +1328,17 @@ class _FormsPageState extends State<FormsPage> {
                         ),
                       ),
                       const SizedBox(width: 14),
-
-                      // Text
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               mrName,
                               maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              overflow:
+                                  TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontFamily: 'OpenSauce',
@@ -1222,12 +1352,18 @@ class _FormsPageState extends State<FormsPage> {
                               Text(
                                 soldTo,
                                 maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                overflow:
+                                    TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  fontFamily: 'OpenSauce',
-                                  fontWeight: FontWeight.w500,
-                                  color: const Color(0xFF4A2371).withValues(alpha: 0.8),
+                                  fontFamily:
+                                      'OpenSauce',
+                                  fontWeight:
+                                      FontWeight.w500,
+                                  color: const Color(
+                                          0xFF4A2371)
+                                      .withValues(
+                                          alpha: 0.8),
                                 ),
                               ),
                             Text(
@@ -1235,8 +1371,10 @@ class _FormsPageState extends State<FormsPage> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontFamily: 'OpenSauce',
-                                fontWeight: FontWeight.w400,
-                                color: Colors.grey.shade500,
+                                fontWeight:
+                                    FontWeight.w400,
+                                color: Colors
+                                    .grey.shade500,
                               ),
                             ),
                           ],
@@ -1253,21 +1391,18 @@ class _FormsPageState extends State<FormsPage> {
     );
   }
 
-  // ================
+  // =======================================
   // DOWNLOAD HELPERS
-  // ================
+  // =======================================
   Future<Directory> _getDownloadsDirectory() async {
     if (Platform.isAndroid) {
-      // Use the public Downloads folder on Android. [web:48][web:46]
       final dir =
           Directory('/storage/emulated/0/Download');
       if (await dir.exists()) {
         return dir;
       }
-      // Fallback to app documents directory. [web:36]
       return await getApplicationDocumentsDirectory();
     } else {
-      // iOS/others: only app documents directory. [web:36]
       return await getApplicationDocumentsDirectory();
     }
   }
@@ -1277,20 +1412,21 @@ class _FormsPageState extends State<FormsPage> {
       final uri = Uri.parse(_attendanceZipUrl);
       final response = await http.get(uri);
       if (response.statusCode != 200) {
-        throw Exception('Failed to download file (status ${response.statusCode})');
+        throw Exception(
+            'Failed to download file (status ${response.statusCode})');
       }
 
       final downloadsDir = await _getDownloadsDirectory();
-      final filePath = '${downloadsDir.path}/attendance_form_page.zip';
+      final filePath =
+          '${downloadsDir.path}/attendance_form_page.zip';
       final file = File(filePath);
-      await file.writeAsBytes(response.bodyBytes); // [web:70]
+      await file.writeAsBytes(response.bodyBytes);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Attendance E-Form saved to: $filePath'
-          ),
+          content:
+              Text('Attendance E-Form saved to: $filePath'),
         ),
       );
     } catch (e) {
@@ -1298,8 +1434,7 @@ class _FormsPageState extends State<FormsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Error downloading Attendance E-Form: $e'
-          ),
+              'Error downloading Attendance E-Form: $e'),
         ),
       );
     }
@@ -1310,13 +1445,15 @@ class _FormsPageState extends State<FormsPage> {
       final uri = Uri.parse(_scpZipUrl);
       final response = await http.get(uri);
       if (response.statusCode != 200) {
-        throw Exception('Failed to download file (status ${response.statusCode})');
+        throw Exception(
+            'Failed to download file (status ${response.statusCode})');
       }
 
       final downloadsDir = await _getDownloadsDirectory();
-      final filePath = '${downloadsDir.path}/scp_form_page.zip';
+      final filePath =
+          '${downloadsDir.path}/scp_form_page.zip';
       final file = File(filePath);
-      await file.writeAsBytes(response.bodyBytes); // [web:70]
+      await file.writeAsBytes(response.bodyBytes);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1341,13 +1478,15 @@ class _FormsPageState extends State<FormsPage> {
       final uri = Uri.parse(_abrZipUrl);
       final response = await http.get(uri);
       if (response.statusCode != 200) {
-        throw Exception('Failed to download file (status ${response.statusCode})');
+        throw Exception(
+            'Failed to download file (status ${response.statusCode})');
       }
 
       final downloadsDir = await _getDownloadsDirectory();
-      final filePath = '${downloadsDir.path}/abr_form_page.zip';
+      final filePath =
+          '${downloadsDir.path}/abr_form_page.zip';
       final file = File(filePath);
-      await file.writeAsBytes(response.bodyBytes); // [web:70]
+      await file.writeAsBytes(response.bodyBytes);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1373,21 +1512,21 @@ class _FormsPageState extends State<FormsPage> {
       final response = await http.get(uri);
       if (response.statusCode != 200) {
         throw Exception(
-          'Failed to download file (status ${response.statusCode})'
+          'Failed to download file (status ${response.statusCode})',
         );
       }
 
       final downloadsDir = await _getDownloadsDirectory();
-      final filePath = '${downloadsDir.path}/in_field_coaching_form_page.zip';
+      final filePath =
+          '${downloadsDir.path}/in_field_coaching_form_page.zip';
       final file = File(filePath);
-      await file.writeAsBytes(response.bodyBytes); // [web:70]
+      await file.writeAsBytes(response.bodyBytes);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'In-Field Coaching E-Form saved to: $filePath'
-          ),
+              'In-Field Coaching E-Form saved to: $filePath'),
         ),
       );
     } catch (e) {
@@ -1395,8 +1534,7 @@ class _FormsPageState extends State<FormsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Error downloading In-Field Coaching E-Form: $e'
-          ),
+              'Error downloading In-Field Coaching E-Form: $e'),
         ),
       );
     }
@@ -1408,21 +1546,21 @@ class _FormsPageState extends State<FormsPage> {
       final response = await http.get(uri);
       if (response.statusCode != 200) {
         throw Exception(
-          'Failed to download file (status ${response.statusCode})'
+          'Failed to download file (status ${response.statusCode})',
         );
       }
 
       final downloadsDir = await _getDownloadsDirectory();
-      final filePath = '${downloadsDir.path}/incidental_coverage_form_page.zip';
+      final filePath =
+          '${downloadsDir.path}/incidental_coverage_form_page.zip';
       final file = File(filePath);
-      await file.writeAsBytes(response.bodyBytes); // [web:70]
+      await file.writeAsBytes(response.bodyBytes);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Incidental Coverage E-Form saved to: $filePath'
-          ),
+              'Incidental Coverage E-Form saved to: $filePath'),
         ),
       );
     } catch (e) {
@@ -1430,8 +1568,7 @@ class _FormsPageState extends State<FormsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Error downloading Incidental Coverage E-Form: $e'
-          ),
+              'Error downloading Incidental Coverage E-Form: $e'),
         ),
       );
     }
@@ -1442,20 +1579,21 @@ class _FormsPageState extends State<FormsPage> {
       final uri = Uri.parse(_salesOrderZipUrl);
       final response = await http.get(uri);
       if (response.statusCode != 200) {
-        throw Exception('Failed to download file (status ${response.statusCode})');
+        throw Exception(
+            'Failed to download file (status ${response.statusCode})');
       }
 
       final downloadsDir = await _getDownloadsDirectory();
-      final filePath = '${downloadsDir.path}/sales_order_form_page.zip';
+      final filePath =
+          '${downloadsDir.path}/sales_order_form_page.zip';
       final file = File(filePath);
-      await file.writeAsBytes(response.bodyBytes); // [web:70]
+      await file.writeAsBytes(response.bodyBytes);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Sales Order E-Form saved to: $filePath'
-          ),
+              'Sales Order E-Form saved to: $filePath'),
         ),
       );
     } catch (e) {
@@ -1463,35 +1601,34 @@ class _FormsPageState extends State<FormsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Error downloading Sales Order E-Form: $e'
-          ),
+              'Error downloading Sales Order E-Form: $e'),
         ),
       );
     }
   }
 
-  void _onDownloadPressed(String formType) {
-    if (formType == 'attendance') {
+  void _onDownloadPressed(String formKey) {
+    if (formKey == 'attendance') {
       _downloadAttendanceZip();
       return;
     }
-    if (formType == 'scp') {
+    if (formKey == 'scp') {
       _downloadScpZip();
       return;
     }
-    if (formType == 'abr') {
+    if (formKey == 'abr') {
       _downloadAbrZip();
       return;
     }
-    if (formType == 'coaching') {
+    if (formKey == 'coaching') {
       _downloadInFieldZip();
       return;
     }
-    if (formType == 'inc_cov') {
+    if (formKey == 'inc_cov') {
       _downloadIncidentalZip();
       return;
     }
-    if (formType == 'sales_order') {
+    if (formKey == 'sales_order') {
       _downloadSalesOrderZip();
       return;
     }
@@ -1499,17 +1636,19 @@ class _FormsPageState extends State<FormsPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Download for $formType not yet implemented.'
+          'Download for $formKey not yet implemented.',
         ),
       ),
     );
   }
 
-  // ============
-  // MAIN BUILD
-  // ============
+  // ============ MAIN BUILD ============
+
   @override
   Widget build(BuildContext context) {
+    // Build chips list depending on domain type
+    final List<_FormChipConfig> chipsConfig = _buildChipsConfig();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Electronic Forms'),
@@ -1535,7 +1674,22 @@ class _FormsPageState extends State<FormsPage> {
                 Color(0xFF8170AB),
                 Color(0xFF9582B3),
               ],
-              stops: [0.0, 0.07, 0.14, 0.22, 0.30, 0.38, 0.46, 0.54, 0.62, 0.70, 0.77, 0.84, 0.92, 1.0],
+              stops: [
+                0.0,
+                0.07,
+                0.14,
+                0.22,
+                0.30,
+                0.38,
+                0.46,
+                0.54,
+                0.62,
+                0.70,
+                0.77,
+                0.84,
+                0.92,
+                1.0
+              ],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -1553,8 +1707,9 @@ class _FormsPageState extends State<FormsPage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),                
+          const Padding(
+            padding:
+                EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Text(
               'E-Forms',
               style: TextStyle(
@@ -1565,7 +1720,8 @@ class _FormsPageState extends State<FormsPage> {
           ),
           const SizedBox(height: 6),
           const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+            padding:
+                EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               'Manage and view your form submissions',
               style: TextStyle(
@@ -1574,33 +1730,40 @@ class _FormsPageState extends State<FormsPage> {
               ),
             ),
           ),
-          const SizedBox(height: 20),    
+          const SizedBox(height: 20),
 
+          // Horizontal chips
           SizedBox(
             height: 80,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              children: [
-                _buildSelectableFormChip(title: 'Attendance Form', index: 0),
-                _buildSelectableFormChip(title: 'Sample Crop Prescription', index: 1),
-                _buildSelectableFormChip(title: 'Activity Budget Request', index: 2),
-                _buildSelectableFormChip(title: 'In-Field Coaching Form', index: 3),
-                _buildSelectableFormChip(title: 'Incidental Coverage Form', index: 4),
-                _buildSelectableFormChip(title: 'Sales Order Form', index: 5),
-              ],
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 20),
+              children: chipsConfig
+                  .asMap()
+                  .entries
+                  .map(
+                    (entry) => _buildSelectableFormChip(
+                      title: entry.value.title,
+                      index: entry.key,
+                    ),
+                  )
+                  .toList(),
             ),
           ),
           const SizedBox(height: 24),
 
-          if (_selectedIndex >= 0) ...[
+          if (_selectedIndex >= 0 &&
+              _selectedIndex < chipsConfig.length) ...[
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 16),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
-                      _getSectionTitle(_selectedIndex),
+                      chipsConfig[_selectedIndex]
+                          .sectionTitle,
                       style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -1608,11 +1771,14 @@ class _FormsPageState extends State<FormsPage> {
                     ),
                   ),
                   TextButton.icon(
-                    onPressed: () => _onDownloadPressed(_getFormKey(_selectedIndex)),
+                    onPressed: () => _onDownloadPressed(
+                        chipsConfig[_selectedIndex]
+                            .formKey),
                     icon: const Icon(Icons.download),
                     label: const Text('Download E-Form'),
                     style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF4A2371),
+                      foregroundColor:
+                          const Color(0xFF4A2371),
                     ),
                   ),
                 ],
@@ -1620,65 +1786,181 @@ class _FormsPageState extends State<FormsPage> {
             ),
             const SizedBox(height: 12),
           ],
-                  
+
           Expanded(
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                if (_selectedIndex == 0)
-                  _buildAttendanceHistorySection(context),
-                if (_selectedIndex == 1)
-                  _buildScpHistorySection(context),
-                if (_selectedIndex == 2)
-                  _buildAbrHistorySection(context),
-                if (_selectedIndex == 3)
-                  _buildInFieldCoachingHistorySection(context),
-                if (_selectedIndex == 4)
-                  _buildIncidentalCoverageHistorySection(context),
-                if (_selectedIndex == 5)
-                  _buildSalesOrderHistorySection(context),
+                if (_selectedIndex >= 0 &&
+                    _selectedIndex <
+                        chipsConfig.length)
+                  chipsConfig[_selectedIndex]
+                      .historyBuilder(context),
               ],
             ),
-          )
+          ),
         ],
+      ),
+    );
+  }
+
+  // Build chip configuration based on email domain
+  List<_FormChipConfig> _buildChipsConfig() {
+    if (_domainType == 'indofil') {
+      // @indofil.com -> Attendance, SCP, ABR
+      return [
+        _FormChipConfig(
+          title: 'Attendance Form',
+          sectionTitle: 'Attendance Form History',
+          formKey: 'attendance',
+          historyBuilder: _buildAttendanceHistorySection,
+        ),
+        _FormChipConfig(
+          title: 'Sample Crop Prescription',
+          sectionTitle:
+              'Sample Crop Prescription History',
+          formKey: 'scp',
+          historyBuilder: _buildScpHistorySection,
+        ),
+        _FormChipConfig(
+          title: 'Activity Budget Request',
+          sectionTitle: 'Activity Budget Request History',
+          formKey: 'abr',
+          historyBuilder: _buildAbrHistorySection,
+        ),
+      ];
+    }
+
+    if (_domainType == 'wert') {
+      // @wert.com -> In-Field, Incidental, Sales Order
+      return [
+        _FormChipConfig(
+          title: 'In-Field Coaching Form',
+          sectionTitle:
+              'In-Field Coaching Form History',
+          formKey: 'coaching',
+          historyBuilder:
+              _buildInFieldCoachingHistorySection,
+        ),
+        _FormChipConfig(
+          title: 'Incidental Coverage Form',
+          sectionTitle:
+              'Incidental Coverage Form History',
+          formKey: 'inc_cov',
+          historyBuilder:
+              _buildIncidentalCoverageHistorySection,
+        ),
+        _FormChipConfig(
+          title: 'Sales Order Form',
+          sectionTitle: 'Sales Order Form History',
+          formKey: 'sales_order',
+          historyBuilder:
+              _buildSalesOrderHistorySection,
+        ),
+      ];
+    }
+
+    // Default / @iva.com -> IVA forms only
+    // Demo Liquidation Form, Custom Itinerary, Inventory Report,
+    // F2F Visit Form, Customer Ledger Form.
+    return [
+      _FormChipConfig(
+        title: 'Demo Liquidation Form',
+        sectionTitle: 'Demo Liquidation Form History',
+        formKey: 'demo_liquidation',
+        historyBuilder: _buildPlaceholderHistory,
+      ),
+      _FormChipConfig(
+        title: 'Custom Itinerary',
+        sectionTitle: 'Custom Itinerary History',
+        formKey: 'custom_itinerary',
+        historyBuilder: _buildPlaceholderHistory,
+      ),
+      _FormChipConfig(
+        title: 'Inventory Report',
+        sectionTitle: 'Inventory Report History',
+        formKey: 'inventory_report',
+        historyBuilder: _buildPlaceholderHistory,
+      ),
+      _FormChipConfig(
+        title: 'F2F Visit Form',
+        sectionTitle: 'F2F Visit Form History',
+        formKey: 'f2f_visit',
+        historyBuilder: _buildPlaceholderHistory,
+      ),
+      _FormChipConfig(
+        title: 'Customer Ledger Form',
+        sectionTitle: 'Customer Ledger Form History',
+        formKey: 'customer_ledger',
+        historyBuilder: _buildPlaceholderHistory,
+      ),
+    ];
+  }
+
+  Widget _buildPlaceholderHistory(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+            horizontal: 32, vertical: 48),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(
+              LucideIcons.fileText,
+              size: 40,
+              color: Color(0xFF4A2371),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'No forms yet for this type',
+              style: TextStyle(
+                fontSize: 16,
+                fontFamily: 'OpenSauce',
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1A1A2E),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-String _getSectionTitle(int index) {
-  const titles = [
-    'Attendance Form History',
-    'Sample Crop Prescription History',
-    'Activity Budget Request History',
-    'In-Field Coaching Form History',
-    'Incidental Coverage Form History',
-    'Sales Order Form History',
-  ];
-  return index >= 0 && index < titles.length ? titles[index] : '';
+// Simple config holder for each chip
+class _FormChipConfig {
+  final String title;
+  final String sectionTitle;
+  final String formKey;
+  final Widget Function(BuildContext) historyBuilder;
+
+  _FormChipConfig({
+    required this.title,
+    required this.sectionTitle,
+    required this.formKey,
+    required this.historyBuilder,
+  });
 }
 
-String _getFormKey(int index) {
-  const keys = [
-    'attendance',
-    'scp',
-    'abr',
-    'coaching',
-    'inc_cov',
-    'sales_order',    
-  ];
-  return index >= 0 && index < keys.length ? keys[index] : '';
-}
-
-String _formatReadableDate(dynamic value, {String fallback = '-'}) {
+String _formatReadableDate(dynamic value,
+    {String fallback = '-'}) {
   const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
   ];
- 
+
   DateTime? dt;
- 
-  // Null checks
+
   if (value is Timestamp) {
     dt = value.toDate();
   } else if (value is String && value.isNotEmpty) {
@@ -1691,15 +1973,19 @@ String _formatReadableDate(dynamic value, {String fallback = '-'}) {
         final c = int.tryParse(parts[2]);
         if (a != null && b != null && c != null) {
           if (c > 31) {
-            dt = DateTime.tryParse('$c-${a.toString().padLeft(2,'0')}-${b.toString().padLeft(2,'0')}');
+            dt = DateTime.tryParse(
+                '$c-${a.toString().padLeft(2, '0')}-${b.toString().padLeft(2, '0')}');
           } else {
-            dt = DateTime.tryParse('${a.toString().padLeft(4,'0')}-${b.toString().padLeft(2,'0')}-${c.toString().padLeft(2,'0')}');
+            dt = DateTime.tryParse(
+                '${a.toString().padLeft(4, '0')}-${b.toString().padLeft(2, '0')}-${c.toString().padLeft(2, '0')}');
           }
         }
       }
     }
   }
- 
-  if (dt == null) return fallback.isNotEmpty ? fallback : '-';
+
+  if (dt == null) {
+    return fallback.isNotEmpty ? fallback : '-';
+  }
   return '${monthNames[dt.month - 1]} ${dt.day}, ${dt.year}';
 }

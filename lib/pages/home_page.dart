@@ -6,8 +6,6 @@ import '../menu/e_forms_menu/forms_page.dart';
 import '../menu/itinerary_menu/itinerary_page.dart';
 import '../menu/doctor_menu/doctor_page.dart';
 import '../webview/webview_in_field_page.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:marquee/marquee.dart';
 import '../webview/webview_attendance_form_page.dart';
 import '../webview/webview_abr_form_page.dart';
 import '../webview/webview_scp_form_page.dart';
@@ -28,13 +26,6 @@ import 'dart:io';
 import 'dart:async';
 // import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
-import '../menu/e_forms_menu/in_field_coaching_form_page.dart';
-import '../menu/e_forms_menu/incidental_coverage_form_page.dart';
-import '../menu/e_forms_menu/sales_order_form_page.dart';
-import '../menu/e_forms_menu/attendance_form_page.dart';
-import '../menu/e_forms_menu/scp_form_page.dart'; 
-import '../menu/e_forms_menu/abr_form_page.dart'; 
 import '../pages/messages_page.dart';
 import '../pages/notif_page.dart';
 import '../menu/profile_view_page.dart';
@@ -42,8 +33,6 @@ import 'package:flutter/services.dart';
 
 import '../menu/doctor_menu/call_detail_page.dart';
 import '../constants/app_constants.dart';
-import '../menu/itinerary_menu/itinerary_page.dart';
-import '../menu/doctor_menu/call_signature_page.dart';
 
 final logger = Logger();
 
@@ -64,116 +53,109 @@ Map<String, Map<String, bool>> doctorChecklistStates = {};
 Map<int, bool> checkedStates = {};
 
 // SAMPLES TO BRING
-Future<List<Map<String, dynamic>>> getTodaySamplesFlat(
-  String emailKey,
-  String userName,
-  String userClientType,
-) async {
-  if (emailKey.isEmpty) return [];
+  Future<List<Map<String, dynamic>>> getTodaySamplesFlat(
+    String emailKey,
+    String userName,
+    String userClientType,
+  ) async {
+    if (emailKey.isEmpty) return [];
 
-  final DateTime now = DateTime.now();
-  final String todayKey =
-      '${now.year.toString().padLeft(4, '0')}-'
-      '${now.month.toString().padLeft(2, '0')}-'
-      '${now.day.toString().padLeft(2, '0')}'; // yyyy-MM-dd
-  final String monthId =
-      '${now.year.toString().padLeft(4, '0')}-'
-      '${now.month.toString().padLeft(2, '0')}'; // yyyy-MM
+    final DateTime now = DateTime.now();
+    // visitId used in CallSignaturePage: scheduledVisitId = yyyyMMdd
+    final String todayVisitId =
+        '${now.year.toString().padLeft(4, '0')}'
+        '${now.month.toString().padLeft(2, '0')}'
+        '${now.day.toString().padLeft(2, '0')}'; // yyyyMMdd
 
-  final firestore = FirebaseFirestore.instance;
+    final firestore = FirebaseFirestore.instance;
 
-  // 1. Load all doctors for this user, using same structure as VisitsTab / Scheduled Doctors
-  CollectionReference<Map<String, dynamic>> doctorsCollection;
-  final root = firestore.collection('flowDB').doc('users');
+    // Match CallSignaturePage._getClientSegment
+    String _getClientSegment(String userClientType, String userEmail) {
+      if (userClientType == 'farmers') return 'INDOFIL';
+      if (userClientType == 'pharma') {
+        final lower = userEmail.toLowerCase();
+        if (lower.endsWith('@wert.com')) return 'WERT';
+        return 'IVA';
+      }
+      return 'IVA';
+    }
 
-  if (userClientType == 'pharma') {
-    doctorsCollection = root
-        .collection('RR')
-        .doc(emailKey)
-        .collection('doctors')
-        .doc('doctors')
-        .collection('doctors');
-  } else if (userClientType == 'farmers') {
-    doctorsCollection = root
-        .collection('INDOFIL')
-        .doc(emailKey)
-        .collection('doctors')
-        .doc('doctors')
-        .collection('doctors');
-  } else {
-    // legacy / default
-    doctorsCollection = root
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors');
-  }
+    // emailKey here is your sanitized email; restore to get the real email
+    final String userEmail = emailKey.replaceAll('_', '.');
+    final String segment = _getClientSegment(userClientType, userEmail);
 
-  final doctorsSnap = await doctorsCollection.get();
+    // We need the MR code used in CallSignaturePage (_userId, e.g. MR00001).
+    // Assuming you stored it in SharedPreferences as 'userId' and
+    // loaded it into a field like `mrCode` on this page.
+    final prefs = await SharedPreferences.getInstance();
+    final String mrCode = prefs.getString('userId') ?? '';
+    if (mrCode.isEmpty) return [];
 
-  if (doctorsSnap.docs.isEmpty) return [];
+    // Mirror CallSignaturePage._doctorDocRef:
+    // /DaloyClients/{SEGMENT}/Users/{MR00001}/Doctor/{doctorId}
+    final doctorsCollection = firestore
+        .collection('DaloyClients')
+        .doc(segment)
+        .collection('Users')
+        .doc(mrCode)
+        .collection('Doctor');
 
-  final List<Map<String, dynamic>> result = [];
+    final doctorsSnap = await doctorsCollection.get();
 
-  for (final doc in doctorsSnap.docs) {
-    final docData = doc.data() as Map<String, dynamic>;
-    final String doctorName =
-        "${docData['lastName'] ?? ''}, ${docData['firstName'] ?? ''}".trim();
+    if (doctorsSnap.docs.isEmpty) return [];
 
-    // 2. Go into scheduledVisits/months/months/{yyyy-MM}/dates/{yyyy-MM-dd}
-    final dateDocRef = doc.reference
-        .collection('scheduledVisits')
-        .doc('months')
-        .collection('months')
-        .doc(monthId)
-        .collection('dates')
-        .doc(todayKey);
+    final List<Map<String, dynamic>> result = [];
 
-    final dateDoc = await dateDocRef.get();
+    for (final doc in doctorsSnap.docs) {
+      final docData = doc.data() as Map<String, dynamic>;
+      final String doctorName =
+          "${docData['lastName'] ?? ''}, ${docData['firstName'] ?? ''}".trim();
 
-    if (!dateDoc.exists) continue;
+      // SampleAllocations document (same as CallSignaturePage._sampleAllocationsDocRef):
+      // /Doctor/{doctorId}/SampleAllocations/{visitId}
+      final sampleAllocDocRef =
+          doc.reference.collection('SampleAllocations').doc(todayVisitId);
 
-    final dateData = dateDoc.data() as Map<String, dynamic>;
+      final sampleAllocDoc = await sampleAllocDocRef.get();
+      if (!sampleAllocDoc.exists) continue;
 
-    // Only consider if this doc is actually scheduled for today
-    final scheduledDate = dateData['scheduledDate']?.toString() ?? '';
-    if (scheduledDate != todayKey) continue;
+      final data = sampleAllocDoc.data() as Map<String, dynamic>? ?? {};
 
-    // 3. Read sampleAllocations map: e.g. { Maxilizer: 1, ... }
-    if (!dateData.containsKey('sampleAllocations')) continue;
+      // Read sampleAllocations map: e.g. { Maxilizer: 1, ... }
+      if (!data.containsKey('sampleAllocations')) continue;
 
-    final Map<String, dynamic> allocMap =
-        Map<String, dynamic>.from(dateData['sampleAllocations']);
+      final Map<String, dynamic> allocMap =
+          Map<String, dynamic>.from(data['sampleAllocations'] as Map);
 
-    allocMap.forEach((sampleName, qtyRaw) {
-      final int qty = qtyRaw is int
-          ? qtyRaw
-          : int.tryParse(qtyRaw.toString()) ?? 0;
+      allocMap.forEach((sampleName, qtyRaw) {
+        final int qty =
+            qtyRaw is int ? qtyRaw : int.tryParse(qtyRaw.toString()) ?? 0;
 
-      if (qty <= 0) return;
+        if (qty <= 0) return;
 
-      result.add({
-        'sample': sampleName,          // e.g. "Maxilizer"
-        'qty': qty,                    // e.g. 1
-        'doctorName': doctorName,      // match Scheduled Doctors section
-        'doctorId': doc.id,
-        'scheduledDate': todayKey,
+        result.add({
+          'sample': sampleName, // e.g. "Maxilizer"
+          'qty': qty, // e.g. 1
+          'doctorName': doctorName,
+          'doctorId': doc.id,
+          'scheduledDate': todayVisitId, // yyyyMMdd
+        });
       });
+    }
+
+    // Optional: sort by sample then doctor name
+    result.sort((a, b) {
+      final sa = (a['sample'] ?? '').toString();
+      final sb = (b['sample'] ?? '').toString();
+      final da = (a['doctorName'] ?? '').toString();
+      final db = (b['doctorName'] ?? '').toString();
+      final c1 = sa.compareTo(sb);
+      if (c1 != 0) return c1;
+      return da.compareTo(db);
     });
+
+    return result;
   }
-
-  // Optional: sort by sample then doctor name
-  result.sort((a, b) {
-    final sa = (a['sample'] ?? '').toString();
-    final sb = (b['sample'] ?? '').toString();
-    final da = (a['doctorName'] ?? '').toString();
-    final db = (b['doctorName'] ?? '').toString();
-    final c1 = sa.compareTo(sb);
-    if (c1 != 0) return c1;
-    return da.compareTo(db);
-  });
-
-  return result;
-}
 
 // CALL PERFORMANCE STATS
 
@@ -314,7 +296,7 @@ Future<Map<String, dynamic>> _getCallFrequencyStats(
 }
 
 class _DonutPainter extends CustomPainter {
-  final double progress; // 0.0 – 1.0
+  final double progress; // 0.0 â€“ 1.0
   final Color color;
   final double strokeWidth;
   final Color backgroundColor;
@@ -376,26 +358,19 @@ class _DonutPainter extends CustomPainter {
 
 class _HomePageState extends State<HomePage> {
   Uint8List? signature;
-  Position? _currentPosition;
   MapController? _mapController;
 // bool _isHeaderCollapsed = false; 
 
   String userName = '';
   String userEmail = '';
   String emailKey = '';
+  String _userId = '';
   bool _hasSubmittedSignature = false;
   bool _isLoading = true;
-  String _userId = '';
-
+  String userClientType = ''; // 'pharma', 'farmers', or legacy/other
 
   int _selectedIndex = 0;
   bool _isOffline = false;
-
-  String userClientType = ''; // 'pharma', 'farmers', or legacy/other
-
-  List<Point>? _pendingSignaturePoints;
-  String? _pendingSignatureTimestamp;
-  Position? _pendingSignaturePosition;
 
   // Loading progress for signature submission
   bool _isSubmittingSignature = false;
@@ -494,8 +469,8 @@ String? _selectedGender;
     String storedEmail = prefs.getString('userEmail') ?? '';
     String storedName = prefs.getString('userName') ?? '';
     String storedClientType = prefs.getString('userClientType') ?? '';
-    String fetchEmailKey =
-        storedEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
+    String fetchEmailKey = storedEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
+    String storedUserId = prefs.getString('userId') ?? '';
 
     bool online = await _hasNetwork();
     bool wentOffline = !online;
@@ -531,7 +506,8 @@ String? _selectedGender;
       userEmail = storedEmail;
       userName = storedName;
       emailKey = storedEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
-      userClientType = storedClientType; // set here
+      userClientType = storedClientType;
+      _userId = storedUserId; // MR00001
       _hasSubmittedSignature =
           prefs.getBool('hasSubmittedSignature') ?? false;
       _isLoading = false;
@@ -1596,73 +1572,76 @@ SingleChildScrollView(
     await prefs.setString('pendingSignature', jsonEncode(payload));
 
     setState(() {
-      _pendingSignaturePoints = points;
-      _pendingSignatureTimestamp = timestamp;
-      _pendingSignaturePosition = position;
       _hasSubmittedSignature = true; // allow user to proceed
     });
   }
 
-Future<List<Map<String, dynamic>>> getAllScheduledVisitsForToday(
-  List<QueryDocumentSnapshot> doctorDocs,
-  DateTime selectedDay,
-) async {
-  if (emailKey.isEmpty) return [];
+  Future<List<Map<String, dynamic>>> getAllScheduledVisitsForToday({
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs,
+    required DateTime selectedDay,
+  }) async {
+    // If there are no doctors, nothing to do.
+    if (doctorDocs.isEmpty) return [];
 
-  final List<Map<String, dynamic>> allVisits = [];
+    final List<Map<String, dynamic>> allVisits = [];
 
-  final targetDateKey =
-      '${selectedDay.year.toString().padLeft(4, '0')}-'
-      '${selectedDay.month.toString().padLeft(2, '0')}-'
-      '${selectedDay.day.toString().padLeft(2, '0')}';
+    // Today formatted as "yyyyMMdd" to match VisitsTab and Daloy Visit docs.
+    final String targetDateKey = DateFormat('yyyyMMdd').format(selectedDay); // [web:9]
 
-  final monthId =
-      '${selectedDay.year.toString().padLeft(4, '0')}-'
-      '${selectedDay.month.toString().padLeft(2, '0')}';
+    for (final doc in doctorDocs) {
+      final Map<String, dynamic> docData = doc.data();
+      final String doctorId = docData['doc_id']?.toString() ?? doc.id;
+      final String doctorName =
+          "${docData['lastName'] ?? ''}, ${docData['firstName'] ?? ''}";
 
-  for (var doc in doctorDocs) {
-    final docData = doc.data() as Map<String, dynamic>;
-    final doctorId = docData['doc_id'] ?? doc.id;
-    final doctorName =
-        "${docData['lastName'] ?? ''}, ${docData['firstName'] ?? ''}";
+      final String hospital = (docData['hospital'] ?? '').toString();
+      final String specialty = (docData['specialty'] ?? '').toString();
 
-    // /flowDB/client/{SEGMENT}/users/{emailKey}/doctors/{docId}
-    //   /scheduledVisits/months/months/{yyyy-MM}/dates
-    final monthDocRef = doc.reference
-        .collection('scheduledVisits')
-        .doc('months')
-        .collection('months')
-        .doc(monthId);
+      // New structure:
+      // /DaloyClients/{segment}/Users/{_userId}/Doctor/{docId}/Visits/{yyyyMMdd}
+      final visitsColRef = doc.reference.collection('Visits');
 
-    final datesSnap = await monthDocRef.collection('dates').get();
+      // Only visits scheduled for today:
+      // scheduledDate == targetDateKey ("yyyyMMdd"), order by scheduledTime string.[web:1][web:5]
+      final QuerySnapshot<Map<String, dynamic>> visitsSnap =
+          await visitsColRef
+              .where('scheduledDate', isEqualTo: targetDateKey)
+              .orderBy('scheduledTime')
+              .get();
 
-    for (var v in datesSnap.docs) {
-      final visitData = v.data() as Map<String, dynamic>;
-      final visitDateString = visitData['scheduledDate'] ?? '';
+      for (final v in visitsSnap.docs) {
+        final Map<String, dynamic> visitData = v.data();
 
-      if (visitDateString == targetDateKey) {
+        // Field or doc id (yyyyMMdd), similar to VisitsTab.
+        final String scheduledDateRaw =
+            (visitData['scheduledDate'] ?? v.id).toString();
+
+        // Defensive check: skip if not exactly today.
+        if (scheduledDateRaw != targetDateKey) continue;
+
+        final String scheduledTime =
+            (visitData['scheduledTime'] ?? '').toString();
+
         allVisits.add({
           'doctorName': doctorName,
-          'scheduledTime': visitData['scheduledTime'] ?? '',
-          'hospital': docData['hospital'] ?? '',
-          'specialty': docData['specialty'] ?? '',
+          'scheduledTime': scheduledTime,
+          'hospital': hospital,
+          'specialty': specialty,
           'doctor': docData,
           'doctorId': doctorId,
-          'visitId': v.id,
+          'visitId': v.id,       // yyyyMMdd
           'visitData': visitData,
         });
       }
     }
+
+    // Safety: final sort by time string (HH:mm).[web:1]
+    allVisits.sort(
+      (a, b) => (a['scheduledTime'] ?? '').compareTo(b['scheduledTime'] ?? ''),
+    );
+
+    return allVisits;
   }
-
-  allVisits.sort((a, b) =>
-      (a['scheduledTime'] ?? '').compareTo(b['scheduledTime'] ?? ''));
-
-  return allVisits;
-}
-
-String _dateKey(DateTime d) =>
-    '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   Future<Map<String, int>> getAccomplishedVisitsForToday(
       String emailKey, String userName) async {
@@ -2264,7 +2243,6 @@ String _dateKey(DateTime d) =>
 
                                       setState(() {
                                         _hasSubmittedSignature = true;
-                                        _currentPosition = position;
                                       });
 
                                       String locationInfo = position != null
@@ -2368,6 +2346,29 @@ String _dateKey(DateTime d) =>
     }
   }
 
+/// Base Doctor collection for this MR in Daloy:
+/// /DaloyClients/{segment}/Users/{_userId}/Doctor/{docId}
+CollectionReference<Map<String, dynamic>> _doctorCollectionRefForHome({
+  required String userClientType,
+  required String userId, // MR00001
+}) {
+  final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
+
+  String clientSegment;
+  if (userClientType == 'farmers') {
+    clientSegment = 'INDOFIL';
+  } else if (userClientType == 'pharma') {
+    clientSegment = 'IVA';
+  } else {
+    clientSegment = 'GENERAL';
+  }
+
+  final userDocRef =
+      daloyRoot.doc(clientSegment).collection('Users').doc(userId);
+
+  return userDocRef.collection('Doctor');
+}
+
   Future<void> _saveSignatureToFirestore(
     List<Point> points,
     String timestamp,
@@ -2424,10 +2425,10 @@ String _dateKey(DateTime d) =>
           .doc(docId)
           .set(signatureData);
 
-      print('✓ Vector signature saved successfully');
+      print('âœ“ Vector signature saved successfully');
     } catch (e) {
       // Instead of throwing, cache offline and let user proceed
-      print('✗ Error saving signature (probably offline): $e');
+      print('âœ— Error saving signature (probably offline): $e');
       await _saveSignatureOffline(points, timestamp, position);
     }
   }
@@ -3980,7 +3981,7 @@ void _openCreateEFormDialog() {
                                                           ),
                                                         ),
 
-                                                        // 3) Body – by default respects dialog radius at bottom
+                                                        // 3) Body â€“ by default respects dialog radius at bottom
                                                         const Expanded(
                                                           child: MessagesPage(),
                                                         ),
@@ -4261,43 +4262,21 @@ void _openCreateEFormDialog() {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              FutureBuilder<QuerySnapshot>(
+                              // FUTUREBUILDER OF SCHEDULED DOCTORS FOR TODAY
+                              FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
                                 future: (() {
-                                  final flowDbRoot =
-                                      FirebaseFirestore.instance.collection('flowDB');
-
-                                  // Decide client segment (same as add_doctor_page / tml_view)
-                                  String clientSegment;
-                                  if (userClientType == 'farmers') {
-                                    clientSegment = 'INDOFIL';
-                                  } else if (userClientType == 'pharma') {
-                                    final userEmailLower = userEmail.toLowerCase();
-                                    if (userEmailLower.endsWith('@iva.com')) {
-                                      clientSegment = 'IVA';
-                                    } else if (userEmailLower.endsWith('@wert.com')) {
-                                      clientSegment = 'WERT';
-                                    } else {
-                                      clientSegment = 'IVA';
-                                    }
-                                  } else {
-                                    clientSegment = 'GENERAL';
-                                  }
-
-                                  // /flowDB/client/{SEGMENT}/users/{emailKey}/doctors
-                                  final doctorsCol = flowDbRoot
-                                      .doc('client')
-                                      .collection(clientSegment)
-                                      .doc('users')
-                                      .collection('users')
-                                      .doc(emailKey)
-                                      .collection('doctors');
+                                  // Build the Doctor collection for this MR using the same logic as DoctorDetailPage.[file:11]
+                                  final doctorsCol = _doctorCollectionRefForHome(
+                                    userClientType: userClientType,
+                                    userId: _userId, // MR00001 from SharedPreferences
+                                  );
 
                                   return doctorsCol.get().timeout(
-                                        const Duration(seconds: 10),
-                                        onTimeout: () {
-                                          throw TimeoutException('Failed to load doctors data');
-                                        },
-                                      );
+                                    const Duration(seconds: 10),
+                                    onTimeout: () {
+                                      throw TimeoutException('Failed to load doctors data');
+                                    },
+                                  );
                                 })(),
                                 builder: (context, doctorSnapshot) {
                                   if (doctorSnapshot.hasError) {
@@ -4347,12 +4326,13 @@ void _openCreateEFormDialog() {
                                     );
                                   }
 
-                                  final doctorDocs = doctorSnapshot.data!.docs;
+                                  final List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs =
+                                      doctorSnapshot.data!.docs;
 
                                   return FutureBuilder<List<Map<String, dynamic>>>(
                                     future: getAllScheduledVisitsForToday(
-                                      doctorDocs,
-                                      DateTime.now(),
+                                      doctorDocs: doctorDocs,
+                                      selectedDay: DateTime.now(), // today
                                     ).timeout(
                                       const Duration(seconds: 10),
                                       onTimeout: () {
@@ -4403,7 +4383,10 @@ void _openCreateEFormDialog() {
                                         );
                                       }
 
-                                      final visitsForDay = visitsSnapshot.data!;
+                                      final List<Map<String, dynamic>> visitsForDay =
+                                          visitsSnapshot.data!;
+
+                                      // This uses your existing UI: purple next card, visited borders, auto-scroll, etc.
                                       return _buildScheduledDoctorsRow(visitsForDay);
                                     },
                                   );
@@ -4485,7 +4468,7 @@ void _openCreateEFormDialog() {
                                   },
                                 ),
                               ),
-                              
+
                               SizedBox(height: 24),
                               
                               Padding(
@@ -5251,973 +5234,888 @@ void _openCreateEFormDialog() {
     );
   }
 
-@override
-Widget build(BuildContext context) {
-  if (_isLoading) {
-    return Scaffold(
-      body: Center(child: CircularProgressIndicator()),
-    );
-  }
-    return Scaffold(
-    appBar: AppBar(
-      title: const Text(''),
-      backgroundColor: Colors.transparent,
-      foregroundColor: Colors.white,
-      elevation: 0,
-      flexibleSpace: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Color(0xFF4e3385),
-              Color(0xFF4e3385),
-              // Color(0xFF37215a),
-              // Color(0xFF3e2666),
-              // Color(0xFF462a73),
-              // Color(0xFF4e2f80),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+      return Scaffold(
+      appBar: AppBar(
+        title: const Text(''),
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Color(0xFF4e3385),
+                Color(0xFF4e3385),
+                // Color(0xFF37215a),
+                // Color(0xFF3e2666),
+                // Color(0xFF462a73),
+                // Color(0xFF4e2f80),
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
           ),
-        ),
-        child: SafeArea(
-          bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+              ),
             ),
           ),
         ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16, top: 5, bottom: 5),
+            child: Center(
+              child: Text(
+                'iDoXs',
+                style: const TextStyle(
+                  fontFamily: 'Lato',
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  letterSpacing: 2,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
-      actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: 16, top: 5, bottom: 5),
-          child: Center(
-            child: Text(
-              'iDoXs',
-              style: const TextStyle(
-                fontFamily: 'Lato',
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-                letterSpacing: 2,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ),
-        ),
-      ],
-    ),
-    drawer: Drawer(
-      backgroundColor: AppColors.surface,
-      child: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment.center,
-                radius: 0.7,
-                colors: const [
-                  Color.fromRGBO(20, 20, 40, 0.95),
-                  Color.fromRGBO(60, 30, 100, 0.95),
-                  Color.fromRGBO(100, 50, 150, 0.95),
-                  Color.fromRGBO(140, 80, 200, 0.95),
-                  Color.fromRGBO(200, 150, 255, 0.95),
-                  Color(0xFF5958b2),
-                  Color(0xFF5958b2),
-                ],
-              ),
-            ),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeInOut,
-              // fixed height (or null if you want it to wrap content naturally)
-              height: null,
-              child: SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Content (avatar + name + email) – always visible now
-                    Padding(
-                      padding: EdgeInsets.all(AppSizes.paddingL),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 70,
-                                height: 70,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFfda756),
-                                  borderRadius: BorderRadius.circular(35),
-                                  border: Border.all(
-                                    color: const Color(0xFFfda756),
-                                    width: 2,
-                                  ),
-                                ),
-                                child: InkWell(
-                                  onTap: () =>
-                                      _handleDrawerItemTap('Profile', '/profile'),
-                                  borderRadius: BorderRadius.circular(35),
-                                  child: Center(
-                                    child: _isLoading
-                                        ? const CircularProgressIndicator(
-                                            color: Colors.white,
-                                          )
-                                        : Text(
-                                            userName.isNotEmpty
-                                                ? userName[0].toUpperCase()
-                                                : 'U',
-                                            style:
-                                                AppTextStyles.heading2.copyWith(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                  ),
-                                ),
-                              ),
-                              SizedBox(width: AppSizes.paddingM),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      _isLoading ? 'Loading...' : userName,
-                                      style:
-                                          AppTextStyles.heading3.copyWith(
-                                        color: Colors.white,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    Text(
-                                      _isLoading ? 'Loading...' : userEmail,
-                                      style: AppTextStyles.body2.copyWith(
-                                        color: Colors.white.withOpacity(0.8),
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
+      drawer: Drawer(
+        backgroundColor: AppColors.surface,
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment.center,
+                  radius: 0.7,
+                  colors: const [
+                    Color.fromRGBO(20, 20, 40, 0.95),
+                    Color.fromRGBO(60, 30, 100, 0.95),
+                    Color.fromRGBO(100, 50, 150, 0.95),
+                    Color.fromRGBO(140, 80, 200, 0.95),
+                    Color.fromRGBO(200, 150, 255, 0.95),
+                    Color(0xFF5958b2),
+                    Color(0xFF5958b2),
                   ],
                 ),
               ),
-            ),
-          ),
-
-
-          Expanded(
-            child: ListView.builder(
-              padding: EdgeInsets.symmetric(vertical: AppSizes.paddingS),
-              itemCount: MenuItems.drawerItems.length,
-              itemBuilder: (context, index) {
-                final item = MenuItems.drawerItems[index];
-                return ListTile(
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: AppSizes.paddingM,
-                  ),
-                  leading: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Color(0xFFFFFFFF),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      item['icon'],
-                      color: Color(0xFF9810fa),
-                      size: AppSizes.iconM,
-                    ),
-                  ),
-                  title: Text(
-                    item['title'],
-                    style: AppTextStyles.body1.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  onTap: () =>
-                      _handleDrawerItemTap(item['title'], item['route']),
-                );
-              },
-            ),
-          ),
-          Container(
-            padding: EdgeInsets.all(AppSizes.paddingM),
-            decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(
-                  color: AppColors.textLight.withOpacity(0.2),
-                  width: 1,
-                ),
-              ),
-            ),
-            child: ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.error.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.logout,
-                  color: AppColors.error,
-                  size: AppSizes.iconM,
-                ),
-              ),
-              title: Text(
-                'Sign Out',
-                style: AppTextStyles.body1.copyWith(
-                  color: AppColors.error,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _signOut();
-              },
-            ),
-          ),
-        ],
-      ),
-    ),
-
-
-    body: _buildBodyWithTabs(),
-     
-    bottomNavigationBar: Container(
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFF564ca4),
-            Color(0xFF4b2675),
-            // Color(0xFF715999),
-            // Color(0xFF836da6),
-            // Color(0xFF9582b3),
-          ],
-          begin: Alignment.bottomCenter,
-          end: Alignment.topCenter,
-        ),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-      ),
-      height: 115,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          BottomNavigationBar(
-            backgroundColor: Colors.transparent,
-            currentIndex: _selectedIndex,
-            onTap: _onTabTapped,
-            type: BottomNavigationBarType.fixed,
-            selectedItemColor: const Color(0xFFfdc700),
-            unselectedItemColor: Colors.white70,
-            showUnselectedLabels: true,
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home_outlined),
-                activeIcon: Icon(Icons.home),
-                label: 'Home',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.article_outlined),
-                activeIcon: Icon(Icons.article),
-                label: 'E-Forms',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.calendar_today_outlined),
-                activeIcon: Icon(Icons.calendar_month),
-                label: 'Itinerary',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.people_alt_outlined),
-                activeIcon: Icon(Icons.people),
-                label: 'Contacts',
-              ),
-            ],
-          ),
-          Positioned(
-            top: -24,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: GestureDetector(
-                onTap: () {
-                  if (_selectedIndex == 0) {
-                    _openUnplannedVisitDialog();
-                  } else if (_selectedIndex == 1) {
-                    _openCreateEFormDialog();
-                  } else if (_selectedIndex == 2) {
-                    _openAddPlannedVisitDialog();
-                  } else if (_selectedIndex == 3) {
-                    _openAddNewClientDialog();
-                  }
-                },
-                child: Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFF4e2f80),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.85),
-                        blurRadius: 18,
-                        offset: const Offset(0, 4),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOut,
+                // fixed height (or null if you want it to wrap content naturally)
+                height: null,
+                child: SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Content (avatar + name + email) â€“ always visible now
+                      Padding(
+                        padding: EdgeInsets.all(AppSizes.paddingL),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 70,
+                                  height: 70,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFfda756),
+                                    borderRadius: BorderRadius.circular(35),
+                                    border: Border.all(
+                                      color: const Color(0xFFfda756),
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: InkWell(
+                                    onTap: () =>
+                                        _handleDrawerItemTap('Profile', '/profile'),
+                                    borderRadius: BorderRadius.circular(35),
+                                    child: Center(
+                                      child: _isLoading
+                                          ? const CircularProgressIndicator(
+                                              color: Colors.white,
+                                            )
+                                          : Text(
+                                              userName.isNotEmpty
+                                                  ? userName[0].toUpperCase()
+                                                  : 'U',
+                                              style:
+                                                  AppTextStyles.heading2.copyWith(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(width: AppSizes.paddingM),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        _isLoading ? 'Loading...' : userName,
+                                        style:
+                                            AppTextStyles.heading3.copyWith(
+                                          color: Colors.white,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Text(
+                                        _isLoading ? 'Loading...' : userEmail,
+                                        style: AppTextStyles.body2.copyWith(
+                                          color: Colors.white.withOpacity(0.8),
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                  child: const Icon(
-                    Icons.add,
-                    color: Colors.white,
-                    size: 30,
+                ),
+              ),
+            ),
+
+
+            Expanded(
+              child: ListView.builder(
+                padding: EdgeInsets.symmetric(vertical: AppSizes.paddingS),
+                itemCount: MenuItems.drawerItems.length,
+                itemBuilder: (context, index) {
+                  final item = MenuItems.drawerItems[index];
+                  return ListTile(
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: AppSizes.paddingM,
+                    ),
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Color(0xFFFFFFFF),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        item['icon'],
+                        color: Color(0xFF9810fa),
+                        size: AppSizes.iconM,
+                      ),
+                    ),
+                    title: Text(
+                      item['title'],
+                      style: AppTextStyles.body1.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    onTap: () =>
+                        _handleDrawerItemTap(item['title'], item['route']),
+                  );
+                },
+              ),
+            ),
+            Container(
+              padding: EdgeInsets.all(AppSizes.paddingM),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: AppColors.textLight.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
+              ),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.logout,
+                    color: AppColors.error,
+                    size: AppSizes.iconM,
+                  ),
+                ),
+                title: Text(
+                  'Sign Out',
+                  style: AppTextStyles.body1.copyWith(
+                    color: AppColors.error,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _signOut();
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+
+
+      body: _buildBodyWithTabs(),
+      
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [
+              Color(0xFF564ca4),
+              Color(0xFF4b2675),
+              // Color(0xFF715999),
+              // Color(0xFF836da6),
+              // Color(0xFF9582b3),
+            ],
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+          ),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+        ),
+        height: 115,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            BottomNavigationBar(
+              backgroundColor: Colors.transparent,
+              currentIndex: _selectedIndex,
+              onTap: _onTabTapped,
+              type: BottomNavigationBarType.fixed,
+              selectedItemColor: const Color(0xFFfdc700),
+              unselectedItemColor: Colors.white70,
+              showUnselectedLabels: true,
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.home_outlined),
+                  activeIcon: Icon(Icons.home),
+                  label: 'Home',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.article_outlined),
+                  activeIcon: Icon(Icons.article),
+                  label: 'E-Forms',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.calendar_today_outlined),
+                  activeIcon: Icon(Icons.calendar_month),
+                  label: 'Itinerary',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.people_alt_outlined),
+                  activeIcon: Icon(Icons.people),
+                  label: 'Contacts',
+                ),
+              ],
+            ),
+            Positioned(
+              top: -24,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: GestureDetector(
+                  onTap: () {
+                    if (_selectedIndex == 0) {
+                      _openUnplannedVisitDialog();
+                    } else if (_selectedIndex == 1) {
+                      _openCreateEFormDialog();
+                    } else if (_selectedIndex == 2) {
+                      _openAddPlannedVisitDialog();
+                    } else if (_selectedIndex == 3) {
+                      _openAddNewClientDialog();
+                    }
+                  },
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF4e2f80),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.85),
+                          blurRadius: 18,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.add,
+                      color: Colors.white,
+                      size: 30,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
-      ),
-    ),
-  );
-  }
-
-
-
-  Widget _buildDashboardCard({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment:
-                MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding:
-                    EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                                   borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  size: 32,
-                  color: color,
-                ),
-              ),
-              SizedBox(height: 12),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 6),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey[700],
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );
-  }
+    }
 
   // Scheduled doctors for today section
   Widget _buildScheduledDoctorsRow(List<Map<String, dynamic>> visitsForDay) {
-    // Sort by time, visited first (defensive: data may not be sorted yet)
-    visitsForDay.sort((a, b) {
-      final aVisitData = a['visitData'] as Map<String, dynamic>;
-      final bVisitData = b['visitData'] as Map<String, dynamic>;
+  // Sort by time, visited first (defensive: data may not be sorted yet)
+  visitsForDay.sort((a, b) {
+    final aVisitData = a['visitData'] as Map<String, dynamic>;
+    final bVisitData = b['visitData'] as Map<String, dynamic>;
 
-      final aSig = aVisitData['signaturePoints'];
-      final bSig = bVisitData['signaturePoints'];
+    final aSig = aVisitData['signaturePoints'];
+    final bSig = bVisitData['signaturePoints'];
 
-      final bool aVisited = aSig != null && aSig is List && (aSig as List).isNotEmpty;
-      final bool bVisited = bSig != null && bSig is List && (bSig as List).isNotEmpty;
+    final bool aVisited = aSig != null && aSig is List;
+    final bool bVisited = bSig != null && bSig is List;
 
-      if (aVisited && !bVisited) return -1;
-      if (!aVisited && bVisited) return 1;
+    if (aVisited && !bVisited) return -1;
+    if (!aVisited && bVisited) return 1;
 
-      final aTime = a['scheduledTime'] as String? ?? '';
-      final bTime = b['scheduledTime'] as String? ?? '';
-      return aTime.compareTo(bTime);
+    final aTime = a['scheduledTime'] as String? ?? '';
+    final bTime = b['scheduledTime'] as String? ?? '';
+    return aTime.compareTo(bTime);
+  });
+
+  // Find the doctor to visit (purple card)
+  final int nextIdx = visitsForDay.indexWhere((v) {
+    final visitData = v['visitData'] as Map<String, dynamic>;
+    final signaturePoints = visitData['signaturePoints'];
+    return signaturePoints == null ||
+        (signaturePoints is List && signaturePoints.isEmpty);
+  });
+
+  // Auto-scroll to the next (purple) doctor card
+  if (nextIdx > 0) {
+    Future.delayed(const Duration(milliseconds: 350), () {
+      if (!_doctorsScrollController.hasClients) return;
+      if (!_doctorsScrollController.position.hasContentDimensions) return;
+
+      // Resize card width so that it is always longer than the longest doctor name
+      const double minCardWidth = 280.0;
+      const double maxCardWidth = 380.0;
+      const double charsPerLine = 18.0;
+      const double extraWidthPerChar = 7.0;
+      const double badgeOverflow = 10.0;
+      const double cardGap = 12.0;
+
+      // Find the doctor with the longest name among all displayed cards
+      // All card widths remain uniform
+      final String longestName = visitsForDay
+          .map((v) => (v['doctorName'] as String? ?? ''))
+          .reduce((a, b) => a.length > b.length ? a : b);
+
+      final double cardWidth = longestName.length > charsPerLine
+          ? (minCardWidth +
+                  (longestName.length - charsPerLine) * extraWidthPerChar)
+              .clamp(minCardWidth, maxCardWidth)
+          : minCardWidth;
+
+      final double itemStride = cardWidth + badgeOverflow + cardGap;
+      final double offset = (nextIdx * itemStride).clamp(
+        0.0,
+        _doctorsScrollController.position.maxScrollExtent,
+      );
+
+      _doctorsScrollController.animateTo(
+        offset,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeInOut,
+      );
     });
+  }
 
-    // Find the doctor to visit (purple card)
-    final int nextIdx = visitsForDay.indexWhere((v) {
-      final visitData = v['visitData'] as Map<String, dynamic>;
-      final signaturePoints = visitData['signaturePoints'];
-      return signaturePoints == null ||
-          (signaturePoints is List && signaturePoints.isEmpty);
-    });
+  const double badgeOverflow = 10.0;
+  const double shadowPadding = 12.0;
+  return SizedBox(
+    height: 220 + badgeOverflow + shadowPadding,
+    child: ListView.builder(
+      controller: _doctorsScrollController,
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.only(
+        left: 5,
+        top: badgeOverflow,
+        bottom: shadowPadding,
+      ),
+      itemCount: visitsForDay.length,
+      itemBuilder: (context, idx) {
+        final visit = visitsForDay[idx];
+        final visitData = visit['visitData'] as Map<String, dynamic>;
+        final scheduledTime = visit['scheduledTime'] as String? ?? '';
+        final String doctorName = visit['doctorName'] as String? ?? '-';
+        final String hospital = visit['hospital'] as String? ?? '';
+        final bool isUnplanned = visitData['unplanned'] == true;
+        final String visitTypeLabel =
+            isUnplanned ? '(Unplanned)' : '(Planned)';
 
-    // Auto-scroll to the next (purple) doctor card
-    if (nextIdx > 0) {
-      Future.delayed(const Duration(milliseconds: 350), () {
-        if (!_doctorsScrollController.hasClients) return;
-        if (!_doctorsScrollController.position.hasContentDimensions) return;
+        final signaturePoints = visitData['signaturePoints'];
+        final bool isVisited =
+            signaturePoints != null && signaturePoints is List;
 
-        // Resize card width so that it is always longer than the longest doctor name
+        final int nextIdxLocal = nextIdx;
+        final bool isNext = !isVisited && idx == nextIdxLocal;
+
+        const double visitedCardHeight = 200.0;
+        const double normalCardHeight = 212.0;
+        final double cardHeight =
+            isVisited ? visitedCardHeight : normalCardHeight;
+
         const double minCardWidth = 280.0;
         const double maxCardWidth = 380.0;
         const double charsPerLine = 18.0;
         const double extraWidthPerChar = 7.0;
-        const double badgeOverflow = 10.0;
-        const double cardGap = 12.0;
 
-        // Find the doctor with the longest name among all displayed cards
-        // All card widths remain uniform
         final String longestName = visitsForDay
             .map((v) => (v['doctorName'] as String? ?? ''))
             .reduce((a, b) => a.length > b.length ? a : b);
 
-        final double cardWidth = longestName.length > charsPerLine
+        final double dynamicWidth = longestName.length > charsPerLine
             ? (minCardWidth +
                     (longestName.length - charsPerLine) * extraWidthPerChar)
                 .clamp(minCardWidth, maxCardWidth)
             : minCardWidth;
 
-        final double itemStride = cardWidth + badgeOverflow + cardGap;
-        final double offset = (nextIdx * itemStride).clamp(
-          0.0,
-          _doctorsScrollController.position.maxScrollExtent,
-        );
+        final double cardWidth = dynamicWidth;
 
-        _doctorsScrollController.animateTo(
-          offset,
-          duration: const Duration(milliseconds: 600),
-          curve: Curves.easeInOut,
-        );
-      });
-    }
+        final Color iconBoxBg = isNext
+            ? Colors.white.withValues(alpha: 0.18)
+            : const Color(0xFFF0F0F2);
+        final Color iconColor =
+            isNext ? Colors.white : const Color(0xFF5A5A7A);
+        final Color titleColor =
+            isNext ? Colors.white : Colors.black87;
+        final Color timeColor =
+            isNext ? Colors.white70 : Colors.grey.shade700;
+        final Color hospitalColor =
+            isNext ? Colors.white60 : Colors.grey.shade600;
 
-    const double badgeOverflow = 10.0;
-    const double shadowPadding = 12.0;
-    return SizedBox(
-      height: 220 + badgeOverflow + shadowPadding,
-      child: ListView.builder(
-        controller: _doctorsScrollController,
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.only(
-          left: 5,
-          top: badgeOverflow,
-          bottom: shadowPadding,
-        ),
-        itemCount: visitsForDay.length,
-        itemBuilder: (context, idx) {
-          final visit = visitsForDay[idx];
-          final visitData = visit['visitData'] as Map<String, dynamic>;
-          final scheduledTime = visit['scheduledTime'] as String? ?? '';
-          final String doctorName = visit['doctorName'] as String? ?? '-';
-          final String hospital = visit['hospital'] as String? ?? '';
-          final String specialty = visit['specialty'] as String? ?? '';
-          final bool isUnplanned = visitData['unplanned'] == true;
-          final String visitTypeLabel =
-              isUnplanned ? '(Unplanned)' : '(Planned)';
-
-          final signaturePoints = visitData['signaturePoints'];
-          final bool isVisited = signaturePoints != null &&
-              signaturePoints is List &&
-              (signaturePoints as List).isNotEmpty;
-
-          final int nextIdxLocal = nextIdx;
-          final bool isNext = !isVisited && idx == nextIdxLocal;
-
-          const double visitedCardHeight = 200.0;
-          const double normalCardHeight = 212.0;
-          final double cardHeight =
-              isVisited ? visitedCardHeight : normalCardHeight;
-
-          const double minCardWidth = 280.0;
-          const double maxCardWidth = 380.0;
-          const double charsPerLine = 18.0;
-          const double extraWidthPerChar = 7.0;
-
-          final String longestName = visitsForDay
-              .map((v) => (v['doctorName'] as String? ?? ''))
-              .reduce((a, b) => a.length > b.length ? a : b);
-
-          final double dynamicWidth =
-              longestName.length > charsPerLine
-                  ? (minCardWidth +
-                          (longestName.length - charsPerLine) *
-                              extraWidthPerChar)
-                      .clamp(minCardWidth, maxCardWidth)
-                  : minCardWidth;
-
-          final double cardWidth = dynamicWidth;
-
-          final Color iconBoxBg = isNext
-              ? Colors.white.withValues(alpha: 0.18)
-              : const Color(0xFFF0F0F2);
-          final Color iconColor = isNext
-              ? Colors.white
-              : const Color(0xFF5A5A7A);
-          final Color titleColor =
-              isNext ? Colors.white : Colors.black87;
-          final Color timeColor =
-              isNext ? Colors.white70 : Colors.grey.shade700;
-          final Color hospitalColor =
-              isNext ? Colors.white60 : Colors.grey.shade600;
-
-          return Padding(
-            padding: const EdgeInsets.only(right: 12.0),
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: SizedBox(
-                width: cardWidth + badgeOverflow,
-                height: cardHeight,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Positioned(
-                      left: badgeOverflow,
-                      top: 0,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                        width: cardWidth,
-                        height: cardHeight,
-                        decoration: BoxDecoration(
-                          color: isNext ? null : Colors.white,
-                          borderRadius: BorderRadius.circular(18),
-                          gradient: isNext
-                              ? const LinearGradient(
-                                  colors: [
-                                    Color(0xFF4A2371),
-                                    Color(0xFF4A2371),
-                                    Color(0xFF5958B2)
-                                  ],
-                                  stops: [0.0, 0.55, 1.0],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                )
-                              : null,
-                          border: isVisited
-                              ? Border.all(
-                                  color: const Color(0xFF4CAF50),
-                                  width: 2.2,
-                                )
-                              : null,
-                          boxShadow: [
-                            BoxShadow(
-                              color: isNext
-                                  ? const Color(0xFF3B2A7E)
-                                      .withValues(alpha: 0.35)
-                                  : Colors.black
-                                      .withValues(alpha: 0.07),
-                              blurRadius: isNext ? 16 : 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(18),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => CallDetailPage(
-                                  doctor: visit['doctor']
-                                      as Map<String, dynamic>,
-                                  scheduledVisitId:
-                                      visit['visitId'] as String,
+        return Padding(
+          padding: const EdgeInsets.only(right: 12.0),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              width: cardWidth + badgeOverflow,
+              height: cardHeight,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: badgeOverflow,
+                    top: 0,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                      width: cardWidth,
+                      height: cardHeight,
+                      decoration: BoxDecoration(
+                        color: isNext ? null : Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        gradient: isNext
+                            ? const LinearGradient(
+                                colors: [
+                                  Color(0xFF4A2371),
+                                  Color(0xFF4A2371),
+                                  Color(0xFF5958B2)
+                                ],
+                                stops: [0.0, 0.55, 1.0],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              )
+                            : null,
+                        border: isVisited
+                            ? Border.all(
+                                color: const Color(0xFF4CAF50),
+                                width: 2.2,
+                              )
+                            : null,
+                        boxShadow: [
+                          BoxShadow(
+                            color: isNext
+                                ? const Color(0xFF3B2A7E)
+                                    .withValues(alpha: 0.35)
+                                : Colors.black
+                                    .withValues(alpha: 0.07),
+                            blurRadius: isNext ? 16 : 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(18),
+                        onTap: null, // card tap does nothing; navigation only via Start Call
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: iconBoxBg,
+                                      borderRadius:
+                                          BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      Icons.assignment_outlined,
+                                      size: 26,
+                                      color: iconColor,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          "Doctor's Visit",
+                                          style: TextStyle(
+                                            fontFamily: 'OpenSauce',
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 12,
+                                            color: titleColor,
+                                          ),
+                                        ),
+                                        Text(
+                                          visitTypeLabel,
+                                          style: TextStyle(
+                                            fontFamily: 'OpenSauce',
+                                            fontWeight: FontWeight.w500,
+                                            fontSize: 10,
+                                            color: isNext
+                                                ? Colors.white60
+                                                : Colors.grey.shade500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                doctorName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'OpenSauce',
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 16,
+                                  color: titleColor,
+                                  height: 1.2,
+                                  shadows: isNext
+                                      ? [
+                                          Shadow(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.3),
+                                            blurRadius: 0,
+                                            offset:
+                                                const Offset(0.4, 0),
+                                          )
+                                        ]
+                                      : [
+                                          Shadow(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.15),
+                                            blurRadius: 0,
+                                            offset:
+                                                const Offset(0.4, 0),
+                                          )
+                                        ],
                                 ),
                               ),
-                            );
-                          },
-                          child: Padding(
-                            padding:
-                                const EdgeInsets.fromLTRB(12, 14, 12, 12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.center,
-                                  children: [
-                                    Container(
-                                      width: 44,
-                                      height: 44,
-                                      decoration: BoxDecoration(
-                                        color: iconBoxBg,
-                                        borderRadius:
-                                            BorderRadius.circular(8),
-                                      ),
-                                      child: Icon(
-                                        Icons.assignment_outlined,
-                                        size: 26,
-                                        color: iconColor,
-                                      ),
+                              const SizedBox(height: 4),
+                              Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    scheduledTime,
+                                    style: TextStyle(
+                                      fontFamily: 'OpenSauce',
+                                      fontWeight: FontWeight.w400,
+                                      fontSize: 14,
+                                      color: timeColor,
                                     ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            "Doctor's Visit",
-                                            style: TextStyle(
-                                              fontFamily: 'OpenSauce',
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 12,
-                                              color: titleColor,
-                                            ),
-                                          ),
-                                          Text(
-                                            visitTypeLabel,
-                                            style: TextStyle(
-                                              fontFamily: 'OpenSauce',
-                                              fontWeight: FontWeight.w500,
-                                              fontSize: 10,
-                                              color: isNext
-                                                  ? Colors.white60
-                                                  : Colors
-                                                      .grey.shade500,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                Text(
-                                  doctorName,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontFamily: 'OpenSauce',
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
-                                    color: titleColor,
-                                    height: 1.2,
-                                    shadows: isNext
-                                        ? [
-                                            Shadow(
-                                              color: Colors.white
-                                                  .withValues(
-                                                      alpha: 0.3),
-                                              blurRadius: 0,
-                                              offset:
-                                                  const Offset(0.4, 0),
-                                            )
-                                          ]
-                                        : [
-                                            Shadow(
-                                              color: Colors.black
-                                                  .withValues(
-                                                      alpha: 0.15),
-                                              blurRadius: 0,
-                                              offset:
-                                                  const Offset(0.4, 0),
-                                            )
-                                          ],
                                   ),
-                                ),
-                                const SizedBox(height: 4),
-                                Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
+                                  if (hospital.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
                                     Text(
-                                      scheduledTime,
+                                      hospital,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontFamily: 'OpenSauce',
                                         fontWeight: FontWeight.w400,
-                                        fontSize: 14,
-                                        color: timeColor,
+                                        fontSize: 12,
+                                        color: hospitalColor,
+                                        height: 1.3,
                                       ),
                                     ),
-                                    if (hospital.isNotEmpty) ...[
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        hospital,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontFamily: 'OpenSauce',
-                                          fontWeight: FontWeight.w400,
-                                          fontSize: 12,
-                                          color: hospitalColor,
-                                          height: 1.3,
-                                        ),
-                                      ),
-                                    ],
                                   ],
-                                ),
-                                const Spacer(),
-                                if (!isVisited)
-                                  Container(
-                                    width: double.infinity,
-                                    height: 34,
-                                    decoration: BoxDecoration(
-                                      gradient: isNext
-                                          ? const LinearGradient(
-                                              colors: [
-                                                Color(0xFF4CAF50),
-                                                Color(0xFF388E3C)
-                                              ],
-                                              begin: Alignment.topLeft,
-                                              end: Alignment.bottomRight,
-                                            )
-                                          : null,
-                                      color: isNext
-                                          ? null
-                                          : const Color(0xFFE8F5E9),
-                                      borderRadius:
-                                          BorderRadius.circular(10),
-                                    ),
-                                    child: ElevatedButton.icon(
-                                      onPressed: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) =>
-                                                CallDetailPage(
-                                              doctor: visit['doctor']
-                                                  as Map<String, dynamic>,
-                                              scheduledVisitId:
-                                                  visit['visitId']
-                                                      as String,
-                                            ),
+                                ],
+                              ),
+                              const Spacer(),
+                              if (!isVisited)
+                                Container(
+                                  width: double.infinity,
+                                  height: 34,
+                                  decoration: BoxDecoration(
+                                    gradient: isNext
+                                        ? const LinearGradient(
+                                            colors: [
+                                              Color(0xFF4CAF50),
+                                              Color(0xFF388E3C)
+                                            ],
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                          )
+                                        : null,
+                                    color: isNext
+                                        ? null
+                                        : const Color(0xFFE8F5E9),
+                                    borderRadius:
+                                        BorderRadius.circular(10),
+                                  ),
+                                  child: ElevatedButton.icon(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              CallDetailPage(
+                                            doctor: visit['doctor']
+                                                as Map<String, dynamic>,
+                                            scheduledVisitId:
+                                                visit['visitId']
+                                                    as String,
                                           ),
-                                        );
-                                      },
-                                      icon: const Icon(
-                                        Icons.play_arrow,
-                                        size: 17,
-                                      ),
-                                      label: const Text(
-                                        'Start Call',
-                                        style: TextStyle(
-                                          fontFamily: 'OpenSauce',
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 13,
-                                          letterSpacing: 0.3,
                                         ),
+                                      );
+                                    },
+                                    icon: const Icon(
+                                      Icons.play_arrow,
+                                      size: 17,
+                                    ),
+                                    label: const Text(
+                                      'Start Call',
+                                      style: TextStyle(
+                                        fontFamily: 'OpenSauce',
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                        letterSpacing: 0.3,
                                       ),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor:
-                                            Colors.transparent,
-                                        foregroundColor: isNext
-                                            ? Colors.white
-                                            : const Color(0xFF2E7D32),
-                                        elevation: 0,
-                                        shadowColor: Colors.transparent,
-                                        padding:
-                                            const EdgeInsets.symmetric(
-                                                horizontal: 8),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(10),
-                                        ),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor:
+                                          Colors.transparent,
+                                      foregroundColor: isNext
+                                          ? Colors.white
+                                          : const Color(0xFF2E7D32),
+                                      elevation: 0,
+                                      shadowColor: Colors.transparent,
+                                      padding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 8),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(10),
                                       ),
                                     ),
                                   ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (isVisited)
-                      Positioned(
-                        top: -4,
-                        left: -2,
-                        child: Container(
-                          width: 26,
-                          height: 26,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF4CAF50),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Color(0x334CAF50),
-                                blurRadius: 6,
-                                offset: Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.check,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }  
-  
-  Widget _buildSamplesToBringRow(List<Map<String, dynamic>> samplesList) {
-    return StatefulBuilder(
-      builder: (context, setBoxState) {
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          clipBehavior: Clip.none, 
-          child: Row(
-            children: samplesList.asMap().entries.map((entry) {
-              int idx = entry.key;
-              var item = entry.value;              
-              final bool isChecked = checkedStates[idx] ?? false;
-              final String promoName = item['sample'] ?? '';
-              final int qty = item['qty'] ?? 0;
-
-              return Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: GestureDetector(
-                  onTap: () {
-                    checkedStates[idx] = !(checkedStates[idx] ?? false);
-                    setBoxState(() {});
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeInOut,
-                    width: 160,
-                    height: 160,
-                    padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
-                    decoration: BoxDecoration(
-                      color: isChecked
-                          ? Colors.green.shade50
-                          : Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: isChecked
-                            ? Colors.green
-                            : Colors.grey.shade200,
-                        width: isChecked 
-                            ? 1.5 
-                            : 0.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: isChecked
-                              ? Colors.green.withValues(alpha: 0.15)
-                              : Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 16,
-                          spreadRadius: 0,
-                          offset: const Offset(0, 6),
-                        ),
-                        BoxShadow(
-                          color: isChecked
-                              ? Colors.green.withValues(alpha: 0.06)
-                              : Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 6,
-                          spreadRadius: 0,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Icon
-                        Container(
-                          width: 55,
-                          height: 55,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFEEEDFE),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            LucideIcons.package,
-                            size: 26,
-                            color: Color(0xFF4A2371)
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Product name
-                        Text(
-                          promoName,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontFamily: 'OpenSauce',                            
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,                            
-                            color: Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-
-                        // Quantity
-                        RichText(
-                          text: TextSpan(
-                            style: const TextStyle(fontSize: 14),
-                            children: [
-                              TextSpan(
-                                text: 'Qty: ',
-                                style: TextStyle(
-                                  color: Colors.grey.shade800,
                                 ),
-                              ),
-                              TextSpan(
-                                text: '${qty}x',
-                                style: const TextStyle(
-                                  color: Color(0xFF4A2371),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
                             ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            }).toList(),
+                  if (isVisited)
+                    Positioned(
+                      top: -4,
+                      left: -2,
+                      child: Container(
+                        width: 26,
+                        height: 26,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF4CAF50),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Color(0x334CAF50),
+                              blurRadius: 6,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.check,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         );
       },
-    );
-  }
+    ),
+  );
+}
+  
+Widget _buildSamplesToBringRow(List<Map<String, dynamic>> samplesList) {
+  return StatefulBuilder(
+    builder: (context, setBoxState) {
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
+        child: Row(
+          children: samplesList.asMap().entries.map((entry) {
+            int idx = entry.key;
+            var item = entry.value;
+            final bool isChecked = checkedStates[idx] ?? false;
+            final String promoName = item['sample'] ?? '';
+            final int qty = item['qty'] ?? 0;
+
+            return Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: GestureDetector(
+                onTap: () {
+                  checkedStates[idx] = !(checkedStates[idx] ?? false);
+                  setBoxState(() {});
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeInOut,
+                  width: 160,
+                  height: 160,
+                  padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
+                  decoration: BoxDecoration(
+                    color: isChecked
+                        ? Colors.green.shade50
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isChecked
+                          ? Colors.green
+                          : Colors.grey.shade200,
+                      width: isChecked ? 1.5 : 0.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: isChecked
+                            ? Colors.green.withValues(alpha: 0.15)
+                            : Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 16,
+                        spreadRadius: 0,
+                        offset: const Offset(0, 6),
+                      ),
+                      BoxShadow(
+                        color: isChecked
+                            ? Colors.green.withValues(alpha: 0.06)
+                            : Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 6,
+                        spreadRadius: 0,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // Icon
+                      Container(
+                        width: 55,
+                        height: 55,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFEEEDFE),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          LucideIcons.package,
+                          size: 26,
+                          color: Color(0xFF4A2371),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Product name
+                      Text(
+                        promoName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontFamily: 'OpenSauce',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+
+                      // Quantity
+                      RichText(
+                        text: TextSpan(
+                          style: const TextStyle(fontSize: 14),
+                          children: [
+                            TextSpan(
+                              text: 'Qty: ',
+                              style: TextStyle(
+                                color: Colors.grey.shade800,
+                              ),
+                            ),
+                            TextSpan(
+                              text: '${qty}x',
+                              style: const TextStyle(
+                                color: Color(0xFF4A2371),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      );
+    },
+  );
+}
+
 }
