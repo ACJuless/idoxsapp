@@ -159,17 +159,6 @@ Map<int, bool> checkedStates = {};
 
 // CALL PERFORMANCE STATS
 
-// Helper: derive segment from client type + email
-String _getClientSegment(String userClientType, String userEmail) {
-  if (userClientType == 'farmers') return 'INDOFIL';
-  if (userClientType == 'pharma') {
-    final lower = userEmail.toLowerCase();
-    if (lower.endsWith('@wert.com')) return 'WERT';
-    return 'IVA';
-  }
-  return 'IVA';
-}
-
   Future<List<Map<String, dynamic>>> getAllScheduledVisitsForToday({
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs,
     required DateTime selectedDay,
@@ -261,142 +250,219 @@ String _getClientSegment(String userClientType, String userEmail) {
     };
   }
 
-// Monthly Call Performance
-  Future<Map<String, int>> _getAccomplishedVisitsForMonth(
-      String emailKey, String userName) async {
-    final now = DateTime.now();
-    final String monthPrefix =
-        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}';
-    int totalCount = 0;
-    int accomplishedCount = 0;
+// Month's Accomplished 
+  Future<List<Map<String, dynamic>>> getAllScheduledVisitsForCurrentMonth({
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs,
+    required DateTime referenceDay, // typically DateTime.now()
+  }) async {
+    // Build current month prefix yyyyMM (e.g., "202604" for April 2026)
+    final String currentMonthPrefix =
+        '${referenceDay.year.toString().padLeft(4, '0')}'
+        '${referenceDay.month.toString().padLeft(2, '0')}';
 
-    final doctorSnapshot = await FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
-        .get();
+    final List<Map<String, dynamic>> allVisits = [];
 
-    for (var doc in doctorSnapshot.docs) {
-      var scheduledVisitsSnap =
-          await doc.reference.collection('scheduledVisits').get();
+    for (final doctorDoc in doctorDocs) {
+      final String doctorId = doctorDoc.id;
 
-      for (var v in scheduledVisitsSnap.docs) {
-        final visitData = v.data();
-        final visitDateString = visitData['scheduledDate'] ?? '';
-        if (visitDateString.startsWith(monthPrefix)) {
-          totalCount += 1;
-          if (visitData.containsKey('signaturePoints') &&
-              visitData['signaturePoints'] != null &&
-              (visitData['signaturePoints'] as List).isNotEmpty) {
-            accomplishedCount += 1;
-          }
+      // /DaloyClients/IVA/Users/MR00001/Doctor/{doctorId}/Visits
+      final visitsCollection =
+          doctorDoc.reference.collection('Visits');
+
+      final visitsSnap = await visitsCollection.get();
+
+      for (final visitDoc in visitsSnap.docs) {
+        final String visitId = visitDoc.id; // e.g., "20260430"
+
+        // Safety: ensure proper length
+        if (visitId.length < 8) {
+          print('Skipping invalid visit ID "$visitId" for doctor $doctorId');
+          continue;
+        }
+
+        // Filter to current month via ID prefix
+        if (visitId.startsWith(currentMonthPrefix)) {
+          final visitData = visitDoc.data();
+
+          // Store visit info, including doctorId and visitId for debugging if needed
+          allVisits.add({
+            'doctorId': doctorId,
+            'visitId': visitId,
+            'visitData': visitData,
+          });
         }
       }
     }
-    return {
-      "total": totalCount,
-      "accomplished": accomplishedCount,
-    };
-}
 
+    print('Total visits found for month $currentMonthPrefix: ${allVisits.length}');
+    return allVisits;
+  }
+
+/// Count Total vs Accomplished visits for the Month
+  Future<Map<String, int>> getAccomplishedVisitsForMonthFromDoctors({
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs,
+    required DateTime referenceDay,
+  }) async {
+    // Get all scheduled visits for the current month
+    final List<Map<String, dynamic>> allVisits =
+        await getAllScheduledVisitsForCurrentMonth(
+      doctorDocs: doctorDocs,
+      referenceDay: referenceDay,
+    );
+
+    // Count submitted == true
+    final int submittedCount = allVisits.where((visit) {
+      final visitData = visit['visitData'] as Map<String, dynamic>?;
+      return visitData?['submitted'] == true;
+    }).length;
+
+    return {
+      'total': allVisits.length,
+      'accomplished': submittedCount,
+    };
+  }
 // Call Reach
-  Future<Map<String, dynamic>> _getCallReachStats(
-      String emailKey, String userName) async {
+  Future<Map<String, dynamic>> getCallReachStats(
+    String clientId, String userId) async {
+  try {
+    // Get current month and year (e.g., April 2026 -> 202604)
+    final now = DateTime.now();
+    final currentYearMonth = '${now.year}${now.month.toString().padLeft(2, '0')}';
+    
+    // Get all doctors for this user
     final doctorsSnap = await FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
+        .collection('DaloyClients')
+        .doc(clientId)
+        .collection('Users')
+        .doc(userId)
+        .collection('Doctor')
         .get();
 
     int totalDoctors = doctorsSnap.docs.length;
-    int visitedDoctors = 0;
+    int visitedDoctorsWithSubmitted = 0;
 
-    for (final doc in doctorsSnap.docs) {
-      final scheduledSnapshots =
-          await doc.reference.collection('scheduledVisits').get();
+    // Check each doctor
+    for (final doctorDoc in doctorsSnap.docs) {
+      final doctorId = doctorDoc.id;
+      
+      // Get all visits for this doctor
+      final visitsSnap = await doctorDoc.reference
+          .collection('Visits')
+          .get();
 
-      bool hasSignaturePoints = false;
+      bool hasSubmittedVisitThisMonth = false;
 
-      for (final visit in scheduledSnapshots.docs) {
-        final visitData = visit.data();
-        if (visitData.containsKey('signaturePoints') &&
-            visitData['signaturePoints'] != null &&
-            (visitData['signaturePoints'] as List).isNotEmpty) {
-          hasSignaturePoints = true;
-          break;
+      // Check each visit document (e.g., 20260430)
+      for (final visitDoc in visitsSnap.docs) {
+        final visitDate = visitDoc.id; // e.g., "20260430"
+        
+        // Check if visit is from current month
+        if (visitDate.startsWith(currentYearMonth)) {
+          final visitData = visitDoc.data();
+          
+          // Check if submitted is true
+          if (visitData.containsKey('submitted') &&
+              visitData['submitted'] == true) {
+            hasSubmittedVisitThisMonth = true;
+            break; // Found one submitted visit this month
+          }
         }
       }
 
-      if (hasSignaturePoints) visitedDoctors++;
+      if (hasSubmittedVisitThisMonth) {
+        visitedDoctorsWithSubmitted++;
+      }
     }
 
     double callReach = 0.0;
     if (totalDoctors > 0) {
-      callReach = (visitedDoctors / totalDoctors) * 100.0;
+      callReach = (visitedDoctorsWithSubmitted / totalDoctors) * 100.0;
     }
 
     return {
       'callReach': callReach,
       'totalDoctors': totalDoctors,
-      'visitedDoctors': visitedDoctors,
+      'visitedDoctors': visitedDoctorsWithSubmitted,
     };
+  } catch (e) {
+    print('Error in _getMonthlyCallReachStats: $e');
+    return {
+      'callReach': 0.0,
+      'totalDoctors': 0,
+      'visitedDoctors': 0,
+    };
+  }
 }
 
 // Call Frequency
-  Future<Map<String, dynamic>> _getCallFrequencyStats(
-      String emailKey, String userName) async {
+  Future<Map<String, dynamic>> _getCallFrequencyStatss() async {
     final now = DateTime.now();
-    final String monthPrefix =
-        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}';
+    final String currentMonthPrefix =
+        '${now.year.toString().padLeft(4, '0')}${now.month.toString().padLeft(2, '0')}';
 
-    final doctorsSnap = await FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
-        .get();
+    try {
+      // Get all doctors for user MR00001 ONLY
+      final doctorsSnap = await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('Users')
+          .doc('MR00001')
+          .collection('Doctor')
+          .get();
 
-    int totalDoctors = doctorsSnap.docs.length;
-    int completedFrequency = 0;
+      int totalDoctors = doctorsSnap.docs.length;
+      int completedFrequencyDoctors = 0;
 
-    for (final doc in doctorsSnap.docs) {
-      final scheduledVisitsSnap =
-          await doc.reference.collection('scheduledVisits').get();
+      // Check each doctor
+      for (final doctorDoc in doctorsSnap.docs) {
+        // Get all visits for this doctor
+        final visitsSnap = await doctorDoc.reference
+            .collection('Visits')
+            .get();
 
-      final thisMonthVisits = scheduledVisitsSnap.docs.where((v) {
-        final visitData = v.data();
-        final visitDateString = visitData['scheduledDate'] ?? '';
-        return visitDateString.startsWith(monthPrefix);
-      }).toList();
+        // Filter visits for current month only
+        final currentMonthVisits = visitsSnap.docs.where((visitDoc) {
+          final visitId = visitDoc.id;
+          // Check if visit ID starts with current year-month (e.g., "202604")
+          return visitId.length >= 6 && visitId.substring(0, 6) == currentMonthPrefix;
+        }).toList();
 
-      if (thisMonthVisits.isEmpty) continue;
+        // Skip if no visits this month
+        if (currentMonthVisits.isEmpty) continue;
 
-      bool allVisited = thisMonthVisits.every((visit) {
-        final visitData = visit.data();
-        return visitData.containsKey('signaturePoints') &&
-            visitData['signaturePoints'] != null &&
-            (visitData['signaturePoints'] as List).isNotEmpty;
-      });
+        // Check if ALL visits for this month have submitted == true
+        bool allVisitsSubmitted = currentMonthVisits.every((visitDoc) {
+          final visitData = visitDoc.data();
+          return visitData.containsKey('submitted') &&
+              visitData['submitted'] == true;
+        });
 
-      if (allVisited) completedFrequency++;
+        // If all visits are submitted, count this doctor as completed
+        if (allVisitsSubmitted) {
+          completedFrequencyDoctors++;
+        }
+      }
+
+      // Calculate percentage
+      double frequencyPercent = 0.0;
+      if (totalDoctors > 0) {
+        frequencyPercent = (completedFrequencyDoctors / totalDoctors) * 100.0;
+      }
+
+      return {
+        'frequencyPercent': frequencyPercent,
+        'totalDoctors': totalDoctors,
+        'completedFrequency': completedFrequencyDoctors,
+      };
+    } catch (e) {
+      print('Error in _getCallFrequencyStats: $e');
+      return {
+        'frequencyPercent': 0.0,
+        'totalDoctors': 0,
+        'completedFrequency': 0,
+      };
     }
-
-    double frequencyPercent = 0.0;
-    if (totalDoctors > 0) {
-      frequencyPercent = (completedFrequency / totalDoctors) * 100.0;
-    }
-    return {
-      'frequencyPercent': frequencyPercent,
-      'totalDoctors': totalDoctors,
-      'completedFrequency': completedFrequency,
-    };
-}
-
+  }
 
 class _DonutPainter extends CustomPainter {
   final double progress; // 0.0 â€“ 1.0
@@ -2383,6 +2449,7 @@ SingleChildScrollView(
                               ],
                             ),
                           ),
+                        
                         ),
                       ),
                     ),
@@ -2440,68 +2507,71 @@ CollectionReference<Map<String, dynamic>> _doctorCollectionRefForHome({
 }
 
   Future<void> _saveSignatureToFirestore(
-    List<Point> points,
-    String timestamp,
-    Position? position,
-  ) async {
-    try {
-      if (userEmail.isEmpty) {
-        throw Exception('User email missing');
-      }
+      List<Point> points,
+      String timestamp,
+      Position? position,
+    ) async {
+      try {
+        if (userEmail.isEmpty) {
+          throw Exception('User email missing');
+        }
 
-      String address = position != null
-          ? await _getAddressFromCoordinates(position)
-          : 'Location not available';
+        String address = position != null
+            ? await _getAddressFromCoordinates(position)
+            : 'Location not available';
 
-      final List<Map<String, dynamic>> signaturePoints = points.map((point) {
-        return {
-          'x': point.offset.dx,
-          'y': point.offset.dy,
-          'pressure': point.pressure,
-          'type': point.type.toString(),
-        };
-      }).toList();
+        final List<Map<String, dynamic>> signaturePoints = points.map((point) {
+          return {
+            'x': point.offset.dx,
+            'y': point.offset.dy,
+            'pressure': point.pressure,
+            'type': point.type.toString(),
+          };
+        }).toList();
 
-      Map<String, dynamic> signatureData = {
-        'userEmail': userEmail,
-        'userName': userName,
-        'timestamp': timestamp,
-        'createdAt': FieldValue.serverTimestamp(),
-        'signaturePoints': signaturePoints,
-        'address': address,
-      };
-
-      if (position != null) {
-        signatureData['location'] = {
+        Map<String, dynamic> signatureData = {
+          'userEmail': userEmail,
+          'userName': userName,
+          'timestamp': timestamp,
+          'createdAt': FieldValue.serverTimestamp(),
+          'signaturePoints': signaturePoints,
           'address': address,
-          'latitude': position.latitude,
-          'longitude': position.longitude,
-          'accuracy': position.accuracy,
-          'altitude': position.altitude,
-          'heading': position.heading,
-          'speed': position.speed,
-          'speedAccuracy': position.speedAccuracy,
-          'timestamp': DateTime.now().toIso8601String(),
         };
-        signatureData['hasLocation'] = true;
+
+        if (position != null) {
+          signatureData['location'] = {
+            'address': address,
+            'latitude': position.latitude,
+            'longitude': position.longitude,
+            'accuracy': position.accuracy,
+            'altitude': position.altitude,
+            'heading': position.heading,
+            'speed': position.speed,
+            'speedAccuracy': position.speedAccuracy,
+            'timestamp': DateTime.now().toIso8601String(),
+          };
+          signatureData['hasLocation'] = true;
+        }
+
+        String docId = '${userEmail}_$timestamp';
+
+        // Updated Firestore path: /DaloyClients/IVA/Users/MR00001/Signatures
+        await FirebaseFirestore.instance
+            .collection('DaloyClients')
+            .doc('IVA')
+            .collection('Users')
+            .doc('MR00001')
+            .collection('Signatures')
+            .doc(docId)
+            .set(signatureData);
+
+        print('✓ Vector signature saved successfully');
+      } catch (e) {
+        // Instead of throwing, cache offline and let user proceed
+        print('✗ Error saving signature (probably offline): $e');
+        await _saveSignatureOffline(points, timestamp, position);
       }
-
-      String docId = '${userEmail}_$timestamp';
-
-      await FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('signatures')
-          .collection('signatures')
-          .doc(docId)
-          .set(signatureData);
-
-      print('âœ“ Vector signature saved successfully');
-    } catch (e) {
-      // Instead of throwing, cache offline and let user proceed
-      print('âœ— Error saving signature (probably offline): $e');
-      await _saveSignatureOffline(points, timestamp, position);
     }
-  }
 
   // ===== UNPLANNED VISIT HELPERS =====
 
@@ -4792,7 +4862,7 @@ void _openCreateEFormDialog() {
                                         },
                                       ),
                                     ),                                    
-                                    
+                                                                        
                                     // MONTH'S ACCOMPLISHED
                                     Container(
                                       width: 220,
@@ -4809,26 +4879,35 @@ void _openCreateEFormDialog() {
                                           ),
                                         ],
                                       ),
-                                      child: FutureBuilder<Map<String, int>>(
-                                        future: _getAccomplishedVisitsForMonth(emailKey, userName)
-                                            .timeout(
-                                              Duration(seconds: 10),
-                                              onTimeout: () {
-                                                print('Timeout loading month accomplished');
-                                                return {"total": 0, "accomplished": 0};
-                                              },
-                                            ),
-                                        builder: (context, snapshot) {
-                                          if (snapshot.hasError) {
-                                            print('Error loading month accomplished: ${snapshot.error}');
-                                            return Container(
+                                      child: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                                        future: (() {
+                                          final doctorsCol = _doctorCollectionRefForHome(
+                                            userClientType: userClientType,
+                                            userId: _userId, // or mrCode if that’s your MR id
+                                          );
+
+                                          return doctorsCol.get().timeout(
+                                            const Duration(seconds: 10),
+                                            onTimeout: () {
+                                              throw TimeoutException('Failed to load doctors data for month');
+                                            },
+                                          );
+                                        })(),
+                                        builder: (context, doctorSnapshot) {
+                                          if (doctorSnapshot.hasError) {
+                                            print('Error loading doctors for month: ${doctorSnapshot.error}');
+                                            return SizedBox(
                                               height: 120,
                                               child: Column(
                                                 mainAxisAlignment: MainAxisAlignment.center,
                                                 children: [
-                                                  Icon(Icons.error_outline, color: Colors.red, size: 24),
-                                                  SizedBox(height: 4),
-                                                  Text(
+                                                  const Icon(
+                                                    Icons.error_outline,
+                                                    color: Colors.red,
+                                                    size: 24,
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  const Text(
                                                     'Error loading data',
                                                     textAlign: TextAlign.center,
                                                     style: TextStyle(color: Colors.red, fontSize: 11),
@@ -4837,15 +4916,17 @@ void _openCreateEFormDialog() {
                                                     onPressed: () {
                                                       setState(() {});
                                                     },
-                                                    child: Text('Retry', style: TextStyle(fontSize: 10)),
+                                                    child: const Text(
+                                                      'Retry',
+                                                      style: TextStyle(fontSize: 10),
+                                                    ),
                                                   ),
                                                 ],
                                               ),
                                             );
                                           }
 
-                                          if (snapshot.connectionState == ConnectionState.waiting &&
-                                              !snapshot.hasData) {
+                                          if (doctorSnapshot.connectionState == ConnectionState.waiting) {
                                             return const SizedBox(
                                               height: 120,
                                               child: Center(
@@ -4854,14 +4935,14 @@ void _openCreateEFormDialog() {
                                             );
                                           }
 
-                                          if (!snapshot.hasData) {
+                                          if (!doctorSnapshot.hasData || doctorSnapshot.data!.docs.isEmpty) {
                                             return SizedBox(
                                               height: 120,
                                               child: Center(
                                                 child: Text(
                                                   _isOffline
-                                                      ? "Offline: showing last known monthly performance from cache."
-                                                      : "Unable to load month's data.",
+                                                      ? "Offline: showing last known monthly data."
+                                                      : "No doctors found.",
                                                   textAlign: TextAlign.center,
                                                   style: TextStyle(
                                                     color: Colors.grey[700],
@@ -4872,96 +4953,150 @@ void _openCreateEFormDialog() {
                                             );
                                           }
 
-                                          final Map<String, int> data = snapshot.data!;
-                                          final int total = data['total'] ?? 0;
-                                          final int accomplished = data['accomplished'] ?? 0;
-                                          final double ratio = total == 0 ? 0.0 : accomplished / total;
-                                          final double percent = ratio.clamp(0.0, 1.0);
+                                          final List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs =
+                                              doctorSnapshot.data!.docs;
 
-                                          return Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                "Month's Accomplished",
-                                                style: TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          // Second FutureBuilder: count monthly accomplished visits
+                                          return FutureBuilder<Map<String, int>>(
+                                            future: getAccomplishedVisitsForMonthFromDoctors(
+                                              doctorDocs: doctorDocs,
+                                              referenceDay: DateTime.now(),
+                                            ).timeout(
+                                              const Duration(seconds: 10),
+                                              onTimeout: () {
+                                                print('Timeout counting monthly accomplished visits');
+                                                return {'total': 0, 'accomplished': 0};
+                                              },
+                                            ),
+                                            builder: (context, monthSnapshot) {
+                                              if (monthSnapshot.hasError) {
+                                                print('Error counting monthly visits: ${monthSnapshot.error}');
+                                                return SizedBox(
+                                                  height: 120,
+                                                  child: Column(
+                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                    children: const [
+                                                      Icon(
+                                                        Icons.error_outline,
+                                                        color: Colors.red,
+                                                        size: 24,
+                                                      ),
+                                                      SizedBox(height: 4),
+                                                      Text(
+                                                        'Error loading count',
+                                                        textAlign: TextAlign.center,
+                                                        style: TextStyle(color: Colors.red, fontSize: 11),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                              }
+
+                                              if (monthSnapshot.connectionState == ConnectionState.waiting &&
+                                                  !monthSnapshot.hasData) {
+                                                return const SizedBox(
+                                                  height: 120,
+                                                  child: Center(
+                                                    child: CircularProgressIndicator(),
+                                                  ),
+                                                );
+                                              }
+
+                                              final Map<String, int> counts =
+                                                  monthSnapshot.data ?? {'total': 0, 'accomplished': 0};
+                                              final int total = counts['total'] ?? 0;
+                                              final int accomplished = counts['accomplished'] ?? 0;
+
+                                              final double ratio =
+                                                  total == 0 ? 0.0 : accomplished / total;
+                                              final double percent = ratio.clamp(0.0, 1.0);
+
+                                              return Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
-                                                  const SizedBox.shrink(),
-                                                  Container(
-                                                    width: 26,
-                                                    height: 26,
-                                                    decoration: const BoxDecoration(
-                                                      color: Color(0xFFF5F4FF),
-                                                      shape: BoxShape.circle,
+                                                  const Text(
+                                                    "Month's Accomplished",
+                                                    style: TextStyle(
+                                                      fontFamily: 'Lato',
+                                                      fontSize: 16,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: Colors.black,
                                                     ),
-                                                    child: Icon(
-                                                      Icons.date_range,
-                                                      size: 16,
-                                                      color: Colors.purple.shade400,
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      const SizedBox.shrink(),
+                                                      Container(
+                                                        width: 26,
+                                                        height: 26,
+                                                        decoration: const BoxDecoration(
+                                                          color: Color(0xFFF5F4FF),
+                                                          shape: BoxShape.circle,
+                                                        ),
+                                                        child: Icon(
+                                                          Icons.date_range,
+                                                          size: 16,
+                                                          color: Colors.purple.shade400,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  SizedBox(
+                                                    height: 96,
+                                                    child: Row(
+                                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                                      children: [
+                                                        Expanded(
+                                                          child: Text(
+                                                            ratio.toStringAsFixed(2),
+                                                            maxLines: 1,
+                                                            overflow: TextOverflow.ellipsis,
+                                                            style: const TextStyle(
+                                                              fontFamily: 'Lato',
+                                                              fontSize: 32,
+                                                              fontWeight: FontWeight.w900,
+                                                              color: Colors.black,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 8),
+                                                        SizedBox(
+                                                          width: 70,
+                                                          height: 70,
+                                                          child: CustomPaint(
+                                                            painter: _DonutPainter(
+                                                              progress: percent,
+                                                              color: Colors.blue.shade500,
+                                                              strokeWidth: 12,
+                                                              backgroundColor: const Color(0xFFE8ECEF),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    '$accomplished / $total', // e.g., "15 / 20"
+                                                    style: const TextStyle(
+                                                      fontFamily: 'Lato',
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Colors.black,
                                                     ),
                                                   ),
                                                 ],
-                                              ),
-                                              const SizedBox(height: 4),
-                                              SizedBox(
-                                                height: 96,
-                                                child: Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                                  children: [
-                                                    Expanded(
-                                                      child: Text(
-                                                        ratio.toStringAsFixed(2),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: const TextStyle(
-                                                          fontFamily: 'Lato',
-                                                          fontSize: 32,
-                                                          fontWeight: FontWeight.w900,
-                                                          color: Colors.black,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    SizedBox(
-                                                      width: 70,
-                                                      height: 70,
-                                                      child: CustomPaint(
-                                                        painter: _DonutPainter(
-                                                          progress: percent,
-                                                          color: Colors.blue.shade500,
-                                                          strokeWidth: 12,
-                                                          backgroundColor: const Color(0xFFE8ECEF),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '$accomplished / $total',
-                                                style: const TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                            ],
+                                              );
+                                            },
                                           );
                                         },
                                       ),
-                                    ),
-
-                                    // CALL REACH
+                                    ),                                    
+                                    
+                                    // CALL REACH (Number of Doctors visited at least once divided by the number of Doctors)
                                     Container(
                                       width: 220,
                                       margin: const EdgeInsets.only(right: 16),
@@ -4978,11 +5113,11 @@ void _openCreateEFormDialog() {
                                         ],
                                       ),
                                       child: FutureBuilder<Map<String, dynamic>>(
-                                        future: _getCallReachStats(emailKey, userName)
+                                        future: getCallReachStats('IVA', 'MR00001')  // Replace with your actual clientId/userId
                                             .timeout(
-                                              Duration(seconds: 10),
+                                              Duration(seconds: 15),  // Increased timeout for more data
                                               onTimeout: () {
-                                                print('Timeout loading call reach');
+                                                print('Timeout loading monthly call reach');
                                                 return {
                                                   'callReach': 0.0,
                                                   'totalDoctors': 0,
@@ -5132,181 +5267,181 @@ void _openCreateEFormDialog() {
                                         },
                                       ),
                                     ),
-
-                                    // CALL FREQUENCY
+                                                                        
+                                    // CALL FREQUENCY (Number of Doctors with completed frequency visits divided by the number of Doctors)
                                     Container(
-                                      width: 220,
-                                      margin: const EdgeInsets.only(right: 16),
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(18),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(0.05),
-                                            blurRadius: 10,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: FutureBuilder<Map<String, dynamic>>(
-                                        future: _getCallFrequencyStats(emailKey, userName)
-                                            .timeout(
-                                              Duration(seconds: 10),
-                                              onTimeout: () {
-                                                print('Timeout loading call frequency');
-                                                return {
-                                                  'frequencyPercent': 0.0,
-                                                  'totalDoctors': 0,
-                                                  'completedFrequency': 0,
-                                                };
-                                              },
+                                        width: 220,
+                                        margin: const EdgeInsets.only(right: 16),
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(18),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(0.05),
+                                              blurRadius: 10,
+                                              offset: const Offset(0, 4),
                                             ),
-                                        builder: (context, snapshot) {
-                                          if (snapshot.hasError) {
-                                            print('Error loading call frequency: ${snapshot.error}');
-                                            return Container(
-                                              height: 120,
-                                              child: Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Icon(Icons.error_outline, color: Colors.red, size: 24),
-                                                  SizedBox(height: 4),
-                                                  Text(
-                                                    'Error loading data',
-                                                    textAlign: TextAlign.center,
-                                                    style: TextStyle(color: Colors.red, fontSize: 11),
-                                                  ),
-                                                  TextButton(
-                                                    onPressed: () {
-                                                      setState(() {});
-                                                    },
-                                                    child: Text('Retry', style: TextStyle(fontSize: 10)),
-                                                  ),
-                                                ],
+                                          ],
+                                        ),
+                                        child: FutureBuilder<Map<String, dynamic>>(
+                                          future: _getCallFrequencyStatss()
+                                              .timeout(
+                                                Duration(seconds: 10),
+                                                onTimeout: () {
+                                                  print('Timeout loading call frequency');
+                                                  return {
+                                                    'frequencyPercent': 0.0,
+                                                    'totalDoctors': 0,
+                                                    'completedFrequency': 0,
+                                                  };
+                                                },
                                               ),
-                                            );
-                                          }
-
-                                          if (snapshot.connectionState == ConnectionState.waiting &&
-                                              !snapshot.hasData) {
-                                            return const SizedBox(
-                                              height: 120,
-                                              child: Center(
-                                                child: CircularProgressIndicator(),
-                                              ),
-                                            );
-                                          }
-
-                                          if (!snapshot.hasData) {
-                                            return SizedBox(
-                                              height: 120,
-                                              child: Center(
-                                                child: Text(
-                                                  _isOffline
-                                                      ? "Offline: showing last known call frequency from cache."
-                                                      : "Unable to load call frequency data.",
-                                                  textAlign: TextAlign.center,
-                                                  style: TextStyle(
-                                                    color: Colors.grey[700],
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                              ),
-                                            );
-                                          }
-
-                                          final Map<String, dynamic> data = snapshot.data!;
-                                          final double frequencyPercent =
-                                              (data['frequencyPercent'] ?? 0.0) as double;
-                                          final int totalDoctors = (data['totalDoctors'] ?? 0) as int;
-                                          final int completedFrequency =
-                                              (data['completedFrequency'] ?? 0) as int;
-                                          final double percent =
-                                              (frequencyPercent / 100.0).clamp(0.0, 1.0);
-
-                                          return Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                "Call Frequency",
-                                                style: TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                children: [
-                                                  const SizedBox.shrink(),
-                                                  Container(
-                                                    width: 26,
-                                                    height: 26,
-                                                    decoration: const BoxDecoration(
-                                                      color: Color(0xFFF5F4FF),
-                                                      shape: BoxShape.circle,
-                                                    ),
-                                                    child: Icon(
-                                                      Icons.repeat,
-                                                      size: 16,
-                                                      color: Colors.purple.shade400,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 4),
-                                              SizedBox(
-                                                height: 96,
-                                                child: Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                          builder: (context, snapshot) {
+                                            if (snapshot.hasError) {
+                                              print('Error loading call frequency: ${snapshot.error}');
+                                              return Container(
+                                                height: 120,
+                                                child: Column(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
                                                   children: [
-                                                    Expanded(
-                                                      child: Text(
-                                                        frequencyPercent.toStringAsFixed(2),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: const TextStyle(
-                                                          fontFamily: 'Lato',
-                                                          fontSize: 32,
-                                                          fontWeight: FontWeight.w900,
-                                                          color: Colors.black,
-                                                        ),
-                                                      ),
+                                                    Icon(Icons.error_outline, color: Colors.red, size: 24),
+                                                    SizedBox(height: 4),
+                                                    Text(
+                                                      'Error loading data',
+                                                      textAlign: TextAlign.center,
+                                                      style: TextStyle(color: Colors.red, fontSize: 11),
                                                     ),
-                                                    const SizedBox(width: 8),
-                                                    SizedBox(
-                                                      width: 70,
-                                                      height: 70,
-                                                      child: CustomPaint(
-                                                        painter: _DonutPainter(
-                                                          progress: percent,
-                                                          color: Colors.purple.shade600,
-                                                          strokeWidth: 12,
-                                                          backgroundColor: const Color(0xFFE8ECEF),
-                                                        ),
+                                                    TextButton(
+                                                      onPressed: () {
+                                                        setState(() {});
+                                                      },
+                                                      child: Text('Retry', style: TextStyle(fontSize: 10)),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            }
+
+                                            if (snapshot.connectionState == ConnectionState.waiting &&
+                                                !snapshot.hasData) {
+                                              return const SizedBox(
+                                                height: 120,
+                                                child: Center(
+                                                  child: CircularProgressIndicator(),
+                                                ),
+                                              );
+                                            }
+
+                                            if (!snapshot.hasData) {
+                                              return SizedBox(
+                                                height: 120,
+                                                child: Center(
+                                                  child: Text(
+                                                    _isOffline
+                                                        ? "Offline: showing last known call frequency from cache."
+                                                        : "Unable to load call frequency data.",
+                                                    textAlign: TextAlign.center,
+                                                    style: TextStyle(
+                                                      color: Colors.grey[700],
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                            }
+
+                                            final Map<String, dynamic> data = snapshot.data!;
+                                            final double frequencyPercent =
+                                                (data['frequencyPercent'] ?? 0.0) as double;
+                                            final int totalDoctors = (data['totalDoctors'] ?? 0) as int;
+                                            final int completedFrequency =
+                                                (data['completedFrequency'] ?? 0) as int;
+                                            final double percent =
+                                                (frequencyPercent / 100.0).clamp(0.0, 1.0);
+
+                                            return Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                const Text(
+                                                  "Call Frequency",
+                                                  style: TextStyle(
+                                                    fontFamily: 'Lato',
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: Colors.black,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Row(
+                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                  children: [
+                                                    const SizedBox.shrink(),
+                                                    Container(
+                                                      width: 26,
+                                                      height: 26,
+                                                      decoration: const BoxDecoration(
+                                                        color: Color(0xFFF5F4FF),
+                                                        shape: BoxShape.circle,
+                                                      ),
+                                                      child: Icon(
+                                                        Icons.repeat,
+                                                        size: 16,
+                                                        color: Colors.purple.shade400,
                                                       ),
                                                     ),
                                                   ],
                                                 ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '$completedFrequency / $totalDoctors',
-                                                style: const TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.black,
+                                                const SizedBox(height: 4),
+                                                SizedBox(
+                                                  height: 96,
+                                                  child: Row(
+                                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                                    children: [
+                                                      Expanded(
+                                                        child: Text(
+                                                          frequencyPercent.toStringAsFixed(2),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: const TextStyle(
+                                                            fontFamily: 'Lato',
+                                                            fontSize: 32,
+                                                            fontWeight: FontWeight.w900,
+                                                            color: Colors.black,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      SizedBox(
+                                                        width: 70,
+                                                        height: 70,
+                                                        child: CustomPaint(
+                                                          painter: _DonutPainter(
+                                                            progress: percent,
+                                                            color: Colors.purple.shade600,
+                                                            strokeWidth: 12,
+                                                            backgroundColor: const Color(0xFFE8ECEF),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
-                                          );
-                                        },
-                                      ),
-                                    ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  '$completedFrequency / $totalDoctors',
+                                                  style: const TextStyle(
+                                                    fontFamily: 'Lato',
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.black,
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          },
+                                        ),
+                                      ), 
                                   
                                   ],
                                 ),
