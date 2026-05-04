@@ -31,7 +31,6 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
     with SingleTickerProviderStateMixin {
   String? _profileImageBase64;
   bool _isUpdatingImage = false;
-  String? emailKey;
   String _userClientType = '';
   String _userEmail = '';
   String _userId = ''; // MR00001, used in Daloy path
@@ -90,28 +89,42 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
     final userId = prefs.getString('userId') ?? ''; // MR00001, etc.
 
     setState(() {
-      emailKey = userEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
       _userClientType = clientType;
       _userEmail = userEmail;
       _userId = userId;
     });
   }
 
+  /// Unified segment resolver:
+  /// Mirrors the logic in HomePage.getClientSegment(userClientType, userEmail). [file:15]
+  String _getClientSegment({
+    required String userClientType,
+    required String userEmail,
+  }) {
+    if (userClientType == 'farmers') {
+      return 'INDOFIL';
+    }
+    if (userClientType == 'pharma') {
+      final lower = userEmail.toLowerCase();
+      if (lower.endsWith('@wert.com')) return 'WERT';
+      // Default pharma segment is IVA if not WERT. [file:15]
+      return 'IVA';
+    }
+    // fallback for 'both' or others: infer by email domain
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@indofil.com')) return 'INDOFIL';
+    if (lower.endsWith('@wert.com')) return 'WERT';
+    if (lower.endsWith('@iva.com')) return 'IVA';
+    return 'GENERAL';
+  }
+
   /// Base Doctor collection for this MR in Daloy:
   /// /DaloyClients/{segment}/Users/{_userId}/Doctor/{docId}
   CollectionReference<Map<String, dynamic>> _doctorCollectionRef() {
     final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
+    final clientSegment =
+        _getClientSegment(userClientType: _userClientType, userEmail: _userEmail);
 
-    String clientSegment;
-    if (_userClientType == 'farmers') {
-      clientSegment = 'INDOFIL';
-    } else if (_userClientType == 'pharma') {
-      clientSegment = 'IVA';
-    } else {
-      clientSegment = 'GENERAL';
-    }
-
-    // IMPORTANT: use _userId (MR00001) like DoctorPage, not emailKey
     final userDocRef =
         daloyRoot.doc(clientSegment).collection('Users').doc(_userId);
 
@@ -121,15 +134,6 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
   /// Current doctor's document reference
   DocumentReference<Map<String, dynamic>> _doctorDocRef() {
     return _doctorCollectionRef().doc(widget.doc_id);
-  }
-
-  String fullName() {
-    final first = widget.doctor?['firstName'] ?? '';
-    final middle = widget.doctor?['middleName'] ?? '';
-    final last = widget.doctor?['lastName'] ?? '';
-    return [last, first, middle]
-        .where((s) => s.toString().trim().isNotEmpty)
-        .join(', ');
   }
 
   String _doctorInitials() {
@@ -168,18 +172,6 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
         final times = match.group(1);
         return "$times times a month";
       }
-    }
-
-    if (label.startsWith('Week ')) {
-      final weekMap = {
-        'M': 'Monday',
-        'T': 'Tuesday',
-        'W': 'Wednesday',
-        'Th': 'Thursday',
-        'F': 'Friday',
-      };
-      if (value == 'Th') return weekMap['Th']!;
-      return weekMap[value] ?? value;
     }
 
     return value;
@@ -256,6 +248,8 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
         _profileImageBase64 = base64Img;
         _isUpdatingImage = false;
       });
+
+      await _doctorDocRef().update({'profileImage': base64Img});
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profile picture updated.')),
@@ -528,6 +522,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Left column
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -563,6 +558,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                         ),
                       ),
                       const SizedBox(width: 24),
+                      // Right column
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -611,19 +607,24 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      infoRow('Frequency of Planned Visits',
-                          widget.doctor?['freq']?.toString()),
+                      infoRow(
+                        'Frequency of Planned Visits',
+                        widget.doctor?['freq']?.toString(),
+                      ),
                     ],
                   ),
                 ),
               ),
-              sectionTitle(Icons.home, "Address",
-                  iconColor: const Color(0xFF2b6cb0),
-                  iconBgColor: const Color(0xFFE3EFFF)),
+              sectionTitle(
+                Icons.home,
+                "Address",
+                iconColor: const Color(0xFF2b6cb0),
+                iconBgColor: const Color(0xFFE3EFFF),
+              ),
               Card(
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
-                child: Container(
+              child: Container(
                   padding: const EdgeInsets.all(18),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -641,9 +642,12 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                   ),
                 ),
               ),
-              sectionTitle(Icons.people, "Profile",
-                  iconColor: const Color(0xFF8269a1),
-                  iconBgColor: const Color(0xFFF3EDFA)),
+              sectionTitle(
+                Icons.people,
+                "Profile",
+                iconColor: const Color(0xFF8269a1),
+                iconBgColor: const Color(0xFFF3EDFA),
+              ),
               Card(
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
@@ -652,10 +656,15 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      infoRow('PRC No.', widget.doctor?['prc_no']?.toString()),
+                      infoRow(
+                        'PRC No.',
+                        widget.doctor?['prc_no']?.toString(),
+                      ),
                       _isEditing
                           ? _editableTextField(
-                              label: "Email", controller: _emailController)
+                              label: "Email",
+                              controller: _emailController,
+                            )
                           : infoRow(
                               'Email',
                               widget.doctor?['email']?.toString(),
@@ -693,14 +702,16 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
             docId: widget.doc_id,
             userId: _userId,
             userClientType: _userClientType,
+            userEmail: _userEmail,
           ),
 
-          // VISITS TAB – uses /DaloyClients/IVA/Users/MR00001/Doctor/{docId}/Visits/{yyyyMMdd}
+          // VISITS TAB
           VisitsTab(
             docId: widget.doc_id,
             doctor: widget.doctor,
             userId: _userId,
             userClientType: _userClientType,
+            userEmail: _userEmail,
           ),
         ],
       ),
@@ -778,25 +789,37 @@ class CallNotesTab extends StatelessWidget {
   final String docId;
   final String userId; // MR00001
   final String userClientType;
+  final String userEmail;
 
   const CallNotesTab({
     Key? key,
     required this.docId,
     required this.userId,
     required this.userClientType,
+    required this.userEmail,
   }) : super(key: key);
+
+  String _getClientSegment({
+    required String userClientType,
+    required String userEmail,
+  }) {
+    if (userClientType == 'farmers') return 'INDOFIL';
+    if (userClientType == 'pharma') {
+      final lower = userEmail.toLowerCase();
+      if (lower.endsWith('@wert.com')) return 'WERT';
+      return 'IVA';
+    }
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@indofil.com')) return 'INDOFIL';
+    if (lower.endsWith('@wert.com')) return 'WERT';
+    if (lower.endsWith('@iva.com')) return 'IVA';
+    return 'GENERAL';
+  }
 
   CollectionReference<Map<String, dynamic>> _doctorCollectionRef() {
     final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
-
-    String clientSegment;
-    if (userClientType == 'farmers') {
-      clientSegment = 'INDOFIL';
-    } else if (userClientType == 'pharma') {
-      clientSegment = 'IVA';
-    } else {
-      clientSegment = 'GENERAL';
-    }
+    final clientSegment =
+        _getClientSegment(userClientType: userClientType, userEmail: userEmail);
 
     final userDocRef =
         daloyRoot.doc(clientSegment).collection('Users').doc(userId);
@@ -826,7 +849,7 @@ class CallNotesTab extends StatelessWidget {
             itemBuilder: (context, idx) {
               final note = notes[idx].data() as Map<String, dynamic>?;
               final ts = note?['timestamp'] as Timestamp?;
-              final dt = ts != null ? ts.toDate() : DateTime.now();
+              final DateTime dt = ts != null ? ts.toDate() : DateTime.now();
               return Card(
                 margin:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -854,6 +877,7 @@ class VisitsTab extends StatelessWidget {
   final Map<String, dynamic>? doctor;
   final String userId; // MR00001
   final String userClientType;
+  final String userEmail;
 
   const VisitsTab({
     Key? key,
@@ -861,19 +885,33 @@ class VisitsTab extends StatelessWidget {
     required this.doctor,
     required this.userId,
     required this.userClientType,
+    required this.userEmail,
   }) : super(key: key);
+
+  /// Use the exact same segment resolver as other Daloy logic so
+  /// /DaloyClients/{segment}/Users/{userId}/Doctor/{docId}/Visits
+  /// always points to this MR’s branch only. [file:15]
+  String _getClientSegment({
+    required String userClientType,
+    required String userEmail,
+  }) {
+    if (userClientType == 'farmers') return 'INDOFIL';
+    if (userClientType == 'pharma') {
+      final lower = userEmail.toLowerCase();
+      if (lower.endsWith('@wert.com')) return 'WERT';
+      return 'IVA';
+    }
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@indofil.com')) return 'INDOFIL';
+    if (lower.endsWith('@wert.com')) return 'WERT';
+    if (lower.endsWith('@iva.com')) return 'IVA';
+    return 'GENERAL';
+  }
 
   CollectionReference<Map<String, dynamic>> _doctorCollectionRef() {
     final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
-
-    String clientSegment;
-    if (userClientType == 'farmers') {
-      clientSegment = 'INDOFIL';
-    } else if (userClientType == 'pharma') {
-      clientSegment = 'IVA';
-    } else {
-      clientSegment = 'GENERAL';
-    }
+    final clientSegment =
+        _getClientSegment(userClientType: userClientType, userEmail: userEmail);
 
     final userDocRef =
         daloyRoot.doc(clientSegment).collection('Users').doc(userId);
@@ -884,17 +922,14 @@ class VisitsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final now = DateTime.now();
 
-    // /DaloyClients/IVA/Users/MR00001/Doctor/{docId}/Visits
+    // DaloyClients/{segment}/Users/{userId}/Doctor/{docId}/Visits
     final visitsCollection =
         _doctorCollectionRef().doc(docId).collection('Visits');
 
     return Padding(
       padding: const EdgeInsets.only(top: 8.0),
       child: StreamBuilder<QuerySnapshot>(
-        stream: visitsCollection
-            // scheduledDate is a string "yyyyMMdd" in each document
-            .orderBy('scheduledDate') // strings sort chronologically [web:43]
-            .snapshots(), // realtime updates [web:47]
+        stream: visitsCollection.orderBy('scheduledDate').snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -909,10 +944,8 @@ class VisitsTab extends StatelessWidget {
               final visitDoc = visits[idx];
               final visit = visitDoc.data() as Map<String, dynamic>?;
 
-              // Doc ID is also yyyyMMdd (e.g. 20260413)
               final visitId = visitDoc.id;
 
-              // Prefer the field; if missing, fall back to doc id
               final scheduledDateRaw =
                   (visit?['scheduledDate'] ?? visitId).toString();
               final scheduledTime =
@@ -958,7 +991,9 @@ class VisitsTab extends StatelessWidget {
                   title: Text(
                     displayDate,
                     style: const TextStyle(
-                        fontSize: 17, fontWeight: FontWeight.bold),
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   subtitle: Text(scheduledTime),
                   trailing: ElevatedButton(
@@ -968,7 +1003,6 @@ class VisitsTab extends StatelessWidget {
                         MaterialPageRoute(
                           builder: (_) => CallDetailPage(
                             doctor: doctor ?? {},
-                            // Visit doc ID (yyyyMMdd) as scheduledVisitId
                             scheduledVisitId: visitId,
                           ),
                         ),

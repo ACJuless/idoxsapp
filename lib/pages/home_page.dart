@@ -28,7 +28,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../pages/messages_page.dart';
 import '../pages/notif_page.dart';
-import '../menu/profile_view_page.dart';
+import 'profile_view_page.dart';
 import 'package:flutter/services.dart';
 
 import '../menu/doctor_menu/call_detail_page.dart';
@@ -643,8 +643,6 @@ String? _selectedGender;
     String storedUserId = prefs.getString('userId') ?? '';
     mrCode = prefs.getString('mrCode') ?? ''; // e.g. "MR00001"
 
-    
-
     bool online = await _hasNetwork();
     bool wentOffline = !online;
 
@@ -686,8 +684,61 @@ String? _selectedGender;
       _isLoading = false;
       _isOffline = wentOffline;
     });
+    
   }
   
+Future<DocumentSnapshot<Map<String, dynamic>>?> _findUserInClientTree(
+    String email,
+  ) async {
+    final lower = email.toLowerCase();
+
+    if (lower.endsWith('@indofil.com')) {
+      final usersRef = FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('INDOFIL')
+          .collection('Users');
+      final query = await usersRef
+          .where('email', isEqualTo: lower)
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) return query.docs.first;
+    } else if (lower.endsWith('@iva.com')) {
+      final usersRef = FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('Users');
+      final query = await usersRef
+          .where('email', isEqualTo: lower)
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) return query.docs.first;
+    } else if (lower.endsWith('@wert.com')) {
+      final usersRef = FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('WERT')
+          .collection('Users');
+      final query = await usersRef
+          .where('email', isEqualTo: lower)
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) return query.docs.first;
+    } else {
+      final usersRef = FirebaseFirestore.instance
+          .collection('flowDB')
+          .doc('client')
+          .collection('GENERAL')
+          .doc('users')
+          .collection('users');
+      final query = await usersRef
+          .where('email', isEqualTo: lower)
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) return query.docs.first;
+    }
+
+    return null;
+  }
+
   Future<bool?> _openTimeInDialog() async {
     Position? position;
     bool _isSubmittingTimeIn = false;
@@ -745,511 +796,486 @@ String? _selectedGender;
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         // Header
-SingleChildScrollView(
-  padding: const EdgeInsets.all(16),
-  child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      // Header row
-      Row(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
-              shape: BoxShape.circle,
-            ),
-            padding: const EdgeInsets.all(6),
-            child: const Icon(
-              Icons.access_time,
-              color: Colors.white,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Text(
-              'Confirm Time In',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(
-              Icons.close,
-              color: Colors.white70,
-            ),
-            onPressed: () {
-              Navigator.of(dialogContext).pop(false);
-            },
-          ),
-        ],
-      ),
-      const SizedBox(height: 12),
-
-      // Current time
-      Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.25),
-          ),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.schedule,
-              color: Colors.white,
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'Current Time:',
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              currentTimeString,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 12),
-
-      // Location map
-      Container(
-        height: MediaQuery.of(dialogContext).size.height * 0.22,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.3),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.25),
-              blurRadius: 8,
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: position != null
-              ? FlutterMap(
-                  mapController: _mapController ?? MapController(),
-                  options: MapOptions(
-                    initialCenter: LatLng(
-                      position!.latitude,
-                      position!.longitude,
-                    ),
-                    initialZoom: 16.0,
-                    interactionOptions: const InteractionOptions(
-                      flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-                    ),
-                  ),
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.example.idoxsapp',
-                      maxZoom: 19,
-                    ),
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          width: 40.0,
-                          height: 40.0,
-                          point: LatLng(
-                            position!.latitude,
-                            position!.longitude,
-                          ),
-                          child: const Icon(
-                            Icons.location_pin,
-                            color: Colors.red,
-                            size: 40,
-                          ),
-                        ),
-                      ],
-                    ),
-                    RichAttributionWidget(
-                      attributions: [
-                        TextSourceAttribution(
-                          'OpenStreetMap contributors',
-                          onTap: () {},
-                        ),
-                      ],
-                    ),
-                  ],
-                )
-              : Container(
-                  color: Colors.white.withOpacity(0.05),
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Getting your location...',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: () async {
-                            Position? newPosition =
-                                await _getCurrentLocation();
-                            setDialogState(() {
-                              position = newPosition;
-                            });
-                          },
-                          child: const Text(
-                            'Retry',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
+                      SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Header row
+                            Row(
+                              children: [
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.15),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  padding: const EdgeInsets.all(6),
+                                  child: const Icon(
+                                    Icons.access_time,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    'Confirm Time In',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.close,
+                                    color: Colors.white70,
+                                  ),
+                                  onPressed: () {
+                                    Navigator.of(dialogContext).pop(false);
+                                  },
+                                ),
+                              ],
                             ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-        ),
-      
-      ),
-      const SizedBox(height: 10),
+                            const SizedBox(height: 12),
 
-      if (position != null)
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.3),
-            ),
-          ),
-          child: FutureBuilder<String>(
-            future: _getAddressFromCoordinates(position!),
-            builder: (context, snapshot) {
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(
-                    Icons.location_on,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      snapshot.data ?? 'Getting address...',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      if (position != null) const SizedBox(height: 10),
-
-      // Signature pad
-      Container(
-        width: double.infinity,
-        height: 200,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.9),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.6),
-            width: 2,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.25),
-              blurRadius: 8,
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Signature(
-            controller: timeInSignatureController,
-            width: double.infinity,
-            height: 200,
-            backgroundColor: Colors.white,
-          ),
-        ),
-      ),
-      const SizedBox(height: 8),
-
-      // Clear / Undo buttons
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          TextButton.icon(
-            onPressed: () => timeInSignatureController.clear(),
-            icon: const Icon(
-              Icons.clear,
-              size: 18,
-              color: Colors.white,
-            ),
-            label: const Text(
-              'Clear',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.white,
-              ),
-            ),
-            style: TextButton.styleFrom(
-              backgroundColor: Colors.red.withOpacity(0.3),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 8,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-          TextButton.icon(
-            onPressed: () => timeInSignatureController.undo(),
-            icon: const Icon(
-              Icons.undo,
-              size: 18,
-              color: Colors.white,
-            ),
-            label: const Text(
-              'Undo',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.white,
-              ),
-            ),
-            style: TextButton.styleFrom(
-              backgroundColor: Colors.orange.withOpacity(0.3),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 8,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-        ],
-      ),
-      const SizedBox(height: 10),
-
-      if (_isSubmittingTimeIn)
-        Column(
-          children: [
-            LinearProgressIndicator(
-              backgroundColor: Colors.white.withOpacity(0.2),
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                Color(0xFFf7ad01),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Submitting time in...',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-
-      // Action buttons
-      Row(
-        children: [
-          // Cancel button
-          Expanded(
-            child: SizedBox(
-              height: 46,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.of(dialogContext).pop(false);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey.withOpacity(0.2),
-                  foregroundColor: Colors.white,
-                  elevation: 4,
-                  shadowColor: Colors.black.withOpacity(0.4),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: Colors.white.withOpacity(0.3),
-                      width: 1.2,
-                    ),
-                  ),
-                ),
-                child: const Text(
-                  'Cancel',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Confirm Time In button
-          Expanded(
-            child: SizedBox(
-              height: 46,
-              child: ElevatedButton(
-                onPressed: _isSubmittingTimeIn
-                    ? null
-                    : () async {
-                        if (timeInSignatureController.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Please provide your signature before confirming time in.',
+                            // Current time
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
                               ),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                          return;
-                        }
-
-                        setDialogState(() {
-                          _isSubmittingTimeIn = true;
-                        });
-
-                        try {
-                          // Get current time and location
-                          final DateTime now = DateTime.now();
-                          final String timestamp = now.toIso8601String();
-                          final Position? latestPosition =
-                              await _getCurrentLocation();
-
-                          // Prepare Firestore data (current time + location only)
-                          final Map<String, dynamic> timeInData = {
-                            'type': 'time_in',
-                            'timestamp': timestamp,
-                            'created_at': FieldValue.serverTimestamp(),
-                            'date_only': DateTime(now.year, now.month, now.day),
-                            'device_time': now.toIso8601String(),
-                            'location': latestPosition != null
-                                ? {
-                                    'lat': latestPosition.latitude,
-                                    'lng': latestPosition.longitude,
-                                    'address': await _getAddressFromCoordinates(latestPosition),
-                                  }
-                                : null,
-                            'user_id': FirebaseAuth.instance.currentUser?.uid,
-                          };
-
-                          // Save to Firestore
-                          await FirebaseFirestore.instance
-                              .collection('time_records')
-                              .add(timeInData);
-
-                          final String locationInfo =
-                              latestPosition != null
-                                  ? '\nLocation: ${await _getAddressFromCoordinates(latestPosition)}'
-                                  : '\nLocation: Not available';
-
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Time In recorded!\nTimestamp: $timestamp$locationInfo',
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.25),
+                                ),
                               ),
-                              backgroundColor: Colors.green,
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.schedule,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Current Time:',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    currentTimeString,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          );
+                            const SizedBox(height: 12),
 
-                          Navigator.of(dialogContext).pop(true);
-                        } catch (e) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Failed to save time in: $e'),
-                              backgroundColor: Colors.red,
+                            // Location map
+                            Container(
+                              height: MediaQuery.of(dialogContext).size.height * 0.22,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.3),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.25),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: position != null
+                                    ? FlutterMap(
+                                        mapController: _mapController ?? MapController(),
+                                        options: MapOptions(
+                                          initialCenter: LatLng(
+                                            position!.latitude,
+                                            position!.longitude,
+                                          ),
+                                          initialZoom: 16.0,
+                                          interactionOptions: const InteractionOptions(
+                                            flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                                          ),
+                                        ),
+                                        children: [
+                                          TileLayer(
+                                            urlTemplate:
+                                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                            userAgentPackageName: 'com.example.idoxsapp',
+                                            maxZoom: 19,
+                                          ),
+                                          MarkerLayer(
+                                            markers: [
+                                              Marker(
+                                                width: 40.0,
+                                                height: 40.0,
+                                                point: LatLng(
+                                                  position!.latitude,
+                                                  position!.longitude,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.location_pin,
+                                                  color: Colors.red,
+                                                  size: 40,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          RichAttributionWidget(
+                                            attributions: [
+                                              TextSourceAttribution(
+                                                'OpenStreetMap contributors',
+                                                onTap: () {},
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      )
+                                    : Container(
+                                        color: Colors.white.withOpacity(0.05),
+                                        child: Center(
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              const CircularProgressIndicator(
+                                                color: Colors.white,
+                                                strokeWidth: 2,
+                                              ),
+                                              const SizedBox(height: 12),
+                                              const Text(
+                                                'Getting your location...',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 8),
+                                              TextButton(
+                                                onPressed: () async {
+                                                  Position? newPosition =
+                                                      await _getCurrentLocation();
+                                                  setDialogState(() {
+                                                    position = newPosition;
+                                                  });
+                                                },
+                                                child: const Text(
+                                                  'Retry',
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                            
                             ),
-                          );
-                        } finally {
-                          setDialogState(() {
-                            _isSubmittingTimeIn = false;
-                          });
-                        }
-                      },
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  backgroundColor: Colors.transparent,
-                  shadowColor: Colors.black.withOpacity(0.5),
-                  elevation: 6,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Ink(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Color(0xFF4e2f80),
-                        Color(0xFF715999),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.all(Radius.circular(12)),
-                  ),
-                  child: Container(
-                    alignment: Alignment.center,
-                    child: const Text(
-                      'Confirm Time In',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
+                            const SizedBox(height: 10),
+
+                            if (position != null)
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: FutureBuilder<String>(
+                                  future: _getAddressFromCoordinates(position!),
+                                  builder: (context, snapshot) {
+                                    return Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(
+                                          Icons.location_on,
+                                          color: Colors.white,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            snapshot.data ?? 'Getting address...',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                              ),
+                            if (position != null) const SizedBox(height: 10),
+
+                            // Signature pad
+                            Container(
+                              width: double.infinity,
+                              height: 200,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.9),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.6),
+                                  width: 2,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.25),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Signature(
+                                  controller: timeInSignatureController,
+                                  width: double.infinity,
+                                  height: 200,
+                                  backgroundColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+
+                            // Clear / Undo buttons
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                TextButton.icon(
+                                  onPressed: () => timeInSignatureController.clear(),
+                                  icon: const Icon(
+                                    Icons.clear,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                  label: const Text(
+                                    'Clear',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    backgroundColor: Colors.red.withOpacity(0.3),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 8,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  onPressed: () => timeInSignatureController.undo(),
+                                  icon: const Icon(
+                                    Icons.undo,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                  label: const Text(
+                                    'Undo',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    backgroundColor: Colors.orange.withOpacity(0.3),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 8,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+
+                            if (_isSubmittingTimeIn)
+                              Column(
+                                children: [
+                                  LinearProgressIndicator(
+                                    backgroundColor: Colors.white.withOpacity(0.2),
+                                    valueColor: const AlwaysStoppedAnimation<Color>(
+                                      Color(0xFFf7ad01),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Submitting time in...',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                ],
+                              ),
+
+                            // Action buttons
+                            Row(
+                              children: [
+                                // Cancel button
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 46,
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        Navigator.of(dialogContext).pop(false);
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.grey.withOpacity(0.2),
+                                        foregroundColor: Colors.white,
+                                        elevation: 4,
+                                        shadowColor: Colors.black.withOpacity(0.4),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          side: BorderSide(
+                                            color: Colors.white.withOpacity(0.3),
+                                            width: 1.2,
+                                          ),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'Cancel',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // Confirm Time In button
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 46,
+                                    child: ElevatedButton(
+                                      onPressed: _isSubmittingTimeIn
+                                        ? null
+                                        : () async {
+                                            if (timeInSignatureController.isEmpty) {
+                                              // show snackbar...
+                                              return;
+                                            }
+
+                                            setDialogState(() {
+                                              _isSubmittingTimeIn = true;
+                                            });
+
+                                            try {
+                                              final DateTime now = DateTime.now();
+                                              final String timestamp = now.toIso8601String();
+                                              final Position? latestPosition = await _getCurrentLocation();
+
+                                              await _saveTimeLog(
+                                                isTimeIn: true,
+                                                timestamp: now,
+                                                position: latestPosition,
+                                              );
+
+                                              final String locationInfo = latestPosition != null
+                                                  ? '\nLocation: ${await _getAddressFromCoordinates(latestPosition)}'
+                                                  : '\nLocation: Not available';
+
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    'Time In recorded!\nTimestamp: $timestamp$locationInfo',
+                                                  ),
+                                                  backgroundColor: Colors.green,
+                                                ),
+                                              );
+
+                                              Navigator.of(dialogContext).pop(true);
+                                            } catch (e) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                  content: Text('Failed to save time in: $e'),
+                                                  backgroundColor: Colors.red,
+                                                ),
+                                              );
+                                            } finally {
+                                              setDialogState(() {
+                                                _isSubmittingTimeIn = false;
+                                              });
+                                            }
+                                          },
+                                      style: ElevatedButton.styleFrom(
+                                        padding: EdgeInsets.zero,
+                                        backgroundColor: Colors.transparent,
+                                        shadowColor: Colors.black.withOpacity(0.5),
+                                        elevation: 6,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                      child: Ink(
+                                        decoration: const BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              Color(0xFF4e2f80),
+                                              Color(0xFF715999),
+                                            ],
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                          ),
+                                          borderRadius: BorderRadius.all(Radius.circular(12)),
+                                        ),
+                                        child: Container(
+                                          alignment: Alignment.center,
+                                          child: const Text(
+                                            'Confirm Time In',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    ],
-  ),
-),
+                      
                       ],
                     ),
                   ),
@@ -1629,28 +1655,28 @@ SingleChildScrollView(
                               height: 46,
                               child: ElevatedButton(
                                 onPressed: _isSubmittingTimeOut
-                                    ? null
-                                    : () async {
-                                        setDialogState(() {
-                                          _isSubmittingTimeOut = true;
-                                        });
+                                  ? null
+                                  : () async {
+                                      setDialogState(() {
+                                        _isSubmittingTimeOut = true;
+                                      });
 
+                                      try {
                                         final DateTime now = DateTime.now();
-                                        final String timestamp =
-                                            now.toIso8601String();
-                                        final Position? latestPosition =
-                                            await _getCurrentLocation();
+                                        final String timestamp = now.toIso8601String();
+                                        final Position? latestPosition = await _getCurrentLocation();
 
-                                        // TODO: Save Time Out record here
-                                        // using timestamp and latestPosition.
+                                        await _saveTimeLog(
+                                          isTimeIn: false,
+                                          timestamp: now,
+                                          position: latestPosition,
+                                        );
 
-                                        String locationInfo =
-                                            latestPosition != null
-                                                ? '\nLocation: ${await _getAddressFromCoordinates(latestPosition)}'
-                                                : '\nLocation: Not available';
+                                        final String locationInfo = latestPosition != null
+                                            ? '\nLocation: ${await _getAddressFromCoordinates(latestPosition)}'
+                                            : '\nLocation: Not available';
 
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(
                                             content: Text(
                                               'Time Out recorded!\nTimestamp: $timestamp$locationInfo',
@@ -1659,13 +1685,21 @@ SingleChildScrollView(
                                           ),
                                         );
 
+                                        Navigator.of(dialogContext).pop(true);
+                                      } catch (e) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Failed to save time out: $e'),
+                                            backgroundColor: Colors.redAccent,
+                                          ),
+                                        );
+                                      } finally {
                                         setDialogState(() {
                                           _isSubmittingTimeOut = false;
                                         });
-
-                                        Navigator.of(dialogContext).pop(true);
-                                      },
-                                style: ElevatedButton.styleFrom(
+                                      }
+                                    },
+                                  style: ElevatedButton.styleFrom(
                                   padding: EdgeInsets.zero,
                                   backgroundColor: Colors.transparent,
                                   shadowColor: Colors.black.withOpacity(0.5),
@@ -2483,96 +2517,241 @@ SingleChildScrollView(
     }
   }
 
-/// Base Doctor collection for this MR in Daloy:
-/// /DaloyClients/{segment}/Users/{_userId}/Doctor/{docId}
-CollectionReference<Map<String, dynamic>> _doctorCollectionRefForHome({
-  required String userClientType,
-  required String userId, // MR00001
-}) {
+
+  /// Base Doctor collection for this MR in Daloy:
+  /// /DaloyClients/{segment}/Users/{_userId}/Doctor/{docId}
+  CollectionReference<Map<String, dynamic>> _doctorCollectionRefForHome({
+    required String userClientType,
+    required String userId, // MR00001
+  }) {
+    final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
+
+    String clientSegment;
+    if (userClientType == 'farmers') {
+      clientSegment = 'INDOFIL';
+    } else if (userClientType == 'pharma') {
+      clientSegment = 'IVA';
+    } else {
+      clientSegment = 'GENERAL';
+    }
+
+    final userDocRef =
+        daloyRoot.doc(clientSegment).collection('Users').doc(userId);
+
+    return userDocRef.collection('Doctor');
+  }
+
+  /// Time logs for this MR:
+  /// /DaloyClients/{segment}/Users/{_userId}/TimeLogs/{yyyyMMdd}
+  DocumentReference<Map<String, dynamic>> _timeLogDocRefForToday() {
+    final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
+
+    String clientSegment;
+    if (userClientType == 'farmers') {
+      clientSegment = 'INDOFIL';
+    } else if (userClientType == 'pharma') {
+      final lower = userEmail.toLowerCase();
+      if (lower.endsWith('@wert.com')) {
+        clientSegment = 'WERT';
+      } else {
+        clientSegment = 'IVA';
+      }
+    } else {
+      // fallback for 'both' or others
+      final lower = userEmail.toLowerCase();
+      if (lower.endsWith('@indofil.com')) {
+        clientSegment = 'INDOFIL';
+      } else if (lower.endsWith('@wert.com')) {
+        clientSegment = 'WERT';
+      } else if (lower.endsWith('@iva.com')) {
+        clientSegment = 'IVA';
+      } else {
+        clientSegment = 'GENERAL';
+      }
+    }
+
+    final String mrCodeEffective = _userId; // loaded from SharedPreferences
+
+    if (mrCodeEffective.isEmpty) {
+      throw Exception('MR code / userId is missing.');
+    }
+
+    final now = DateTime.now();
+    final dateKey = DateFormat('yyyyMMdd').format(now);
+
+    return daloyRoot
+        .doc(clientSegment)
+        .collection('Users')
+        .doc(mrCodeEffective)
+        .collection('TimeLogs')
+        .doc(dateKey);
+  }
+  
+  DocumentReference<Map<String, dynamic>> _signatureDocRefForToday() {
   final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
 
+  // Same client segment logic as _timeLogDocRefForToday
   String clientSegment;
   if (userClientType == 'farmers') {
     clientSegment = 'INDOFIL';
   } else if (userClientType == 'pharma') {
-    clientSegment = 'IVA';
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@wert.com')) {
+      clientSegment = 'WERT';
+    } else {
+      clientSegment = 'IVA';
+    }
   } else {
-    clientSegment = 'GENERAL';
+    // fallback for 'both' or others
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@indofil.com')) {
+      clientSegment = 'INDOFIL';
+    } else if (lower.endsWith('@wert.com')) {
+      clientSegment = 'WERT';
+    } else if (lower.endsWith('@iva.com')) {
+      clientSegment = 'IVA';
+    } else {
+      clientSegment = 'GENERAL';
+    }
   }
 
-  final userDocRef =
-      daloyRoot.doc(clientSegment).collection('Users').doc(userId);
+  final String mrCodeEffective = _userId; // loaded from SharedPreferences
 
-  return userDocRef.collection('Doctor');
+  if (mrCodeEffective.isEmpty) {
+    throw Exception('MR code / userId is missing for signature.');
+  }
+
+  final now = DateTime.now();
+  final dateKey = DateFormat('yyyyMMdd').format(now);
+
+  // NEW path: /DaloyClients/{segment}/Users/{MRxxx}/Signatures/{yyyyMMdd}
+  return daloyRoot
+      .doc(clientSegment)
+      .collection('Users')
+      .doc(mrCodeEffective)
+      .collection('Signatures')
+      .doc(dateKey);
 }
 
+  /// Save a Time In or Time Out log for the current user
+  Future<void> _saveTimeLog({
+  required bool isTimeIn,
+  required DateTime timestamp,
+  required Position? position,
+}) async {
+  try {
+    final timeLogRef = _timeLogDocRefForToday();
+
+    final String iso = timestamp.toIso8601String();
+
+    final Map<String, dynamic> payload = {
+      'type': isTimeIn ? 'time_in' : 'time_out',
+      'timestamp': iso,
+      'created_at': FieldValue.serverTimestamp(),
+      'date_only': DateTime(timestamp.year, timestamp.month, timestamp.day),
+      'device_time': iso,
+      'location': position != null
+          ? {
+              'lat': position.latitude,
+              'lng': position.longitude,
+              'address': await _getAddressFromCoordinates(position),
+            }
+          : null,
+      'user_id': FirebaseAuth.instance.currentUser?.uid,
+    };
+
+    await timeLogRef.set(
+      isTimeIn
+          ? {
+              'timeIn': payload,
+              'hasTimeIn': true,
+            }
+          : {
+              'timeOut': payload,
+              'hasTimeOut': true,
+            },
+      SetOptions(merge: true),
+    );
+  } catch (e) {
+    // Let caller show the snackbar
+    rethrow;
+  }
+}
+  
   Future<void> _saveSignatureToFirestore(
-      List<Point> points,
-      String timestamp,
-      Position? position,
-    ) async {
-      try {
-        if (userEmail.isEmpty) {
-          throw Exception('User email missing');
-        }
-
-        String address = position != null
-            ? await _getAddressFromCoordinates(position)
-            : 'Location not available';
-
-        final List<Map<String, dynamic>> signaturePoints = points.map((point) {
-          return {
-            'x': point.offset.dx,
-            'y': point.offset.dy,
-            'pressure': point.pressure,
-            'type': point.type.toString(),
-          };
-        }).toList();
-
-        Map<String, dynamic> signatureData = {
-          'userEmail': userEmail,
-          'userName': userName,
-          'timestamp': timestamp,
-          'createdAt': FieldValue.serverTimestamp(),
-          'signaturePoints': signaturePoints,
-          'address': address,
-        };
-
-        if (position != null) {
-          signatureData['location'] = {
-            'address': address,
-            'latitude': position.latitude,
-            'longitude': position.longitude,
-            'accuracy': position.accuracy,
-            'altitude': position.altitude,
-            'heading': position.heading,
-            'speed': position.speed,
-            'speedAccuracy': position.speedAccuracy,
-            'timestamp': DateTime.now().toIso8601String(),
-          };
-          signatureData['hasLocation'] = true;
-        }
-
-        String docId = '${userEmail}_$timestamp';
-
-        // Updated Firestore path: /DaloyClients/IVA/Users/MR00001/Signatures
-        await FirebaseFirestore.instance
-            .collection('DaloyClients')
-            .doc('IVA')
-            .collection('Users')
-            .doc('MR00001')
-            .collection('Signatures')
-            .doc(docId)
-            .set(signatureData);
-
-        print('✓ Vector signature saved successfully');
-      } catch (e) {
-        // Instead of throwing, cache offline and let user proceed
-        print('✗ Error saving signature (probably offline): $e');
-        await _saveSignatureOffline(points, timestamp, position);
-      }
+  List<Point> points,
+  String timestamp,
+  Position? position,
+) async {
+  try {
+    // 1) Basic guards – make sure user context is loaded
+    if (userEmail.isEmpty) {
+      throw Exception('User email missing for signature.');
+    }
+    if (_userId.isEmpty) {
+      throw Exception('MR code / userId is missing for signature.');
     }
 
+    // 2) Optional: get human-readable address
+    final String address = position != null
+        ? await _getAddressFromCoordinates(position)
+        : 'Location not available';
+
+    // 3) Convert drawing points into a serializable list
+    final List<Map<String, dynamic>> signaturePoints = points.map((point) {
+      return {
+        'x': point.offset.dx,
+        'y': point.offset.dy,
+        'pressure': point.pressure,
+        'type': point.type.toString(),
+      };
+    }).toList();
+
+    // 4) Build the payload for this signature
+    final DateTime now = DateTime.now();
+
+    final Map<String, dynamic> signatureData = {
+      'userEmail': userEmail,
+      'userName': userName,
+      'timestamp': timestamp,
+      'device_time': now.toIso8601String(),
+      'createdAt': FieldValue.serverTimestamp(),
+      'address': address,
+      'hasLocation': position != null,
+      'signaturePoints': signaturePoints,
+      'location': position != null
+          ? {
+              'lat': position.latitude,
+              'lng': position.longitude,
+              'accuracy': position.accuracy,
+              'altitude': position.altitude,
+              'heading': position.heading,
+              'speed': position.speed,
+              'speedAccuracy': position.speedAccuracy,
+              'position_timestamp': DateTime.now().toIso8601String(),
+            }
+          : null,
+    };
+
+    // 5) Get today's Signature doc for this MR (SEPARATE from TimeLogs)
+    final DocumentReference<Map<String, dynamic>> signatureDoc =
+        _signatureDocRefForToday();
+
+    // 6) Save (or merge) the signature into that doc
+    //    If you want ONE signature per day, this is fine (overwrite/merge).
+    await signatureDoc.set(
+      signatureData,
+      SetOptions(merge: false), // overwrite per day; use merge:true if needed
+    );
+
+    print('✓ Signature saved under ${signatureDoc.path}');
+  } catch (e) {
+    print('✗ Error saving signature: $e');
+    // Fallback: your offline cache handler, so user can still proceed
+    await _saveSignatureOffline(points, timestamp, position);
+  }
+}
+  
   // ===== UNPLANNED VISIT HELPERS =====
 
   void _addUnplannedProductRow() {
@@ -4193,7 +4372,6 @@ void _openCreateEFormDialog() {
                                       child: InkWell(
                                         onTap: () async {
                                           if (!_isTimedIn) {
-                                            // Currently not timed in -> open Time In dialog
                                             final bool? didTimeIn = await _openTimeInDialog();
                                             if (didTimeIn == true) {
                                               setState(() {
@@ -4201,7 +4379,6 @@ void _openCreateEFormDialog() {
                                               });
                                             }
                                           } else {
-                                            // Already timed in -> open Time Out dialog
                                             final bool? didTimeOut = await _openTimeOutDialog();
                                             if (didTimeOut == true) {
                                               setState(() {
