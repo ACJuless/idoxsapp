@@ -47,37 +47,71 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
   // Key to get the RenderBox of the signature area
   final GlobalKey _signaturePadKey = GlobalKey();
 
+  // Logged-in user context
+  String _userEmail = '';
+  String _userClientType = '';
+  String _userId = ''; // MR00001 etc.
+
   @override
   void initState() {
     super.initState();
-    _generateNextDoctorId();
+    _loadUserContextAndInit();
   }
 
-  /// Get the logged-in user's Firestore doc ID (e.g. MR00001) from SharedPreferences.
-  Future<String?> _getLoggedInUserId() async {
+  Future<void> _loadUserContextAndInit() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('userId'); // set in login_page.dart
+    final email = prefs.getString('userEmail') ?? '';
+    final clientType = prefs.getString('userClientType') ?? 'both';
+    final userId = prefs.getString('userId') ?? '';
+
+    setState(() {
+      _userEmail = email;
+      _userClientType = clientType;
+      _userId = userId;
+    });
+
+    if (_userId.isNotEmpty && _userEmail.isNotEmpty) {
+      await _generateNextDoctorId();
+    }
   }
 
-  /// Collection reference:
-  /// /DaloyClients/IVA/Users/{userId}/Doctor
+  /// Resolve Daloy client segment from userClientType + userEmail.
+  String _getClientSegment() {
+    if (_userClientType == 'farmers') {
+      return 'INDOFIL';
+    }
+    if (_userClientType == 'pharma') {
+      final lower = _userEmail.toLowerCase();
+      if (lower.endsWith('@wert.com')) return 'WERT';
+      return 'IVA';
+    }
+    // fallback for 'both' or others
+    final lower = _userEmail.toLowerCase();
+    if (lower.endsWith('@indofil.com')) return 'INDOFIL';
+    if (lower.endsWith('@wert.com')) return 'WERT';
+    if (lower.endsWith('@iva.com')) return 'IVA';
+    return 'GENERAL';
+  }
+
+  /// /DaloyClients/{segment}/Users/{_userId}/Doctor
   Future<CollectionReference<Map<String, dynamic>>> _getDoctorsCollectionRef()
       async {
-    final userId = await _getLoggedInUserId();
-    if (userId == null || userId.isEmpty) {
-      throw Exception('Logged-in userId not found in SharedPreferences');
+    if (_userId.isEmpty || _userEmail.isEmpty || _userClientType.isEmpty) {
+      throw Exception('User context (userId/email/clientType) missing');
     }
+
+    final segment = _getClientSegment();
 
     return FirebaseFirestore.instance
         .collection('DaloyClients')
-        .doc('IVA')
+        .doc(segment)
         .collection('Users')
-        .doc(userId)
+        .doc(_userId)
         .collection('Doctor');
   }
 
   /// Generates the next doctor ID (MD-0000X) based on the number of
-  /// existing doctor documents in /DaloyClients/IVA/Users/{userId}/Doctor.
+  /// existing doctor documents in the **current MR's** Doctor collection.
   Future<void> _generateNextDoctorId() async {
     setState(() {
       _isGeneratingId = true;
@@ -85,7 +119,6 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
 
     try {
       final doctorsCollection = await _getDoctorsCollectionRef();
-
       final QuerySnapshot snapshot = await doctorsCollection.get();
 
       final int currentCount = snapshot.size;
@@ -194,6 +227,16 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
   }
 
   Future<void> _saveDoctor() async {
+    if (_userId.isEmpty || _userEmail.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("User context missing. Please log in again."),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final docId = mdIdController.text.trim();
     if (docId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -229,6 +272,7 @@ class _AddDoctorPageState extends State<AddDoctorPage> {
 
       final doctorsCollection = await _getDoctorsCollectionRef();
 
+      // This only touches the current MR's subcollection.
       await doctorsCollection.doc(docId).set(infoData);
 
       ScaffoldMessenger.of(context).showSnackBar(

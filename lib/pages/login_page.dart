@@ -175,12 +175,14 @@ class _LoginPageState extends State<LoginPage> {
           await prefs.setString('userId', userDocSnap.id);
           await prefs.setString('territoryId', _selectedTerritory ?? '');
           await prefs.setString('userName', userData['name'] ?? '');
+          await prefs.setString('userClientType', clientType);
         } else {
           // Still store basic info even if not remembering
           await prefs.setString('userEmail', email);
           await prefs.setString('userId', userDocSnap.id);
           await prefs.setString('territoryId', _selectedTerritory ?? '');
           await prefs.setString('userName', userData['name'] ?? '');
+          await prefs.setString('userClientType', clientType);
         }
 
         // Pass needed data to home

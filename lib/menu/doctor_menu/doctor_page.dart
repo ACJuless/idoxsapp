@@ -220,22 +220,44 @@ class _DoctorPageState extends State<DoctorPage>
     return 'doctors';
   }
 
+  /// Resolve Daloy client segment from userClientType + userEmail
+  String _getClientSegment() {
+    if (_userClientType == 'farmers') {
+      return 'INDOFIL';
+    }
+
+    if (_userClientType == 'pharma') {
+      final lower = userEmail.toLowerCase();
+      if (lower.endsWith('@wert.com')) return 'WERT';
+      return 'IVA';
+    }
+
+    // fallback for 'both' or others
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@indofil.com')) return 'INDOFIL';
+    if (lower.endsWith('@wert.com')) return 'WERT';
+    if (lower.endsWith('@iva.com')) return 'IVA';
+    return 'GENERAL';
+  }
+
   /// Get the doctors collection reference for the logged-in MR:
-  /// /DaloyClients/IVA/Users/{_userId}/Doctor
+  /// /DaloyClients/{SEGMENT}/Users/{_userId}/Doctor
   CollectionReference<Map<String, dynamic>> _doctorsCollectionRef() {
-    if (_userId.isEmpty) {
-      // Dummy path while prefs are loading
+    // While prefs are still loading, don't point to a shared/dummy path.
+    if (_userId.isEmpty || userEmail.isEmpty || _userClientType.isEmpty) {
       return FirebaseFirestore.instance
           .collection('DaloyClients')
-          .doc('IVA')
+          .doc('___loading___')
           .collection('Users')
-          .doc('_dummy')
+          .doc('___loading___')
           .collection('Doctor');
     }
 
+    final segment = _getClientSegment();
+
     return FirebaseFirestore.instance
         .collection('DaloyClients')
-        .doc('IVA')
+        .doc(segment)
         .collection('Users')
         .doc(_userId)
         .collection('Doctor');
@@ -632,7 +654,10 @@ class _DoctorPageState extends State<DoctorPage>
               ),
             ),
             Expanded(
-              child: _userId.isEmpty || _userClientType.isEmpty
+              // Wait for prefs/user context before attaching to a real path
+              child: _userId.isEmpty ||
+                      _userClientType.isEmpty ||
+                      userEmail.isEmpty
                   ? const Center(child: CircularProgressIndicator())
                   : StreamBuilder<QuerySnapshot>(
                       stream: _doctorsCollectionRef().snapshots(),
@@ -695,8 +720,7 @@ class _DoctorPageState extends State<DoctorPage>
                                   CrossAxisAlignment.start,
                               children: [
                                 Container(
-                                  margin:
-                                      const EdgeInsets.symmetric(
+                                  margin: const EdgeInsets.symmetric(
                                     horizontal: 12,
                                     vertical: 6,
                                   ),
@@ -729,8 +753,7 @@ class _DoctorPageState extends State<DoctorPage>
                                             ? _buildEditLeading(doc)
                                             : const Icon(
                                                 Icons.person,
-                                                color:
-                                                    Color(0xFF5958b2),
+                                                color: Color(0xFF5958b2),
                                               )),
                                     title: Text(
                                       "${doc["lastName"]}, ${doc["firstName"]}",
@@ -740,8 +763,7 @@ class _DoctorPageState extends State<DoctorPage>
                                           CrossAxisAlignment.start,
                                       children: [
                                         const SizedBox(height: 2),
-                                        Text(
-                                            doc["specialty"] ?? ''),
+                                        Text(doc["specialty"] ?? ''),
                                         Text(
                                           doc["city"] ?? '',
                                           style: TextStyle(

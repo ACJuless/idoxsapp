@@ -35,9 +35,13 @@ class _TmlViewPageState extends State<TmlViewPage> {
   String _userClientType = '';
   String _userId = ''; // MR id (MR00001) from SharedPreferences
 
-  // Keep current month/year and month grid so date calculations are consistent
-  late DateTime _currentMonthBase;
+  // Month navigation
+  late DateTime _currentMonthBase; // first day of the currently visible month
   late List<List<DateTime?>> _monthGrid;
+
+  // Clamp range: current month .. current month + 3
+  late final DateTime _minMonth;
+  late final DateTime _maxMonth;
 
   @override
   void initState() {
@@ -50,7 +54,12 @@ class _TmlViewPageState extends State<TmlViewPage> {
   void _initCurrentMonth() {
     final now = DateTime.now();
     _currentMonthBase = DateTime(now.year, now.month, 1);
-    _monthGrid = _buildMonthGrid(_currentMonthBase.year, _currentMonthBase.month);
+
+    _minMonth = DateTime(now.year, now.month, 1);
+    _maxMonth = DateTime(now.year, now.month + 3, 1);
+
+    _monthGrid =
+        _buildMonthGrid(_currentMonthBase.year, _currentMonthBase.month);
   }
 
   void _initSyncedScroll() {
@@ -72,7 +81,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
     final prefs = await SharedPreferences.getInstance();
     userEmail = prefs.getString('userEmail') ?? '';
     final clientType = prefs.getString('userClientType') ?? 'both';
-    final userId = prefs.getString('userId') ?? ''; // MR00001, etc.
+    final userId = prefs.getString('userId') ?? '';
 
     setState(() {
       emailKey = userEmail.replaceAll(RegExp(r'[.#$\\\[\]/]'), '_');
@@ -88,27 +97,71 @@ class _TmlViewPageState extends State<TmlViewPage> {
     super.dispose();
   }
 
-  /// Doctors: /DaloyClients/IVA/Users/{_userId}/Doctor
+  /// Month navigation with clamping between _minMonth and _maxMonth. [file:15]
+  void _changeMonth(int offset) {
+    final candidate = DateTime(
+      _currentMonthBase.year,
+      _currentMonthBase.month + offset,
+      1,
+    );
+
+    // Normalize comparison to (year, month)
+    bool beforeMin = candidate.year < _minMonth.year ||
+        (candidate.year == _minMonth.year &&
+            candidate.month < _minMonth.month);
+    bool afterMax = candidate.year > _maxMonth.year ||
+        (candidate.year == _maxMonth.year &&
+            candidate.month > _maxMonth.month);
+
+    if (beforeMin || afterMax) return;
+
+    setState(() {
+      _currentMonthBase = candidate;
+      _monthGrid =
+          _buildMonthGrid(_currentMonthBase.year, _currentMonthBase.month);
+    });
+  }
+
+  /// Match HomePage.getClientSegment(userClientType, userEmail) so
+  /// all Daloy paths are aligned. [file:15]
+  String _getClientSegment() {
+    if (_userClientType == 'farmers') {
+      return 'INDOFIL';
+    }
+    if (_userClientType == 'pharma') {
+      final lower = userEmail.toLowerCase();
+      if (lower.endsWith('@wert.com')) return 'WERT';
+      return 'IVA';
+    }
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@indofil.com')) return 'INDOFIL';
+    if (lower.endsWith('@wert.com')) return 'WERT';
+    if (lower.endsWith('@iva.com')) return 'IVA';
+    return 'GENERAL';
+  }
+
+  /// Doctors: /DaloyClients/{segment}/Users/{_userId}/Doctor
   CollectionReference<Map<String, dynamic>> _doctorsCollectionRef() {
+    final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
+
     if (_userId.isEmpty) {
-      // Dummy path while loading; UI shows loader until _userId is set
-      return FirebaseFirestore.instance
-          .collection('DaloyClients')
-          .doc('IVA')
+      return daloyRoot
+          .doc('GENERAL')
           .collection('Users')
           .doc('_DUMMY')
           .collection('Doctor');
     }
 
-    return FirebaseFirestore.instance
-        .collection('DaloyClients')
-        .doc('IVA')
+    final segment = _getClientSegment();
+
+    return daloyRoot
+        .doc(segment)
         .collection('Users')
         .doc(_userId)
         .collection('Doctor');
   }
 
-  /// Visits: /DaloyClients/IVA/Users/{_userId}/Doctor/{docId}/Visits/{yyyyMMdd}
+  /// Visits: /DaloyClients/{segment}/Users/{_userId}/Doctor/{docId}/Visits/{yyyyMMdd}
   CollectionReference<Map<String, dynamic>> _visitsRootForDoctor(
     String docId,
   ) {
@@ -116,18 +169,20 @@ class _TmlViewPageState extends State<TmlViewPage> {
   }
 
   /// Calendar itinerary:
-  /// /DaloyClients/IVA/Users/{_userId}/Calendar/{yyyy-MM}/Days/{d}/Itinerary/{doctorId}
+  /// /DaloyClients/{segment}/Users/{_userId}/Calendar/{yyyy-MM}/Days/{d}/Itinerary/{doctorId}
   DocumentReference<Map<String, dynamic>> _calendarItineraryRef(
     DateTime visitDate,
     String doctorId,
   ) {
     final monthId =
         "${visitDate.year}-${visitDate.month.toString().padLeft(2, '0')}";
-    final dayId = visitDate.day.toString(); // "6" for 6th of month
+    final dayId = visitDate.day.toString();
 
-    return FirebaseFirestore.instance
-        .collection('DaloyClients')
-        .doc('IVA')
+    final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
+    final segment = _getClientSegment();
+
+    return daloyRoot
+        .doc(segment)
         .collection('Users')
         .doc(_userId)
         .collection('Calendar')
@@ -139,7 +194,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
   }
 
   /// SampleAllocations reference:
-  /// /DaloyClients/IVA/Users/{_userId}/Doctor/{doctorId}/SampleAllocations/{yyyyMMdd}
+  /// /DaloyClients/{segment}/Users/{_userId}/Doctor/{doctorId}/SampleAllocations/{yyyyMMdd}
   DocumentReference<Map<String, dynamic>> _sampleAllocationsRefForVisit(
     String doctorId,
     String dateId,
@@ -151,7 +206,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
   }
 
   /// CallNotes reference:
-  /// /DaloyClients/IVA/Users/{_userId}/Doctor/{doctorId}/CallNotes/{yyyyMMdd}
+  /// /DaloyClients/{segment}/Users/{_userId}/Doctor/{doctorId}/CallNotes/{yyyyMMdd}
   DocumentReference<Map<String, dynamic>> _callNotesRefForVisit(
     String doctorId,
     String dateId,
@@ -219,9 +274,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
     return count > freq;
   }
 
-  /// Update week_1..week_5 for a doctor, then sync that doctor's Visits + Itinerary.
-  /// For each week there will be at most one Visits/{yyyyMMdd} entry and one
-  /// matching Itinerary doc (linked by ItineraryReference field).
   Future<void> _saveEditedWeeksWithTimes(
     Map<String, dynamic> originalData,
     List<String> editedWeeks,
@@ -261,19 +313,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
     return sa.year == sb.year && sa.month == sb.month && sa.day == sb.day;
   }
 
-  /// Sync week selections into flat Visits/{yyyymmdd} docs AND matching Itinerary docs.
-  ///
-  /// Behaviour per week index (0–4):
-  /// - At most one visit doc in Visits for that calendar week.
-  /// - When a new date in that week is selected, any existing visit in that
-  ///   calendar week is deleted, and its referenced Itinerary doc (via ItineraryReference)
-  ///   is also deleted.
-  /// - For the new date, a visit doc is created/merged and an Itinerary doc
-  ///   is created/merged, and the visit's "ItineraryReference" field stores the
-  ///   DocumentReference to that itinerary doc.
-  /// - Additionally, each visit doc stores:
-  ///   "SampleAllocationsReference" -> /DaloyClients/IVA/Users/{_userId}/Doctor/{docId}/SampleAllocations/{yyyyMMdd}
-  ///   "CallNotesReference" -> /DaloyClients/IVA/Users/{_userId}/Doctor/{docId}/CallNotes/{yyyyMMdd}
   Future<void> _syncVisitsWithTmlScheduleAndTimes(
     String docId,
     Map<String, dynamic> doctorData,
@@ -286,7 +325,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
     final year = now.year;
     final month = now.month;
 
-    // 1. Compute the desired date per week from the grid (new UI state)
     final desiredDatePerWeek = <int, DateTime>{};
     for (int w = 0; w < 5; w++) {
       final dayCode = weeks[w];
@@ -300,7 +338,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
       desiredDatePerWeek[w] = dt;
     }
 
-    // 2. Fetch existing Visits docs for this month to detect duplicates.
     final monthStart = DateTime(year, month, 1);
     final monthEnd = DateTime(year, month + 1, 0);
     final String startId = DateFormat("yyyyMMdd").format(monthStart);
@@ -325,9 +362,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
       }
     }
 
-    // 3. For each week, delete any old visit in the same calendar week
-    //    but with a different dateId, and also delete its referenced
-    //    Itinerary document via the ItineraryReference field.
     for (final entry in desiredDatePerWeek.entries) {
       final newDate = entry.value;
       final newDateId = DateFormat("yyyyMMdd").format(newDate);
@@ -345,10 +379,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
         if (existingDt.year != year || existingDt.month != month) continue;
 
         if (_isSameCalendarWeek(existingDt, newDate)) {
-          // Delete the visit doc
           await visitsRootRef.doc(existingId).delete();
 
-          // If it has an ItineraryReference to an itinerary doc, delete that too
           final refField = existingData['ItineraryReference'];
           if (refField is DocumentReference) {
             try {
@@ -362,8 +394,6 @@ class _TmlViewPageState extends State<TmlViewPage> {
       }
     }
 
-    // 4. (Re)create visit docs per week with times and ItineraryReference,
-    //    SampleAllocationsReference, CallNotesReference.
     for (int w = 0; w < 5; w++) {
       final dt = desiredDatePerWeek[w];
       if (dt == null) continue;
@@ -372,14 +402,10 @@ class _TmlViewPageState extends State<TmlViewPage> {
       final fromUser = (scheduledTimesMap[w] ?? "").toString().trim();
       String? finalTime = fromUser.isNotEmpty ? fromUser : null;
 
-      // Build itinerary document reference for Calendar path
       final itineraryRef = _calendarItineraryRef(dt, docId);
-
-      // Build SampleAllocations and CallNotes references for this visit
       final sampleAllocRef = _sampleAllocationsRefForVisit(docId, dateId);
       final callNotesRef = _callNotesRefForVisit(docId, dateId);
 
-      // Ensure calendar itinerary doc exists/updated (merge to not overwrite).
       await itineraryRef.set(
         {
           'doctorId': docId,
@@ -394,7 +420,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
         "Visit": true,
         "submitted": false,
         "surprise": false,
-        "ItineraryReference": itineraryRef, // renamed from "Reference"
+        "ItineraryReference": itineraryRef,
         "SampleAllocationsReference": sampleAllocRef,
         "CallNotesReference": callNotesRef,
       };
@@ -446,10 +472,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
 
     final finalTime = existingTime.isNotEmpty ? existingTime : "09:00";
 
-    // Also wire the ItineraryReference / Calendar doc here in case auto-set runs alone.
     final itineraryRef = _calendarItineraryRef(visitDate, docId);
-
-    // Build SampleAllocations and CallNotes references for this visit
     final sampleAllocRef = _sampleAllocationsRefForVisit(docId, dateId);
     final callNotesRef = _callNotesRefForVisit(docId, dateId);
 
@@ -567,10 +590,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
       final dateId = scheduledDateId;
       final timeStr = "${hour.toString().padLeft(2, '0')}:00";
 
-      // Ensure calendar itinerary doc exists
       final itineraryRef = _calendarItineraryRef(visitDate, docId);
-
-      // Build SampleAllocations and CallNotes references for this visit
       final sampleAllocRef = _sampleAllocationsRefForVisit(docId, dateId);
       final callNotesRef = _callNotesRefForVisit(docId, dateId);
 
@@ -761,11 +781,9 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                           color: Colors.white,
                                         ),
                                         const SizedBox(width: 4),
-                                        Text(
-                                          bookedHours.contains(hour)
-                                              ? "Booked"
-                                              : "Schedule",
-                                          style: const TextStyle(
+                                        const Text(
+                                          "Schedule",
+                                          style: TextStyle(
                                             fontSize: 13,
                                             color: Colors.white,
                                             fontWeight: FontWeight.w600,
@@ -992,6 +1010,10 @@ class _TmlViewPageState extends State<TmlViewPage> {
     final month = now.month;
 
     _monthGrid = _buildMonthGrid(year, month);
+
+    // Decide when arrows should be enabled
+    final canGoPrev = !(now.year == _minMonth.year && now.month == _minMonth.month);
+    final canGoNext = !(now.year == _maxMonth.year && now.month == _maxMonth.month);
 
     return Stack(
       children: [
@@ -1304,6 +1326,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                     width: tableWidth,
                                     child: Column(
                                       children: [
+                                        // Month header with arrows
                                         Container(
                                           width: tableWidth,
                                           height: 40,
@@ -1317,14 +1340,51 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                               ),
                                             ),
                                           ),
-                                          child: Text(
-                                            monthYearLabel,
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors
-                                                  .deepPurple.shade900,
-                                            ),
+                                          child: Row(
+                                            children: [
+                                              IconButton(
+                                                icon: Icon(
+                                                  Icons.chevron_left,
+                                                  color: canGoPrev
+                                                      ? Colors
+                                                          .deepPurple.shade900
+                                                      : Colors
+                                                          .deepPurple.shade200,
+                                                ),
+                                                onPressed: canGoPrev
+                                                    ? () => _changeMonth(-1)
+                                                    : null,
+                                                tooltip: "Previous month",
+                                              ),
+                                              Expanded(
+                                                child: Center(
+                                                  child: Text(
+                                                    monthYearLabel,
+                                                    style: TextStyle(
+                                                      fontSize: 16,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Colors
+                                                          .deepPurple.shade900,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              IconButton(
+                                                icon: Icon(
+                                                  Icons.chevron_right,
+                                                  color: canGoNext
+                                                      ? Colors
+                                                          .deepPurple.shade900
+                                                      : Colors
+                                                          .deepPurple.shade200,
+                                                ),
+                                                onPressed: canGoNext
+                                                    ? () => _changeMonth(1)
+                                                    : null,
+                                                tooltip: "Next month",
+                                              ),
+                                            ],
                                           ),
                                         ),
                                         Container(
@@ -1383,8 +1443,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                     mainAxisAlignment:
                                                         MainAxisAlignment
                                                             .spaceEvenly,
-                                                    children: List.generate(
-                                                        7, (d) {
+                                                    children:
+                                                        List.generate(7, (d) {
                                                       final date =
                                                           _monthGrid[w][d];
                                                       final display = (date !=
@@ -1460,8 +1520,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
 
                                               final overFreq =
                                                   _isExceededFreq(
-                                                      currentWeeks,
-                                                      freq);
+                                                      currentWeeks, freq);
                                               final isSelectedRow =
                                                   selectedDoctorIdx ==
                                                       rowIdx;
@@ -1492,7 +1551,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                       Container(
                                                         width:
                                                             weekColWidth,
-                                                        height: rowHeight,
+                                                        height:
+                                                            rowHeight,
                                                         decoration:
                                                             const BoxDecoration(
                                                           border: Border(
@@ -1567,7 +1627,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                                       if (w < 4)
                                                         Container(
                                                           width: 1,
-                                                          height: rowHeight,
+                                                          height:
+                                                              rowHeight,
                                                           color: Colors
                                                               .grey[400],
                                                         ),
