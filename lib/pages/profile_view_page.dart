@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'profile_editor_page.dart';
 
+// Palette
+const Color kDeepPurple  = Color(0xFF4a2371);
+const Color kMidPurple   = Color(0xFF5958b2);
+const Color kSkyBlue     = Color(0xFF67c6ed);
+
 class ProfileViewPage extends StatefulWidget {
   final String userName;
   final String userEmail;
@@ -22,11 +27,13 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
   String? _userName;
   String? _userEmail;
   String? _photoUrl;
+  String? _clientType;
+  String? _password;
   bool _isActive = false;
   bool _isLoading = true;
   String? _errorMessage;
+  bool _passwordVisible = false;
 
-  // emailKey = paolotest@gmail,com (if you keep the replaceAll)
   late final String _emailKey;
 
   @override
@@ -36,63 +43,71 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
     _loadUserData();
   }
 
-  /// Returns the DocumentReference for your structure:
-  /// flowDB (collection) / users (doc) / <emailKey> (collection) / Paolo Jules (doc)
   DocumentReference<Map<String, dynamic>> _profileDocRef() {
     return _firestore
         .collection('flowDB')
         .doc('users')
         .collection(_emailKey)
-        .doc('Paolo Jules');
+        .doc('_emailKey');
   }
 
   Future<void> _loadUserData() async {
     try {
       final docRef = _profileDocRef();
       final docSnapshot = await docRef.get();
-
       if (!mounted) return;
 
       if (docSnapshot.exists) {
-        final data = docSnapshot.data();
+        final data = docSnapshot.data()!;
         setState(() {
-          // Firestore fields: "name", "email", "isActive", "photoUrl"
-          _userName = data?['name'] ??
-              _extractUserName(widget.userName, widget.userEmail);
-          _userEmail = data?['email'] ?? widget.userEmail;
-          _isActive = data?['isActive'] ?? false;
-          _photoUrl = data?['photoUrl'];
-          _isLoading = false;
-          _errorMessage = null;
+          _userName  = data['name']  ?? _extractUserName(widget.userName, widget.userEmail);
+          _userEmail = data['email'] ?? widget.userEmail;
+          _isActive  = data['isActive'] ?? false;
+          _photoUrl  = data['photoUrl'];
         });
       } else {
-        // If doc does not exist, create it with initial values.
-        final String initialName =
-            _extractUserName(widget.userName, widget.userEmail);
-
+        final String initialName = _extractUserName(widget.userName, widget.userEmail);
         await docRef.set({
-          'name': initialName,
-          'email': widget.userEmail,
-          'isActive': true,
-          'photoUrl': null,
+          'name':      initialName,
+          'email':     widget.userEmail,
+          'isActive':  true,
+          'photoUrl':  null,
           'createdAt': FieldValue.serverTimestamp(),
         });
-
         if (!mounted) return;
-
         setState(() {
-          _userName = initialName;
+          _userName  = initialName;
           _userEmail = widget.userEmail;
-          _isActive = true;
-          _photoUrl = null;
-          _isLoading = false;
-          _errorMessage = null;
+          _isActive  = true;
+          _photoUrl  = null;
         });
       }
+
+      final usersQuery = await _firestore
+          .collectionGroup('Users')
+          .where('email', isEqualTo: widget.userEmail)
+          .limit(1)
+          .get();
+
+      if (!mounted) return;
+
+      if (usersQuery.docs.isNotEmpty) {
+        final userData = usersQuery.docs.first.data();
+        setState(() {
+          _clientType = userData['clientType'];
+          _password   = userData['password'];
+        });
+      }
+
+      setState(() {
+        _isLoading    = false;
+        _errorMessage = null;
+      });
+
     } on FirebaseException catch (e) {
       if (!mounted) return;
       setState(() {
-        _isLoading = false;
+        _isLoading    = false;
         _errorMessage = e.message ?? e.code;
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -101,7 +116,7 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _isLoading = false;
+        _isLoading    = false;
         _errorMessage = e.toString();
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -110,12 +125,9 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
     }
   }
 
-  /// Returns widgetUserName if not empty; otherwise derives from userEmail (before "@")
   String _extractUserName(String widgetUserName, String widgetUserEmail) {
     if (widgetUserName.isNotEmpty) return widgetUserName;
-    if (widgetUserEmail.contains('@')) {
-      return widgetUserEmail.split('@')[0];
-    }
+    if (widgetUserEmail.contains('@')) return widgetUserEmail.split('@')[0];
     return 'Unknown User';
   }
 
@@ -123,20 +135,28 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        // Gradient AppBar using all three palette colors
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [kDeepPurple, kMidPurple, kSkyBlue],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        backgroundColor: Colors.transparent,
         title: const Text('Profile'),
-        backgroundColor: Colors.blue.shade700,
         actions: [
           IconButton(
             icon: const Icon(Icons.edit),
             onPressed: () async {
               try {
                 final userDoc = await _profileDocRef().get();
-
                 if (!mounted) return;
 
                 if (userDoc.exists) {
                   final userData = userDoc.data() ?? {};
-                  // docId here is "Paolo Jules" given your structure
                   final String docId = userDoc.id;
 
                   await Navigator.push(
@@ -145,8 +165,7 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
                       builder: (context) => ProfileEditorPage(
                         docId: docId,
                         userData: userData,
-                        // If ProfileEditorPage needs the path, you can pass emailKey too.
-                        // emailKey: _emailKey,
+                        clientType: _clientType,
                       ),
                     ),
                   );
@@ -160,11 +179,7 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
               } on FirebaseException catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Failed to open editor: ${e.message ?? e.code}',
-                    ),
-                  ),
+                  SnackBar(content: Text('Failed to open editor: ${e.message ?? e.code}')),
                 );
               } catch (e) {
                 if (!mounted) return;
@@ -177,93 +192,119 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: kMidPurple))
           : _errorMessage != null
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Text(
                       _errorMessage!.contains('permission-denied')
-                          ? 'You do not have permission to view this profile.\nPlease check your Firestore security rules for:\nflowDB / users / <emailKey> / Paolo Jules'
+                          ? 'You do not have permission to view this profile.\nPlease check your Firestore security rules.'
                           : _errorMessage!,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.red.shade700,
-                        fontSize: 14,
-                      ),
+                      style: const TextStyle(color: kDeepPurple, fontSize: 14),
                     ),
                   ),
                 )
               : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      Stack(
-                        children: [
-                          CircleAvatar(
-                            radius: 50,
-                            backgroundColor: Colors.blue.shade100,
-                            backgroundImage: (_photoUrl != null &&
-                                    _photoUrl!.isNotEmpty)
-                                ? NetworkImage(_photoUrl!)
-                                : null,
-                            child: (_photoUrl == null ||
-                                    _photoUrl!.isEmpty)
-                                ? Text(
-                                    (_userName != null &&
-                                            _userName!.isNotEmpty)
-                                        ? _userName![0].toUpperCase()
-                                        : '?',
-                                    style: TextStyle(
-                                      fontSize: 36,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue.shade700,
-                                    ),
-                                  )
-                                : null,
+                      // Header banner
+                      Container(
+                        width: double.infinity,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [kDeepPurple, kMidPurple, kSkyBlue],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
-                          if (_isActive)
-                            Positioned(
-                              right: 0,
-                              bottom: 0,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(
-                                  color: Colors.green,
-                                  shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.only(top: 28, bottom: 36),
+                        child: Column(
+                          children: [
+                            Stack(
+                              children: [
+                                CircleAvatar(
+                                  radius: 48,
+                                  backgroundColor: kSkyBlue.withOpacity(0.3),
+                                  backgroundImage: (_photoUrl != null && _photoUrl!.isNotEmpty)
+                                      ? NetworkImage(_photoUrl!)
+                                      : null,
+                                  child: (_photoUrl == null || _photoUrl!.isEmpty)
+                                      ? Text(
+                                          (_userName != null && _userName!.isNotEmpty)
+                                              ? _userName![0].toUpperCase()
+                                              : '?',
+                                          style: const TextStyle(
+                                            fontSize: 34,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : null,
                                 ),
-                                child: const Icon(
-                                  Icons.check,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
+                                if (_isActive)
+                                  Positioned(
+                                    right: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.green,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.check,
+                                          color: Colors.white, size: 14),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              _userName ?? 'Unknown User',
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
                               ),
                             ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      Card(
-                        elevation: 4,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                            const SizedBox(height: 4),
+                            Text(
+                              _userEmail ?? '',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.white.withOpacity(0.85),
+                              ),
+                            ),
+                          ],
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            children: [
-                              _buildInfoTile(
-                                icon: Icons.person,
-                                title: 'Username',
-                                value: _userName ?? 'Unknown User',
-                              ),
-                              const Divider(height: 24),
-                              _buildInfoTile(
-                                icon: Icons.email,
-                                title: 'Email',
-                                value: _userEmail ?? '',
-                              ),
-                            ],
-                          ),
+                      ),
+
+                      // Info cards
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 12, horizontal: 12),
+                        child: Column(
+                          children: [
+                            _buildInfoCard(
+                              icon: Icons.person,
+                              title: 'Username',
+                              value: _userName ?? 'Unknown User',
+                            ),
+                            _buildInfoCard(
+                              icon: Icons.email,
+                              title: 'Email',
+                              value: _userEmail ?? '—',
+                            ),
+                            _buildInfoCard(
+                              icon: Icons.badge,
+                              title: 'Client Type',
+                              value: _clientType != null
+                                  ? _clientType![0].toUpperCase() + _clientType!.substring(1)
+                                  : '—',
+                            ),
+                            // _buildPasswordCard(),    // uncomment to show password field
+                          ],
                         ),
                       ),
                     ],
@@ -272,45 +313,53 @@ class _ProfileViewPageState extends State<ProfileViewPage> {
     );
   }
 
-  Widget _buildInfoTile({
+  Widget _buildInfoCard({
     required IconData icon,
     required String title,
     required String value,
   }) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.blue.shade50,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: Colors.blue.shade700),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: ListTile(
+        leading: Icon(icon, color: kMidPurple),
+        title: Text(title,
+            style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        subtitle: Text(value,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+      ),
     );
   }
+
+  // uncomment to show password field
+  // Widget _buildPasswordCard() {
+  //   final String display = (_password != null && _password!.isNotEmpty)
+  //       ? (_passwordVisible ? _password! : '•' * _password!.length)
+  //       : '—';
+
+  //   return Card(
+  //     margin: const EdgeInsets.symmetric(vertical: 4),
+  //     child: ListTile(
+  //       leading: const Icon(Icons.lock, color: kMidPurple),
+  //       title: const Text('Password',
+  //           style: TextStyle(fontSize: 12, color: Colors.grey)),
+  //       subtitle: Text(
+  //         display,
+  //         style: const TextStyle(
+  //             fontSize: 15,
+  //             fontWeight: FontWeight.w500,
+  //             letterSpacing: 2),
+  //       ),
+  //       trailing: (_password != null && _password!.isNotEmpty)
+  //           ? IconButton(
+  //               icon: Icon(
+  //                 _passwordVisible ? Icons.visibility_off : Icons.visibility,
+  //                 color: kSkyBlue,
+  //               ),
+  //               onPressed: () =>
+  //                   setState(() => _passwordVisible = !_passwordVisible),
+  //             )
+  //           : null,
+  //     ),
+  //   );
+  // }
 }
