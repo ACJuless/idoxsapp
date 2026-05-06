@@ -1,4 +1,3 @@
-// profile_editor_page.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,159 +6,57 @@ import 'dart:convert';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
+// Palette
+const Color _kDeepPurple = Color(0xFF4a2371);
+const Color _kMidPurple  = Color(0xFF5958b2);
+const Color _kSkyBlue    = Color(0xFF67c6ed);
+
+const LinearGradient _kAppBarGradient = LinearGradient(
+  colors: [_kDeepPurple, _kMidPurple, _kSkyBlue],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
+
 class ProfileEditorPage extends StatefulWidget {
   final String docId;
   final Map<String, dynamic> userData;
+  final String? clientType;
 
   const ProfileEditorPage({
-    Key? key,
+    super.key,
     required this.docId,
     required this.userData,
-  }) : super(key: key);
+    this.clientType,
+  });
 
   @override
-  _ProfileEditorPageState createState() => _ProfileEditorPageState();
+  State<ProfileEditorPage> createState() => _ProfileEditorPageState();
 }
 
 class _ProfileEditorPageState extends State<ProfileEditorPage> {
-  final _formKey = GlobalKey<FormState>();
+  final _formKey   = GlobalKey<FormState>();
   final _firestore = FirebaseFirestore.instance;
-  final _storage = FirebaseStorage.instance;
+  final _storage   = FirebaseStorage.instance;
 
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _passwordController;
 
-  Color _selectedColor = Colors.blue;
-  bool _isLoading = false;
+  bool _isLoading       = false;
+  bool _passwordVisible = false;
 
-  File? _profileImageFile;
-  String? _photoUrl; // store current profile picture (download URL)
+  File?   _profileImageFile;
+  String? _photoUrl;
 
   @override
   void initState() {
     super.initState();
-
-    // Initialize controllers with passed userData
-    _nameController = TextEditingController(text: widget.userData['name'] ?? '');
-    _emailController = TextEditingController(text: widget.userData['email'] ?? '');
+    _nameController     = TextEditingController(text: widget.userData['name']  ?? '');
+    _emailController    = TextEditingController(text: widget.userData['email'] ?? '');
     _passwordController = TextEditingController();
-    _selectedColor = Color(widget.userData['themeColor'] ?? Colors.blue.value);
-
-    // Try to support different possible field names that might be in other parts
-    _photoUrl = widget.userData['photoUrl'] ??
-        widget.userData['profileImageUrl'] ??
-        widget.userData['profilePicture'] ??
-        null;
-  }
-
-  String _hashPassword(String password) {
-    final bytes = utf8.encode(password);
-    final hash = sha256.convert(bytes);
-    return hash.toString();
-  }
-
-  /// Let the user pick from gallery (imageQuality reduces file size).
-  Future<void> _pickImage() async {
-    try {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
-
-      if (pickedFile != null) {
-        setState(() {
-          _profileImageFile = File(pickedFile.path);
-        });
-      }
-    } catch (e) {
-      // Show simple feedback if picker fails
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
-      );
-    }
-  }
-
-  /// Upload profile image to Firebase Storage and return download URL.
-  /// If no new file selected, returns existing _photoUrl.
-  Future<String?> _uploadProfileImage(String userId) async {
-    if (_profileImageFile == null) return _photoUrl; // nothing to upload
-
-    try {
-      // Determine content type by file extension (basic approach)
-      final path = _profileImageFile!.path.toLowerCase();
-      final isPng = path.endsWith('.png');
-      final contentType = isPng ? 'image/png' : 'image/jpeg';
-
-      final ref = _storage.ref().child('profile_pics').child('$userId${isPng ? '.png' : '.jpg'}');
-
-      final metadata = SettableMetadata(contentType: contentType);
-
-      final uploadTask = ref.putFile(_profileImageFile!, metadata);
-
-      // Optionally show upload progress by listening to snapshot events (not shown in UI here)
-      final snapshot = await uploadTask.whenComplete(() {});
-      if (snapshot.state == TaskState.success) {
-        final downloadUrl = await ref.getDownloadURL();
-        return downloadUrl;
-      } else {
-        // Fallback to old URL if for some reason upload didn't succeed
-        print('Upload completed but state=${snapshot.state}');
-        return _photoUrl;
-      }
-    } catch (e) {
-      print('Error uploading profile image: $e');
-      // Do not throw to avoid breaking the whole save process; caller will handle null/old url
-      return _photoUrl;
-    }
-  }
-
-  /// Save profile: upload image first (if any), then update Firestore doc.
-  Future<void> _saveProfile() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _isLoading = true);
-
-    try {
-      // upload image (if selected)
-      final uploadedUrl = await _uploadProfileImage(widget.docId);
-
-      final updateData = <String, dynamic>{
-        'name': _nameController.text.trim(),
-        'email': _emailController.text.trim(),
-        'themeColor': _selectedColor.value,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      // include photo url if available
-      if (uploadedUrl != null && uploadedUrl.isNotEmpty) {
-        updateData['photoUrl'] = uploadedUrl;
-      }
-
-      if (_passwordController.text.isNotEmpty) {
-        updateData['password'] = _hashPassword(_passwordController.text);
-      }
-
-      // Update the Firestore user document (merge/update)
-      await _firestore.collection('users').doc(widget.docId).update(updateData);
-
-      // update local state so UI reflects saved image immediately
-      setState(() {
-        if (uploadedUrl != null && uploadedUrl.isNotEmpty) _photoUrl = uploadedUrl;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Profile updated successfully')),
-      );
-
-      // Close editor and return to previous screen
-      Navigator.pop(context);
-    } catch (e) {
-      print('Error updating profile: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating profile: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+    _photoUrl = widget.userData['photoUrl']        ??
+                widget.userData['profileImageUrl'] ??
+                widget.userData['profilePicture'];
   }
 
   @override
@@ -170,150 +67,354 @@ class _ProfileEditorPageState extends State<ProfileEditorPage> {
     super.dispose();
   }
 
+  String _hashPassword(String password) {
+    final bytes = utf8.encode(password);
+    return sha256.convert(bytes).toString();
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _resetForm() {
+    setState(() {
+      _nameController.text     = widget.userData['name']  ?? '';
+      _emailController.text    = widget.userData['email'] ?? '';
+      _passwordController.text = '';
+      _passwordVisible         = false;
+      _profileImageFile        = null;
+      _photoUrl = widget.userData['photoUrl']        ??
+                  widget.userData['profileImageUrl'] ??
+                  widget.userData['profilePicture'];
+    });
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final picker     = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 70,
+      );
+      if (pickedFile != null) {
+        setState(() => _profileImageFile = File(pickedFile.path));
+      }
+    } catch (e) {
+      _toast('Error picking image: $e');
+    }
+  }
+
+  Future<String?> _uploadProfileImage(String userId) async {
+    if (_profileImageFile == null) return _photoUrl;
+    try {
+      final path        = _profileImageFile!.path.toLowerCase();
+      final isPng       = path.endsWith('.png');
+      final contentType = isPng ? 'image/png' : 'image/jpeg';
+      final ref         = _storage
+          .ref()
+          .child('profile_pics')
+          .child('$userId${isPng ? '.png' : '.jpg'}');
+      final snapshot = await ref
+          .putFile(_profileImageFile!, SettableMetadata(contentType: contentType))
+          .whenComplete(() {});
+      if (snapshot.state == TaskState.success) {
+        return await ref.getDownloadURL();
+      }
+      return _photoUrl;
+    } catch (e) {
+      debugPrint('Error uploading profile image: $e');
+      return _photoUrl;
+    }
+  }
+
+  Future<void> _saveProfile() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
+    try {
+      final uploadedUrl = await _uploadProfileImage(widget.docId);
+      final updateData = <String, dynamic>{
+        'name':      _nameController.text.trim(),
+        'email':     _emailController.text.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (uploadedUrl != null && uploadedUrl.isNotEmpty) {
+        updateData['photoUrl'] = uploadedUrl;
+      }
+      if (_passwordController.text.isNotEmpty) {
+        updateData['password'] = _hashPassword(_passwordController.text);
+      }
+      await _firestore
+          .collection('users')
+          .doc(widget.docId)
+          .update(updateData);
+      if (!mounted) return;
+      setState(() {
+        if (uploadedUrl != null && uploadedUrl.isNotEmpty) {
+          _photoUrl = uploadedUrl;
+        }
+      });
+      _toast('Profile updated successfully');
+      Navigator.pop(context);
+    } catch (e) {
+      debugPrint('Error updating profile: $e');
+      _toast('Error updating profile: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Edit Profile'),
-        backgroundColor: _selectedColor,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(gradient: _kAppBarGradient),
+        ),
+        backgroundColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.chevron_left, size: 28),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text('Edit Profile'),
       ),
       body: _isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: _kMidPurple))
           : SingleChildScrollView(
-              padding: EdgeInsets.all(16.0),
               child: Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Profile Picture Section
-                    Center(
-                      child: Stack(
+                    // Gradient header banner
+                    Container(
+                      width: double.infinity,
+                      decoration: const BoxDecoration(gradient: _kAppBarGradient),
+                      padding: const EdgeInsets.only(top: 28, bottom: 36),
+                      child: Center(
+                        child: Stack(
+                          children: [
+                            CircleAvatar(
+                              radius: 48,
+                              backgroundColor: _kSkyBlue.withValues(alpha: 0.3),
+                              backgroundImage: _profileImageFile != null
+                                  ? FileImage(_profileImageFile!)
+                                  : (_photoUrl != null && _photoUrl!.isNotEmpty
+                                      ? NetworkImage(_photoUrl!) as ImageProvider
+                                      : null),
+                              child: (_profileImageFile == null &&
+                                      (_photoUrl == null || _photoUrl!.isEmpty))
+                                  ? Text(
+                                      _nameController.text.isNotEmpty
+                                          ? _nameController.text[0].toUpperCase()
+                                          : '?',
+                                      style: const TextStyle(
+                                        fontSize: 34,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: GestureDetector(
+                                onTap: _pickImage,
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [_kMidPurple, _kSkyBlue],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 2),
+                                  ),
+                                  child: const Icon(
+                                    Icons.camera_alt,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Form fields
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 12),
+                      child: Column(
                         children: [
-                          CircleAvatar(
-                            radius: 50,
-                            backgroundColor: _selectedColor.withOpacity(0.2),
-                            backgroundImage: _profileImageFile != null
-                                ? FileImage(_profileImageFile!)
-                                : (_photoUrl != null && _photoUrl!.isNotEmpty
-                                    ? NetworkImage(_photoUrl!) as ImageProvider
-                                    : null),
-                            child: (_profileImageFile == null && (_photoUrl == null || _photoUrl!.isEmpty))
-                                ? Text(
-                                    _nameController.text.isNotEmpty
-                                        ? _nameController.text[0].toUpperCase()
-                                        : '?',
-                                    style: TextStyle(fontSize: 36, color: _selectedColor),
-                                  )
-                                : null,
+                          _buildFieldCard(
+                            icon: Icons.person,
+                            child: TextFormField(
+                              controller: _nameController,
+                              decoration: _fieldDecoration('Username'),
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? 'Username is required'
+                                  : null,
+                            ),
                           ),
-                          Positioned(
-                            right: 0,
-                            bottom: 0,
-                            child: CircleAvatar(
-                              backgroundColor: _selectedColor,
-                              radius: 18,
-                              child: IconButton(
-                                icon: Icon(Icons.camera_alt, size: 18, color: Colors.white),
-                                onPressed: _pickImage,
+                          _buildFieldCard(
+                            icon: Icons.email,
+                            child: TextFormField(
+                              controller: _emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              decoration: _fieldDecoration('Email'),
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? 'Email is required'
+                                  : null,
+                            ),
+                          ),
+                          _buildFieldCard(
+                            icon: Icons.badge,
+                            child: TextFormField(
+                              initialValue: () {
+                                final ct = widget.clientType
+                                    ?? widget.userData['clientType'] as String?;
+                                if (ct == null || ct.isEmpty) return '—';
+                                return ct[0].toUpperCase() + ct.substring(1);
+                              }(),
+                              decoration: _fieldDecoration('Client Type'),
+                              readOnly: true,
+                              enabled: false,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                color: Colors.black54,
                               ),
                             ),
                           ),
+                          _buildFieldCard(
+                            icon: Icons.lock,
+                            child: TextFormField(
+                              controller: _passwordController,
+                              obscureText: !_passwordVisible,
+                              decoration: _fieldDecoration(
+                                'New Password (optional)',
+                              ).copyWith(
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _passwordVisible
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                    color: _kSkyBlue,
+                                  ),
+                                  onPressed: () => setState(
+                                    () => _passwordVisible = !_passwordVisible,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 50),
+
+                          // Reset + Save buttons
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 150,
+                                height: 44,
+                                child: OutlinedButton(
+                                  onPressed: _resetForm,
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(
+                                        color: _kMidPurple, width: 1.5),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'RESET',
+                                    style: TextStyle(
+                                      color: _kMidPurple,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.2,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              SizedBox(
+                                width: 150,
+                                height: 44,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [_kDeepPurple, _kMidPurple, _kSkyBlue],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: ElevatedButton(
+                                    onPressed: _saveProfile,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.transparent,
+                                      shadowColor: Colors.transparent,
+                                      minimumSize: Size.zero,
+                                      padding: EdgeInsets.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'SAVE',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1.2,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
-                    ),
-                    SizedBox(height: 24),
-
-                    // Username Field
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: InputDecoration(
-                        labelText: 'Username',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.person),
-                      ),
-                      validator: (value) =>
-                          value?.isEmpty ?? true ? 'Username is required' : null,
-                    ),
-                    SizedBox(height: 16),
-
-                    // Email Field
-                    TextFormField(
-                      controller: _emailController,
-                      decoration: InputDecoration(
-                        labelText: 'Email',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.email),
-                      ),
-                      validator: (value) =>
-                          value?.isEmpty ?? true ? 'Email is required' : null,
-                    ),
-                    SizedBox(height: 16),
-
-                    // Password Field
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: InputDecoration(
-                        labelText: 'New Password (optional)',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.lock),
-                      ),
-                      obscureText: true,
-                    ),
-                    SizedBox(height: 24),
-                    SizedBox(height: 8),
-                    // Wrap(
-                    //   spacing: 8,
-                    //   children: [
-                    //     Colors.blue,
-                    //     Colors.green,
-                    //     Colors.purple,
-                    //     Colors.red,
-                    //     Colors.orange,
-                    //     Colors.teal,
-                    //   ].map((color) => InkWell(
-                    //         onTap: () => setState(() => _selectedColor = color),
-                    //         child: Container(
-                    //           width: 40,
-                    //           height: 40,
-                    //           margin: EdgeInsets.only(bottom: 8),
-                    //           decoration: BoxDecoration(
-                    //             color: color,
-                    //             shape: BoxShape.circle,
-                    //             border: Border.all(
-                    //               color: _selectedColor == color
-                    //                   ? Colors.white
-                    //                   : Colors.transparent,
-                    //               width: 2,
-                    //             ),
-                    //             boxShadow: [
-                    //               if (_selectedColor == color)
-                    //                 BoxShadow(
-                    //                   color: color.withOpacity(0.4),
-                    //                   blurRadius: 8,
-                    //                   spreadRadius: 2,
-                    //                 ),
-                    //             ],
-                    //           ),
-                    //         ),
-                    //       ))
-                    //       .toList(),
-                    // ),
-                    SizedBox(height: 24),
-
-                    // Save Button
-                    ElevatedButton(
-                      onPressed: _saveProfile,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _selectedColor,
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: Text('Save Changes'),
                     ),
                   ],
                 ),
               ),
             ),
+    );
+  }
+
+  // Widget helpers
+  Widget _buildFieldCard({
+    required IconData icon,
+    required Widget child,
+  }) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 24, right: 12, top: 4, bottom: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(icon, color: _kMidPurple),
+            const SizedBox(width: 16),
+            Expanded(child: child),
+          ],
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _fieldDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(fontSize: 12, color: Colors.grey),
+      border: InputBorder.none,
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
     );
   }
 }
