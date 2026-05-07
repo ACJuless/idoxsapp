@@ -162,30 +162,18 @@ class _LoginPageState extends State<LoginPage> {
 
         // Store login timestamp
         final prefs = await SharedPreferences.getInstance();
-        final loginTime = DateTime.now().toIso8601String();
-        await prefs.setString('loginTimestamp', loginTime);
-
-        // Store clientType always
+        await prefs.setString('loginTimestamp', DateTime.now().toIso8601String());
+        await prefs.setString('userEmail', email);
+        await prefs.setString('userId', userDocSnap.id);
+        await prefs.setString('territoryId', _selectedTerritory ?? '');
+        await prefs.setString('userName', userData['name'] ?? '');
         await prefs.setString('userClientType', clientType);
 
         // If "Remember Me" is checked, store values for auto-login next time
         if (_rememberMe) {
           await prefs.setBool('isLoggedIn', true);
-          await prefs.setString('userEmail', email);
-          await prefs.setString('userId', userDocSnap.id);
-          await prefs.setString('territoryId', _selectedTerritory ?? '');
-          await prefs.setString('userName', userData['name'] ?? '');
-          await prefs.setString('userClientType', clientType);
-        } else {
-          // Still store basic info even if not remembering
-          await prefs.setString('userEmail', email);
-          await prefs.setString('userId', userDocSnap.id);
-          await prefs.setString('territoryId', _selectedTerritory ?? '');
-          await prefs.setString('userName', userData['name'] ?? '');
-          await prefs.setString('userClientType', clientType);
         }
 
-        // Pass needed data to home
         Navigator.pushReplacementNamed(
           context,
           '/home',
@@ -200,9 +188,7 @@ class _LoginPageState extends State<LoginPage> {
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              e.toString().replaceAll('Exception: ', ''),
-            ),
+            content: Text(e.toString().replaceAll('Exception: ', '')),
           ),
         );
       }
