@@ -5,12 +5,6 @@ import 'package:flutter/material.dart';
 import '../menu/e_forms_menu/forms_page.dart';
 import '../menu/itinerary_menu/itinerary_page.dart';
 import '../menu/doctor_menu/doctor_page.dart';
-import '../webview/webview_in_field_page.dart';
-import '../webview/webview_attendance_form_page.dart';
-import '../webview/webview_abr_form_page.dart';
-import '../webview/webview_scp_form_page.dart';
-import '../webview/webview_incidental_coverage_form_page.dart';
-import '../webview/webview_sales_order_form_page.dart';
 import 'package:signature/signature.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -24,6 +18,12 @@ import 'dart:convert';
 import 'dart:ui';
 import 'dart:io';
 import 'dart:async';
+
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:archive/archive.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+
 // import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../pages/messages_page.dart';
@@ -33,6 +33,8 @@ import 'package:flutter/services.dart';
 
 import '../menu/doctor_menu/call_detail_page.dart';
 import '../constants/app_constants.dart';
+
+import '../menu/e_forms_menu/forms_page.dart' show EFormMeta, kEFormMetaRegistry;
 
 final logger = Logger();
 
@@ -525,10 +527,49 @@ class _DonutPainter extends CustomPainter {
   }
 }
 
+class EFormChipConfig {
+  final String formKey;
+  final String title;
+
+  const EFormChipConfig({
+    required this.formKey,
+    required this.title,
+  });
+}
+
+class EFormRemoteConfig {
+  final String formKey;
+  final String title;
+  final String storagePath;
+  final String entryHtml;
+  final bool enabled;
+
+  EFormRemoteConfig({
+    required this.formKey,
+    required this.title,
+    required this.storagePath,
+    required this.entryHtml,
+    required this.enabled,
+  });
+
+  factory EFormRemoteConfig.fromDoc(
+    String formKey,
+    Map<String, dynamic> data,
+  ) {
+    return EFormRemoteConfig(
+      formKey: formKey,
+      title: (data['title'] ?? '').toString(),
+      storagePath: (data['storagePath'] ?? '').toString(),
+      entryHtml: (data['entryHtml'] ?? 'index.html').toString(),
+      enabled: data['enabled'] == true,
+    );
+  }
+}
+
 class _HomePageState extends State<HomePage> {
   Uint8List? signature;
   MapController? _mapController;
-// bool _isHeaderCollapsed = false; 
+  // bool _isHeaderCollapsed = false; 
 
   String mrCode = ''; 
   String userName = '';
@@ -538,6 +579,8 @@ class _HomePageState extends State<HomePage> {
   bool _hasSubmittedSignature = false;
   bool _isLoading = true;
   String userClientType = ''; 
+  String _efDomainType = ''; // 'iva', 'indofil', 'wert'
+  String _efUserEmail = '';
 
   int _selectedIndex = 0;
   bool _isOffline = false;
@@ -569,23 +612,25 @@ class _HomePageState extends State<HomePage> {
   final _preCallPlanController = TextEditingController();
 
   // Controllers for Add New Client
-final _firstNameController = TextEditingController();
-final _lastNameController = TextEditingController();
-final _middleNameController = TextEditingController();
-final _birthDateController = TextEditingController();
-final _specialtyController = TextEditingController();
-final _contactNumberController = TextEditingController();
-final _emailController = TextEditingController();
-final _hospitalClinicController = TextEditingController();
-final _frequencyController = TextEditingController();
-final ScrollController _doctorsScrollController = ScrollController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _middleNameController = TextEditingController();
+  final _birthDateController = TextEditingController();
+  final _specialtyController = TextEditingController();
+  final _contactNumberController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _hospitalClinicController = TextEditingController();
+  final _frequencyController = TextEditingController();
+  final ScrollController _doctorsScrollController = ScrollController();
 
-// Gender dropdown state
-String? _selectedGender;
+  // Gender dropdown state
+  String? _selectedGender;
 
   @override
   void initState() {
     super.initState();
+    _loadEFormsDomain();
+
     _loadUserData();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _openSignatureDialog();
@@ -593,6 +638,8 @@ String? _selectedGender;
 
     // initialize with one product row
     _addUnplannedProductRow();
+
+    
   }
 
   @override
@@ -622,6 +669,196 @@ String? _selectedGender;
     });
   }
 
+  List<EFormChipConfig> _buildEFormsChipConfigForHome() {
+    // Mirror forms_page.dart domain logic but only keep formKey + title.
+    if (_efDomainType == 'indofil') {
+      return const [
+        EFormChipConfig(
+          formKey: 'attendance',
+          title: 'Attendance Form',
+        ),
+        EFormChipConfig(
+          formKey: 'scp',
+          title: 'Sample Crop Prescription',
+        ),
+        EFormChipConfig(
+          formKey: 'abr',
+          title: 'Activity Budget Request',
+        ),
+      ];
+    }
+
+    if (_efDomainType == 'wert') {
+      return const [
+        EFormChipConfig(
+          formKey: 'coaching',
+          title: 'In-Field Coaching Form',
+        ),
+        EFormChipConfig(
+          formKey: 'inc_cov',
+          title: 'Incidental Coverage Form',
+        ),
+        EFormChipConfig(
+          formKey: 'sales_order',
+          title: 'Sales Order Form',
+        ),
+      ];
+    }
+
+    // Default / IVA: use the same IVA demo forms as forms_page.dart
+    return const [
+      EFormChipConfig(
+        formKey: 'demo_liquidation',
+        title: 'Demo Liquidation Form',
+      ),
+      EFormChipConfig(
+        formKey: 'custom_itinerary',
+        title: 'Custom Itinerary',
+      ),
+      EFormChipConfig(
+        formKey: 'inventory_report',
+        title: 'Inventory Report',
+      ),
+      EFormChipConfig(
+        formKey: 'f2f_visit',
+        title: 'F2F Visit Form',
+      ),
+      EFormChipConfig(
+        formKey: 'customer_ledger',
+        title: 'Customer Ledger Form',
+      ),
+    ];
+  }
+
+  Future<void> _openSelectedEForm(EFormChipConfig chip) async {
+  try {
+    debugPrint('=== Opening form: ${chip.formKey} ===');
+
+    // Step 1: Fetch Firestore config
+    final doc = await FirebaseFirestore.instance
+        .collection('EFormsConfig')
+        .doc(chip.formKey)
+        .get();
+
+    debugPrint('Firestore doc exists: ${doc.exists}');
+
+    if (!doc.exists) {
+      debugPrint('ERROR: No Firestore config found for ${chip.formKey}');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Form config not found in database')),
+      );
+      return;
+    }
+
+    final data = doc.data()!;
+    final storagePath = data['storagePath'] as String;
+    final entryHtml = (data['entryHtml'] ?? 'index.html').toString();
+
+    debugPrint('Storage path: "$storagePath"');
+    debugPrint('Entry HTML: $entryHtml');
+    debugPrint('Storage path length: ${storagePath.length}');
+    debugPrint('Has leading/trailing spaces: ${storagePath.trim() != storagePath}');
+
+    // Step 2: Download ZIP from Firebase Storage
+    final dir = await getApplicationDocumentsDirectory();
+    debugPrint('App docs directory: ${dir.path}');
+
+    final zipFile = File('${dir.path}/${chip.formKey}.zip');
+    debugPrint('ZIP will be saved to: ${zipFile.path}');
+
+    final ref = FirebaseStorage.instance.ref(storagePath.trim());
+    debugPrint('Firebase Storage reference created for: ${storagePath.trim()}');
+
+    await ref.writeToFile(zipFile);
+    debugPrint('ZIP downloaded successfully');
+
+    final fileExists = await zipFile.exists();
+    final fileSize = fileExists ? await zipFile.length() : 0;
+    debugPrint('ZIP file exists: $fileExists, size: $fileSize bytes');
+
+    if (!fileExists || fileSize == 0) {
+      debugPrint('ERROR: ZIP file is empty or missing');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Download failed or file is empty')),
+      );
+      return;
+    }
+
+    // Step 3: Extract ZIP
+    final extractDir = Directory('${dir.path}/eforms/${chip.formKey}');
+    debugPrint('Extract directory: ${extractDir.path}');
+
+    if (await extractDir.exists()) {
+      await extractDir.delete(recursive: true);
+      debugPrint('Deleted old extraction folder');
+    }
+    await extractDir.create(recursive: true);
+    debugPrint('Created fresh extraction folder');
+
+    final bytes = await zipFile.readAsBytes();
+    debugPrint('Read ZIP bytes: ${bytes.length}');
+
+    final archive = ZipDecoder().decodeBytes(bytes);
+    debugPrint('Archive entries: ${archive.length}');
+
+    for (final file in archive) {
+      debugPrint('Extracting: ${file.name}');
+      final outPath = '${extractDir.path}/${file.name}';
+      if (file.isFile) {
+        final outFile = File(outPath);
+        await outFile.create(recursive: true);
+        await outFile.writeAsBytes(file.content as List<int>);
+      } else {
+        await Directory(outPath).create(recursive: true);
+      }
+    }
+    debugPrint('Extraction complete');
+
+    // Step 4: Verify HTML file
+    final htmlFile = File('${extractDir.path}/$entryHtml');
+    final htmlExists = await htmlFile.exists();
+    debugPrint('HTML file exists: $htmlExists at ${htmlFile.path}');
+
+    if (!htmlExists) {
+      debugPrint('ERROR: HTML entry file not found after extraction');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('HTML file not found in ZIP')),
+      );
+      return;
+    }
+
+    // Step 5: Navigate to WebView
+    debugPrint('Navigating to WebView with: ${htmlFile.path}');
+    if (!mounted) return;
+    
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EFormWebViewPage(
+          localHtmlPath: htmlFile.path,
+          title: chip.title,
+        ),
+      ),
+    );
+    
+    debugPrint('WebView page opened');
+
+  } catch (e, stack) {
+    debugPrint('ERROR in _openSelectedEForm: $e');
+    debugPrint('Stack trace: $stack');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Error opening form: $e'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+}
+  
   // simple network check
   Future<bool> _hasNetwork() async {
     try {
@@ -631,6 +868,26 @@ String? _selectedGender;
       }
     } catch (_) {}
     return false;
+  }
+
+  Future<void> _loadEFormsDomain() async {
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('userEmail') ?? '';
+    String domainType = '';
+    final lower = email.toLowerCase();
+
+    if (lower.endsWith('@iva.com')) {
+      domainType = 'iva';
+    } else if (lower.endsWith('@indofil.com')) {
+      domainType = 'indofil';
+    } else if (lower.endsWith('@wert.com')) {
+      domainType = 'wert';
+    }
+
+    setState(() {
+      _efUserEmail = email;
+      _efDomainType = domainType;
+    });
   }
 
   Future<void> _loadUserData() async {
@@ -687,58 +944,6 @@ String? _selectedGender;
     
   }
   
-Future<DocumentSnapshot<Map<String, dynamic>>?> _findUserInClientTree(
-    String email,
-  ) async {
-    final lower = email.toLowerCase();
-
-    if (lower.endsWith('@indofil.com')) {
-      final usersRef = FirebaseFirestore.instance
-          .collection('DaloyClients')
-          .doc('INDOFIL')
-          .collection('Users');
-      final query = await usersRef
-          .where('email', isEqualTo: lower)
-          .limit(1)
-          .get();
-      if (query.docs.isNotEmpty) return query.docs.first;
-    } else if (lower.endsWith('@iva.com')) {
-      final usersRef = FirebaseFirestore.instance
-          .collection('DaloyClients')
-          .doc('IVA')
-          .collection('Users');
-      final query = await usersRef
-          .where('email', isEqualTo: lower)
-          .limit(1)
-          .get();
-      if (query.docs.isNotEmpty) return query.docs.first;
-    } else if (lower.endsWith('@wert.com')) {
-      final usersRef = FirebaseFirestore.instance
-          .collection('DaloyClients')
-          .doc('WERT')
-          .collection('Users');
-      final query = await usersRef
-          .where('email', isEqualTo: lower)
-          .limit(1)
-          .get();
-      if (query.docs.isNotEmpty) return query.docs.first;
-    } else {
-      final usersRef = FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('client')
-          .collection('GENERAL')
-          .doc('users')
-          .collection('users');
-      final query = await usersRef
-          .where('email', isEqualTo: lower)
-          .limit(1)
-          .get();
-      if (query.docs.isNotEmpty) return query.docs.first;
-    }
-
-    return null;
-  }
-
   Future<bool?> _openTimeInDialog() async {
     Position? position;
     bool _isSubmittingTimeIn = false;
@@ -1749,7 +1954,7 @@ Future<DocumentSnapshot<Map<String, dynamic>>?> _findUserInClientTree(
       );
     },
   );
-}
+  }
 
   Future<void> _saveSignatureOffline(
     List<Point> points,
@@ -2631,14 +2836,14 @@ Future<DocumentSnapshot<Map<String, dynamic>>?> _findUserInClientTree(
       .doc(mrCodeEffective)
       .collection('Signatures')
       .doc(dateKey);
-}
+  }
 
   /// Save a Time In or Time Out log for the current user
   Future<void> _saveTimeLog({
   required bool isTimeIn,
   required DateTime timestamp,
   required Position? position,
-}) async {
+  }) async {
   try {
     final timeLogRef = _timeLogDocRefForToday();
 
@@ -2676,13 +2881,13 @@ Future<DocumentSnapshot<Map<String, dynamic>>?> _findUserInClientTree(
     // Let caller show the snackbar
     rethrow;
   }
-}
+  }
   
   Future<void> _saveSignatureToFirestore(
   List<Point> points,
   String timestamp,
   Position? position,
-) async {
+  ) async {
   try {
     // 1) Basic guards – make sure user context is loaded
     if (userEmail.isEmpty) {
@@ -2750,7 +2955,7 @@ Future<DocumentSnapshot<Map<String, dynamic>>?> _findUserInClientTree(
     // Fallback: your offline cache handler, so user can still proceed
     await _saveSignatureOffline(points, timestamp, position);
   }
-}
+  }
   
   // ===== UNPLANNED VISIT HELPERS =====
 
@@ -3190,219 +3395,130 @@ Future<DocumentSnapshot<Map<String, dynamic>>?> _findUserInClientTree(
     );
   }
 
-void _openCreateEFormDialog() {
-  showDialog(
-    context: context,
-    barrierDismissible: true,
-    builder: (ctx) {
-      return Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        insetPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 24,
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+  void _openCreateEFormDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Header
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 20, // higher header
-                ),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF4e2f80),
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(16),
-                    topRight: Radius.circular(16),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 24,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 20, // higher header
                   ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: const [
-                    Icon(
-                      Icons.description_outlined, // document-like icon
-                      color: Colors.white,
-                      size: 24,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF4e2f80),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
                     ),
-                    SizedBox(width: 8),
-                    Text(
-                      'Create New E-Form',
-                      style: TextStyle(
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: const [
+                      Icon(
+                        Icons.description_outlined, // document-like icon
                         color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
+                        size: 24,
                       ),
-                    ),
-                  ],
-                ),
-              ),
-
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Select the type of form you want to create:',
+                      SizedBox(width: 8),
+                      Text(
+                        'Create New E-Form',
                         style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 13,
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                      const SizedBox(height: 8),
-
-                      // Attendance Form
-                      _buildEFormTypeTile(
-                        icon: Icons.people_outline,
-                        title: 'Attendance Form',
-                        subtitle: 'Monitor attendance for your events',
-                        color: Colors.deepPurple,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const AttendanceFormWebviewPage(),
-                            ),
-                          );
-                        },
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // Sample Crop Prescription Form
-                      _buildEFormTypeTile(
-                        icon: Icons.grass_outlined,
-                        title: 'Sample Crop Prescription Form',
-                        subtitle: "Get your farmer's specific crops needed",
-                        color: Colors.green.shade700,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const ScpFormWebviewPage(),
-                            ),
-                          );
-                        },
-                      ),
-
-
-                      const SizedBox(height: 12),
-
-                      // Activity Budget Request Form
-                      _buildEFormTypeTile(
-                        icon: Icons.request_page_outlined,
-                        title: 'Activity Budget Request Form',
-                        subtitle:
-                            'Request for Additional Budget for your future needs',
-                        color: Colors.orange.shade700,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const AbrFormWebviewPage(),
-                            ),
-                          );
-                        },
-                      ),
-
-
-                      const SizedBox(height: 12),
-
-                      // In-Field Coaching Form
-                      _buildEFormTypeTile(
-                        icon: Icons.school_outlined,
-                        title: 'In-Field Coaching Form',
-                        subtitle: 'Document coaching sessions and farmer field visits',
-                        color: Colors.blue.shade700,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const WebviewInFieldPage(),
-                            ),
-                          );
-                        },
-                      ),
-
-
-                      const SizedBox(height: 12),
-
-                      // Incidental Coverage Form
-                      _buildEFormTypeTile(
-                        icon: Icons.event_available_outlined,
-                        title: 'Incidental Coverage Form',
-                        subtitle: 'Record incidental activities and field coverages',
-                        color: Colors.teal.shade700,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const IncidentalCoverageFormWebviewPage(),
-                            ),
-                          );
-                        },
-                      ),
-
-
-                      const SizedBox(height: 12),
-
-                      // Sales Order Form
-                      _buildEFormTypeTile(
-                        icon: Icons.shopping_cart_outlined,
-                        title: 'Sales Order Form',
-                        subtitle: 'Create and track sales orders for your customers',
-                        color: Colors.red.shade700,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const WebviewSalesOrderFormPage(),
-                            ),
-                          );
-                        },
-                      ),
-
-                      const SizedBox(height: 12),
-
                     ],
                   ),
                 ),
-              ),
 
-              const Divider(height: 1),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Select the type of form you want to create:',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
 
-              Container(
-                width: double.infinity,
-                color: Colors.grey[200],
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Center(
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.of(ctx).pop();
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: Text('Cancel'),
+                        // Build tiles based on the same config as forms_page.dart
+                        Builder(
+                          builder: (innerCtx) {
+                            final configs = _buildEFormsChipConfigForHome();
+
+                            if (configs.isEmpty) {
+                              return const Padding(
+                                padding: EdgeInsets.only(top: 16),
+                                child: Text(
+                                  'No forms available for your account type.',
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              );
+                            }
+
+                            return Column(
+                              children: [
+                                for (final cfg in configs) ...[
+                                  _buildEFormTileFromConfig(ctx, context, cfg),
+                                  const SizedBox(height: 12),
+                                ],
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),              
+                const Divider(height: 1),
+
+                Container(
+                  width: double.infinity,
+                  color: Colors.grey[200],
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Center(
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: Text('Cancel'),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      );
-    },
-  );
-}
+        );
+      },
+    );
+  }
 
   void _openAddPlannedVisitDialog() {
   _doctorNameController.clear();
@@ -3724,7 +3840,7 @@ void _openCreateEFormDialog() {
       );
     },
   );
-}
+  }
 
   void _openAddNewClientDialog() {
   showDialog(
@@ -4010,7 +4126,7 @@ void _openCreateEFormDialog() {
       );
     },
   );
-}
+  }
 
   Widget _buildEFormTypeTile({
     required IconData icon,
@@ -5628,8 +5744,6 @@ void _openCreateEFormDialog() {
                           ),
                         ),
 
-                        // MARK MARK MARK
-
                       ],
                     ),
                   ),
@@ -5685,6 +5799,40 @@ void _openCreateEFormDialog() {
     );
   }
 
+  Widget _buildEFormTileFromConfig(
+    BuildContext ctx,
+    BuildContext sheetContext,
+    EFormChipConfig config,
+  ) {
+    final meta = kEFormMetaRegistry[config.formKey];
+
+    if (meta == null) {
+      return _buildEFormTypeTile(
+        icon: Icons.help_outline,
+        title: config.title,
+        subtitle: 'Not yet implemented',
+        color: Colors.grey,
+        onTap: () {
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            SnackBar(content: Text('${config.title} is not yet implemented.')),
+          );
+        },
+      );
+    }
+
+    return _buildEFormTypeTile(
+      icon: meta.icon,
+      title: meta.title,
+      subtitle: meta.subtitle,
+      color: meta.color,
+      onTap: () async {
+        debugPrint('${config.title} tapped');
+        Navigator.of(sheetContext).pop();
+        await _openSelectedEForm(config);
+      },
+    );
+  }
+  
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -6441,132 +6589,165 @@ void _openCreateEFormDialog() {
       },
     ),
   );
-}
+  }
   
-Widget _buildSamplesToBringRow(List<Map<String, dynamic>> samplesList) {
-  return StatefulBuilder(
-    builder: (context, setBoxState) {
-      return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        clipBehavior: Clip.none,
-        child: Row(
-          children: samplesList.asMap().entries.map((entry) {
-            int idx = entry.key;
-            var item = entry.value;
-            final bool isChecked = checkedStates[idx] ?? false;
-            final String promoName = item['sample'] ?? '';
-            final int qty = item['qty'] ?? 0;
+  Widget _buildSamplesToBringRow(List<Map<String, dynamic>> samplesList) {
+    return StatefulBuilder(
+      builder: (context, setBoxState) {
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.none,
+          child: Row(
+            children: samplesList.asMap().entries.map((entry) {
+              int idx = entry.key;
+              var item = entry.value;
+              final bool isChecked = checkedStates[idx] ?? false;
+              final String promoName = item['sample'] ?? '';
+              final int qty = item['qty'] ?? 0;
 
-            return Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: GestureDetector(
-                onTap: () {
-                  checkedStates[idx] = !(checkedStates[idx] ?? false);
-                  setBoxState(() {});
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeInOut,
-                  width: 160,
-                  height: 160,
-                  padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
-                  decoration: BoxDecoration(
-                    color: isChecked
-                        ? Colors.green.shade50
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
+              return Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: GestureDetector(
+                  onTap: () {
+                    checkedStates[idx] = !(checkedStates[idx] ?? false);
+                    setBoxState(() {});
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut,
+                    width: 160,
+                    height: 160,
+                    padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
+                    decoration: BoxDecoration(
                       color: isChecked
-                          ? Colors.green
-                          : Colors.grey.shade200,
-                      width: isChecked ? 1.5 : 0.5,
+                          ? Colors.green.shade50
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isChecked
+                            ? Colors.green
+                            : Colors.grey.shade200,
+                        width: isChecked ? 1.5 : 0.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isChecked
+                              ? Colors.green.withValues(alpha: 0.15)
+                              : Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 16,
+                          spreadRadius: 0,
+                          offset: const Offset(0, 6),
+                        ),
+                        BoxShadow(
+                          color: isChecked
+                              ? Colors.green.withValues(alpha: 0.06)
+                              : Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 6,
+                          spreadRadius: 0,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: isChecked
-                            ? Colors.green.withValues(alpha: 0.15)
-                            : Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 16,
-                        spreadRadius: 0,
-                        offset: const Offset(0, 6),
-                      ),
-                      BoxShadow(
-                        color: isChecked
-                            ? Colors.green.withValues(alpha: 0.06)
-                            : Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 6,
-                        spreadRadius: 0,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Icon
-                      Container(
-                        width: 55,
-                        height: 55,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFEEEDFE),
-                          shape: BoxShape.circle,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Icon
+                        Container(
+                          width: 55,
+                          height: 55,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEEEDFE),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            LucideIcons.package,
+                            size: 26,
+                            color: Color(0xFF4A2371),
+                          ),
                         ),
-                        child: Icon(
-                          LucideIcons.package,
-                          size: 26,
-                          color: Color(0xFF4A2371),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 16),
 
-                      // Product name
-                      Text(
-                        promoName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontFamily: 'OpenSauce',
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                          color: Colors.black87,
+                        // Product name
+                        Text(
+                          promoName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontFamily: 'OpenSauce',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: Colors.black87,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
+                        const SizedBox(height: 6),
 
-                      // Quantity
-                      RichText(
-                        text: TextSpan(
-                          style: const TextStyle(fontSize: 14),
-                          children: [
-                            TextSpan(
-                              text: 'Qty: ',
-                              style: TextStyle(
-                                color: Colors.grey.shade800,
+                        // Quantity
+                        RichText(
+                          text: TextSpan(
+                            style: const TextStyle(fontSize: 14),
+                            children: [
+                              TextSpan(
+                                text: 'Qty: ',
+                                style: TextStyle(
+                                  color: Colors.grey.shade800,
+                                ),
                               ),
-                            ),
-                            TextSpan(
-                              text: '${qty}x',
-                              style: const TextStyle(
-                                color: Color(0xFF4A2371),
-                                fontWeight: FontWeight.w700,
+                              TextSpan(
+                                text: '${qty}x',
+                                style: const TextStyle(
+                                  color: Color(0xFF4A2371),
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            );
-          }).toList(),
-        ),
-      );
-    },
-  );
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+  }
 }
 
+class EFormWebViewPage extends StatefulWidget {
+  final String localHtmlPath;
+  final String title;
+
+  const EFormWebViewPage({
+    super.key,
+    required this.localHtmlPath,
+    required this.title,
+  });
+
+  @override
+  State<EFormWebViewPage> createState() => _EFormWebViewPageState();
+}
+
+class _EFormWebViewPageState extends State<EFormWebViewPage> {
+  late final WebViewController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadFile(widget.localHtmlPath);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title)),
+      body: WebViewWidget(controller: _controller),
+    );
+  }
 }

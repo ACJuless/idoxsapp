@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:idoxsapp/menu/e_forms_menu/incidental_coverage_form_transactions_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
@@ -111,8 +110,7 @@ class _FormsPageState extends State<FormsPage> {
             ],
           ),
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
             alignment: Alignment.center,
             child: Text(
               title,
@@ -147,8 +145,7 @@ class _FormsPageState extends State<FormsPage> {
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState ==
-                ConnectionState.waiting ||
+        if (snapshot.connectionState == ConnectionState.waiting ||
             !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -157,16 +154,14 @@ class _FormsPageState extends State<FormsPage> {
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 32, vertical: 48),
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371)
-                          .withValues(alpha: 0.08),
+                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -201,21 +196,16 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: docs.length,
-          separatorBuilder: (_, __) =>
-              const SizedBox(height: 10),
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (context, idx) {
             final doc = docs[idx];
-            final data =
-                doc.data() as Map<String, dynamic>;
-            final String eventName =
-                data["eventName"] ?? "Unnamed Event";
-            final String date =
-                _formatReadableDate(data["date"]);
+            final data = doc.data() as Map<String, dynamic>;
+            final String eventName = data["eventName"] ?? "Unnamed Event";
+            final String date = _formatReadableDate(data["date"]);
 
             return Material(
               color: Colors.white,
@@ -226,8 +216,7 @@ class _FormsPageState extends State<FormsPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          AttendanceFormReadonlyPage(
+                      builder: (context) => AttendanceFormReadonlyPage(
                         formData: data,
                         docId: doc.id,
                         userKey: _userKey,
@@ -236,8 +225,8 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
@@ -246,8 +235,7 @@ class _FormsPageState extends State<FormsPage> {
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black
-                            .withValues(alpha: 0.04),
+                        color: Colors.black.withValues(alpha: 0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -255,17 +243,14 @@ class _FormsPageState extends State<FormsPage> {
                     color: Colors.white,
                   ),
                   child: Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371)
-                              .withValues(alpha: 0.10),
-                          borderRadius:
-                              BorderRadius.circular(12),
+                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           LucideIcons.fileText,
@@ -276,15 +261,13 @@ class _FormsPageState extends State<FormsPage> {
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               eventName,
                               maxLines: 1,
-                              overflow:
-                                  TextOverflow.ellipsis,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontFamily: 'OpenSauce',
@@ -299,10 +282,8 @@ class _FormsPageState extends State<FormsPage> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontFamily: 'OpenSauce',
-                                fontWeight:
-                                    FontWeight.w400,
-                                color: Colors
-                                    .grey.shade500,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.grey.shade500,
                               ),
                             ),
                           ],
@@ -324,8 +305,7 @@ class _FormsPageState extends State<FormsPage> {
   // =========================
   Widget _buildScpHistorySection(BuildContext context) {
     if (_userKey.isEmpty) {
-      return const Center(
-          child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator());
     }
 
     return StreamBuilder<QuerySnapshot>(
@@ -338,27 +318,23 @@ class _FormsPageState extends State<FormsPage> {
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState ==
-                ConnectionState.waiting ||
+        if (snapshot.connectionState == ConnectionState.waiting ||
             !snapshot.hasData) {
-          return const Center(
-              child: CircularProgressIndicator());
+          return const Center(child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 32, vertical: 48),
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371)
-                          .withValues(alpha: 0.08),
+                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -394,23 +370,19 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: docs.length,
-          separatorBuilder: (_, __) =>
-              const SizedBox(height: 10),
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (context, idx) {
             final doc = docs[idx];
-            final data =
-                doc.data() as Map<String, dynamic>;
+            final data = doc.data() as Map<String, dynamic>;
             final String farmerName =
                 data['farmerName'] ?? 'Unnamed Farmer';
             final String dateOfEvent =
                 _formatReadableDate(data['dateOfEvent']);
-            final String cropsPlanted =
-                data['cropsPlanted'] ?? '';
+            final String cropsPlanted = data['cropsPlanted'] ?? '';
 
             return Material(
               color: Colors.white,
@@ -421,8 +393,7 @@ class _FormsPageState extends State<FormsPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          ScpFormReadonlyPage(
+                      builder: (context) => ScpFormReadonlyPage(
                         formData: data,
                         docId: doc.id,
                         userKey: _userKey,
@@ -431,17 +402,15 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                        color: Colors.grey.shade200,
-                        width: 1),
+                        color: Colors.grey.shade200, width: 1),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black
-                            .withValues(alpha: 0.04),
+                        color: Colors.black.withValues(alpha: 0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -449,17 +418,14 @@ class _FormsPageState extends State<FormsPage> {
                     color: Colors.white,
                   ),
                   child: Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371)
-                              .withValues(alpha: 0.10),
-                          borderRadius:
-                              BorderRadius.circular(12),
+                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           LucideIcons.fileText,
@@ -470,15 +436,13 @@ class _FormsPageState extends State<FormsPage> {
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               farmerName,
                               maxLines: 1,
-                              overflow:
-                                  TextOverflow.ellipsis,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontFamily: 'OpenSauce',
@@ -492,18 +456,13 @@ class _FormsPageState extends State<FormsPage> {
                               Text(
                                 cropsPlanted,
                                 maxLines: 1,
-                                overflow:
-                                    TextOverflow.ellipsis,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  fontFamily:
-                                      'OpenSauce',
-                                  fontWeight:
-                                      FontWeight.w500,
-                                  color: const Color(
-                                          0xFF4A2371)
-                                      .withValues(
-                                          alpha: 0.8),
+                                  fontFamily: 'OpenSauce',
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF4A2371)
+                                      .withValues(alpha: 0.8),
                                 ),
                               ),
                             Text(
@@ -511,10 +470,8 @@ class _FormsPageState extends State<FormsPage> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontFamily: 'OpenSauce',
-                                fontWeight:
-                                    FontWeight.w400,
-                                color: Colors
-                                    .grey.shade500,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.grey.shade500,
                               ),
                             ),
                           ],
@@ -536,8 +493,7 @@ class _FormsPageState extends State<FormsPage> {
   // =========================
   Widget _buildAbrHistorySection(BuildContext context) {
     if (_userKey.isEmpty) {
-      return const Center(
-          child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator());
     }
 
     return StreamBuilder<QuerySnapshot>(
@@ -550,27 +506,23 @@ class _FormsPageState extends State<FormsPage> {
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState ==
-                ConnectionState.waiting ||
+        if (snapshot.connectionState == ConnectionState.waiting ||
             !snapshot.hasData) {
-          return const Center(
-              child: CircularProgressIndicator());
+          return const Center(child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 32, vertical: 48),
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371)
-                          .withValues(alpha: 0.08),
+                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -606,30 +558,24 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: docs.length,
-          separatorBuilder: (_, __) =>
-              const SizedBox(height: 10),
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (context, idx) {
             final doc = docs[idx];
-            final data =
-                doc.data() as Map<String, dynamic>;
+            final data = doc.data() as Map<String, dynamic>;
             final String activityName =
-                (data['agronomist'] as String?) ??
-                    'No agronomist';
+                (data['agronomist'] as String?) ?? 'No agronomist';
             final String location =
                 (data['plannedLocation'] as String?) ??
-                    (data['plannedActivityLocation']
-                            as String?) ??
+                    (data['plannedActivityLocation'] as String?) ??
                     (data['location'] as String?) ??
                     '';
             final String plannedDate =
                 (data['plannedDate'] as String?) ??
-                    (data['plannedActivityDate']
-                        as String?) ??
+                    (data['plannedActivityDate'] as String?) ??
                     '';
             final String date = _formatReadableDate(
               data['timestamp'],
@@ -647,8 +593,7 @@ class _FormsPageState extends State<FormsPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          AbrFormReadonlyPage(
+                      builder: (context) => AbrFormReadonlyPage(
                         formData: data,
                         docId: doc.id,
                         userKey: _userKey,
@@ -657,19 +602,17 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                   decoration: BoxDecoration(
-                    borderRadius:
-                        BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(14),
                     border: Border.all(
                       color: Colors.grey.shade200,
                       width: 1,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black
-                            .withValues(alpha: 0.04),
+                        color: Colors.black.withValues(alpha: 0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -677,17 +620,14 @@ class _FormsPageState extends State<FormsPage> {
                     color: Colors.white,
                   ),
                   child: Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371)
-                              .withValues(alpha: 0.10),
-                          borderRadius:
-                              BorderRadius.circular(12),
+                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           LucideIcons.fileText,
@@ -698,15 +638,13 @@ class _FormsPageState extends State<FormsPage> {
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               activityName,
                               maxLines: 1,
-                              overflow:
-                                  TextOverflow.ellipsis,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontFamily: 'OpenSauce',
@@ -720,18 +658,13 @@ class _FormsPageState extends State<FormsPage> {
                               Text(
                                 location,
                                 maxLines: 1,
-                                overflow:
-                                    TextOverflow.ellipsis,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  fontFamily:
-                                      'OpenSauce',
-                                  fontWeight:
-                                      FontWeight.w500,
-                                  color: const Color(
-                                          0xFF4A2371)
-                                      .withValues(
-                                          alpha: 0.8),
+                                  fontFamily: 'OpenSauce',
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF4A2371)
+                                      .withValues(alpha: 0.8),
                                 ),
                               ),
                             Text(
@@ -739,10 +672,8 @@ class _FormsPageState extends State<FormsPage> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontFamily: 'OpenSauce',
-                                fontWeight:
-                                    FontWeight.w400,
-                                color: Colors
-                                    .grey.shade500,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.grey.shade500,
                               ),
                             ),
                           ],
@@ -762,11 +693,9 @@ class _FormsPageState extends State<FormsPage> {
   // ================================
   // IN-FIELD COACHING HISTORY BODY
   // ================================
-  Widget _buildInFieldCoachingHistorySection(
-      BuildContext context) {
+  Widget _buildInFieldCoachingHistorySection(BuildContext context) {
     if (_userKey.isEmpty) {
-      return const Center(
-          child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator());
     }
 
     return StreamBuilder<QuerySnapshot>(
@@ -779,27 +708,23 @@ class _FormsPageState extends State<FormsPage> {
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState ==
-                ConnectionState.waiting ||
+        if (snapshot.connectionState == ConnectionState.waiting ||
             !snapshot.hasData) {
-          return const Center(
-              child: CircularProgressIndicator());
+          return const Center(child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 32, vertical: 48),
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371)
-                          .withValues(alpha: 0.08),
+                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -835,26 +760,19 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: docs.length,
-          separatorBuilder: (_, __) =>
-              const SizedBox(height: 10),
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (context, idx) {
             final doc = docs[idx];
-            final data =
-                doc.data() as Map<String, dynamic>;
-            final String evaluator =
-                data['evaluator'] ?? '';
-            final String position =
-                data['position'] ?? '';
-            final String date =
-                _formatReadableDate(data['date']);
-            final String title = evaluator.isNotEmpty
-                ? evaluator
-                : 'Unnamed Evaluator';
+            final data = doc.data() as Map<String, dynamic>;
+            final String evaluator = data['evaluator'] ?? '';
+            final String position = data['position'] ?? '';
+            final String date = _formatReadableDate(data['date']);
+            final String title =
+                evaluator.isNotEmpty ? evaluator : 'Unnamed Evaluator';
 
             return Material(
               color: Colors.white,
@@ -875,18 +793,15 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
-                    borderRadius:
-                        BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                        color: Colors.grey.shade200,
-                        width: 1),
+                        color: Colors.grey.shade200, width: 1),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black
-                            .withValues(alpha: 0.04),
+                        color: Colors.black.withValues(alpha: 0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -894,17 +809,14 @@ class _FormsPageState extends State<FormsPage> {
                     color: Colors.white,
                   ),
                   child: Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371)
-                              .withValues(alpha: 0.10),
-                          borderRadius:
-                              BorderRadius.circular(12),
+                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           LucideIcons.fileText,
@@ -915,15 +827,13 @@ class _FormsPageState extends State<FormsPage> {
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               title,
                               maxLines: 1,
-                              overflow:
-                                  TextOverflow.ellipsis,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontFamily: 'OpenSauce',
@@ -937,18 +847,13 @@ class _FormsPageState extends State<FormsPage> {
                               Text(
                                 position,
                                 maxLines: 1,
-                                overflow:
-                                    TextOverflow.ellipsis,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  fontFamily:
-                                      'OpenSauce',
-                                  fontWeight:
-                                      FontWeight.w500,
-                                  color: const Color(
-                                          0xFF4A2371)
-                                      .withValues(
-                                          alpha: 0.8),
+                                  fontFamily: 'OpenSauce',
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF4A2371)
+                                      .withValues(alpha: 0.8),
                                 ),
                               ),
                             Text(
@@ -956,10 +861,8 @@ class _FormsPageState extends State<FormsPage> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontFamily: 'OpenSauce',
-                                fontWeight:
-                                    FontWeight.w400,
-                                color: Colors
-                                    .grey.shade500,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.grey.shade500,
                               ),
                             ),
                           ],
@@ -979,11 +882,9 @@ class _FormsPageState extends State<FormsPage> {
   // =======================================
   // INCIDENTAL COVERAGE HISTORY BODY
   // =======================================
-  Widget _buildIncidentalCoverageHistorySection(
-      BuildContext context) {
+  Widget _buildIncidentalCoverageHistorySection(BuildContext context) {
     if (_userKey.isEmpty) {
-      return const Center(
-          child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator());
     }
 
     return StreamBuilder<QuerySnapshot>(
@@ -997,26 +898,22 @@ class _FormsPageState extends State<FormsPage> {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData ||
-            snapshot.connectionState ==
-                ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator());
+            snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 32, vertical: 48),
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371)
-                          .withValues(alpha: 0.08),
+                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -1052,26 +949,19 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: docs.length,
-          separatorBuilder: (_, __) =>
-              const SizedBox(height: 10),
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (context, index) {
             final doc = docs[index];
-            final data =
-                doc.data() as Map<String, dynamic>;
-            final String lastName =
-                data['lastName'] ?? '';
-            final String firstName =
-                data['firstName'] ?? '';
-            final String fullName =
-                '$lastName $firstName'.trim();
-            final String title = fullName.isNotEmpty
-                ? fullName
-                : 'Unnamed Coverage';
+            final data = doc.data() as Map<String, dynamic>;
+            final String lastName = data['lastName'] ?? '';
+            final String firstName = data['firstName'] ?? '';
+            final String fullName = '$lastName $firstName'.trim();
+            final String title =
+                fullName.isNotEmpty ? fullName : 'Unnamed Coverage';
             final String date =
                 _formatReadableDate(data['dateOfCover']);
 
@@ -1084,8 +974,7 @@ class _FormsPageState extends State<FormsPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          IncidentalCoverageFormPage(
+                      builder: (context) => IncidentalCoverageFormPage(
                         formData: data,
                         docId: doc.id,
                         userKey: _userKey,
@@ -1094,18 +983,15 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
-                    borderRadius:
-                        BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                        color: Colors.grey.shade200,
-                        width: 1),
+                        color: Colors.grey.shade200, width: 1),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black
-                            .withValues(alpha: 0.04),
+                        color: Colors.black.withValues(alpha: 0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -1113,17 +999,14 @@ class _FormsPageState extends State<FormsPage> {
                     color: Colors.white,
                   ),
                   child: Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371)
-                              .withValues(alpha: 0.10),
-                          borderRadius:
-                              BorderRadius.circular(12),
+                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           LucideIcons.fileText,
@@ -1134,15 +1017,13 @@ class _FormsPageState extends State<FormsPage> {
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               title,
                               maxLines: 1,
-                              overflow:
-                                  TextOverflow.ellipsis,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontFamily: 'OpenSauce',
@@ -1157,10 +1038,8 @@ class _FormsPageState extends State<FormsPage> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontFamily: 'OpenSauce',
-                                fontWeight:
-                                    FontWeight.w400,
-                                color: Colors
-                                    .grey.shade500,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.grey.shade500,
                               ),
                             ),
                           ],
@@ -1180,11 +1059,9 @@ class _FormsPageState extends State<FormsPage> {
   // =======================================
   // SALES ORDER HISTORY BODY
   // =======================================
-  Widget _buildSalesOrderHistorySection(
-      BuildContext context) {
+  Widget _buildSalesOrderHistorySection(BuildContext context) {
     if (_userKey.isEmpty) {
-      return const Center(
-          child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator());
     }
 
     return StreamBuilder<QuerySnapshot>(
@@ -1198,26 +1075,22 @@ class _FormsPageState extends State<FormsPage> {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData ||
-            snapshot.connectionState ==
-                ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator());
+            snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 32, vertical: 48),
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371)
-                          .withValues(alpha: 0.08),
+                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -1253,21 +1126,17 @@ class _FormsPageState extends State<FormsPage> {
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: docs.length,
-          separatorBuilder: (_, __) =>
-              const SizedBox(height: 10),
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (context, idx) {
             final doc = docs[idx];
-            final data =
-                doc.data() as Map<String, dynamic>;
+            final data = doc.data() as Map<String, dynamic>;
             final String mrName =
                 data['mrName'] ?? 'Unnamed Sales Order';
-            final String soldTo =
-                data['soldTo'] ?? '';
+            final String soldTo = data['soldTo'] ?? '';
             final String dateOfOrder =
                 _formatReadableDate(data['dateOfOrder']);
 
@@ -1280,8 +1149,7 @@ class _FormsPageState extends State<FormsPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          SalesOrderFormPage(
+                      builder: (context) => SalesOrderFormPage(
                         formData: data,
                         readonly: true,
                         docId: doc.id,
@@ -1290,18 +1158,15 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
-                    borderRadius:
-                        BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                        color: Colors.grey.shade200,
-                        width: 1),
+                        color: Colors.grey.shade200, width: 1),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black
-                            .withValues(alpha: 0.04),
+                        color: Colors.black.withValues(alpha: 0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -1309,17 +1174,14 @@ class _FormsPageState extends State<FormsPage> {
                     color: Colors.white,
                   ),
                   child: Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Container(
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371)
-                              .withValues(alpha: 0.10),
-                          borderRadius:
-                              BorderRadius.circular(12),
+                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           LucideIcons.fileText,
@@ -1330,15 +1192,13 @@ class _FormsPageState extends State<FormsPage> {
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               mrName,
                               maxLines: 1,
-                              overflow:
-                                  TextOverflow.ellipsis,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontFamily: 'OpenSauce',
@@ -1352,18 +1212,13 @@ class _FormsPageState extends State<FormsPage> {
                               Text(
                                 soldTo,
                                 maxLines: 1,
-                                overflow:
-                                    TextOverflow.ellipsis,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  fontFamily:
-                                      'OpenSauce',
-                                  fontWeight:
-                                      FontWeight.w500,
-                                  color: const Color(
-                                          0xFF4A2371)
-                                      .withValues(
-                                          alpha: 0.8),
+                                  fontFamily: 'OpenSauce',
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF4A2371)
+                                      .withValues(alpha: 0.8),
                                 ),
                               ),
                             Text(
@@ -1371,10 +1226,8 @@ class _FormsPageState extends State<FormsPage> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontFamily: 'OpenSauce',
-                                fontWeight:
-                                    FontWeight.w400,
-                                color: Colors
-                                    .grey.shade500,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.grey.shade500,
                               ),
                             ),
                           ],
@@ -1396,8 +1249,7 @@ class _FormsPageState extends State<FormsPage> {
   // =======================================
   Future<Directory> _getDownloadsDirectory() async {
     if (Platform.isAndroid) {
-      final dir =
-          Directory('/storage/emulated/0/Download');
+      final dir = Directory('/storage/emulated/0/Download');
       if (await dir.exists()) {
         return dir;
       }
@@ -1466,8 +1318,8 @@ class _FormsPageState extends State<FormsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content:
-              Text('Error downloading SCP E-Form: $e'),
+          content: Text(
+              'Error downloading SCP E-Form: $e'),
         ),
       );
     }
@@ -1499,8 +1351,8 @@ class _FormsPageState extends State<FormsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content:
-              Text('Error downloading ABR E-Form: $e'),
+          content: Text(
+              'Error downloading ABR E-Form: $e'),
         ),
       );
     }
@@ -1771,9 +1623,10 @@ class _FormsPageState extends State<FormsPage> {
                     ),
                   ),
                   TextButton.icon(
-                    onPressed: () => _onDownloadPressed(
-                        chipsConfig[_selectedIndex]
-                            .formKey),
+                    onPressed: () =>
+                        _onDownloadPressed(
+                            chipsConfig[_selectedIndex]
+                                .formKey),
                     icon: const Icon(Icons.download),
                     label: const Text('Download E-Form'),
                     style: TextButton.styleFrom(
@@ -1941,6 +1794,98 @@ class _FormChipConfig {
     required this.historyBuilder,
   });
 }
+
+// Public metadata describing each E-Form type.
+// home_page.dart will use this to build the "+" popup tiles.
+class EFormMeta {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+
+  const EFormMeta({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+  });
+}
+
+// Global map from formKey -> metadata.
+// Make sure every formKey used in _buildChipsConfig() has an entry here.
+const Map<String, EFormMeta> kEFormMetaRegistry = {
+  // INDOfil forms
+  'attendance': EFormMeta(
+    title: 'Attendance Form',
+    subtitle: 'Monitor attendance for your events',
+    icon: Icons.people_outline,
+    color: Colors.deepPurple,
+  ),
+  'scp': EFormMeta(
+    title: 'Sample Crop Prescription Form',
+    subtitle: "Get your farmer's specific crops needed",
+    icon: Icons.grass_outlined,
+    color: Colors.green,
+  ),
+  'abr': EFormMeta(
+    title: 'Activity Budget Request Form',
+    subtitle: 'Request additional budget for future activities',
+    icon: Icons.request_page_outlined,
+    color: Colors.orange,
+  ),
+
+  // WERT forms
+  'coaching': EFormMeta(
+    title: 'In-Field Coaching Form',
+    subtitle: 'Document coaching sessions and field visits',
+    icon: Icons.school_outlined,
+    color: Colors.blue,
+  ),
+  'inc_cov': EFormMeta(
+    title: 'Incidental Coverage Form',
+    subtitle: 'Record incidental activities and field coverages',
+    icon: Icons.event_available_outlined,
+    color: Colors.teal,
+  ),
+  'sales_order': EFormMeta(
+    title: 'Sales Order Form',
+    subtitle: 'Create and track customer sales orders',
+    icon: Icons.shopping_cart_outlined,
+    color: Colors.red,
+  ),
+
+  // IVA (demo) forms
+  'demo_liquidation': EFormMeta(
+    title: 'Demo Liquidation Form',
+    subtitle: 'Track demo-related expenses and liquidation',
+    icon: Icons.description_outlined,
+    color: Colors.purple,
+  ),
+  'custom_itinerary': EFormMeta(
+    title: 'Custom Itinerary',
+    subtitle: 'Plan and manage your custom itineraries',
+    icon: Icons.route_outlined,
+    color: Colors.indigo,
+  ),
+  'inventory_report': EFormMeta(
+    title: 'Inventory Report',
+    subtitle: 'Summarize current stock and inventory levels',
+    icon: Icons.inventory_2_outlined,
+    color: Colors.brown,
+  ),
+  'f2f_visit': EFormMeta(
+    title: 'F2F Visit Form',
+    subtitle: 'Log face-to-face visits with customers',
+    icon: Icons.face_retouching_natural_outlined,
+    color: Colors.cyan,
+  ),
+  'customer_ledger': EFormMeta(
+    title: 'Customer Ledger Form',
+    subtitle: 'Maintain customer ledger details',
+    icon: Icons.account_balance_wallet_outlined,
+    color: Colors.deepOrange,
+  ),
+};
 
 String _formatReadableDate(dynamic value,
     {String fallback = '-'}) {
