@@ -691,7 +691,7 @@ class _HomePageState extends State<HomePage> {
     if (_efDomainType == 'wert') {
       return const [
         EFormChipConfig(
-          formKey: 'coaching',
+          formKey: 'in_field_coaching',
           title: 'In-Field Coaching Form',
         ),
         EFormChipConfig(
@@ -706,27 +706,36 @@ class _HomePageState extends State<HomePage> {
     }
 
     // Default / IVA: use the same IVA demo forms as forms_page.dart
+    if (_efDomainType == 'iva') {
+      return const [
+        EFormChipConfig(
+          formKey: 'demo_liquidation',
+          title: 'Demo Liquidation Form',
+        ),
+        EFormChipConfig(
+          formKey: 'custom_itinerary',
+          title: 'Custom Itinerary',
+        ),
+        EFormChipConfig(
+          formKey: 'inventory_report',
+          title: 'Inventory Report',
+        ),
+        EFormChipConfig(
+          formKey: 'f2f_visit',
+          title: 'F2F Visit Form',
+        ),
+        EFormChipConfig(
+          formKey: 'customer_ledger',
+          title: 'Customer Ledger Form',
+        ),
+      ];
+    };
+
     return const [
       EFormChipConfig(
-        formKey: 'demo_liquidation',
-        title: 'Demo Liquidation Form',
-      ),
-      EFormChipConfig(
-        formKey: 'custom_itinerary',
-        title: 'Custom Itinerary',
-      ),
-      EFormChipConfig(
-        formKey: 'inventory_report',
-        title: 'Inventory Report',
-      ),
-      EFormChipConfig(
-        formKey: 'f2f_visit',
-        title: 'F2F Visit Form',
-      ),
-      EFormChipConfig(
-        formKey: 'customer_ledger',
-        title: 'Customer Ledger Form',
-      ),
+          formKey: 'demo_liquidation',
+          title: 'Demo Liquidation Form',
+        ),
     ];
   }
 
@@ -5800,31 +5809,19 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildEFormTileFromConfig(
-    BuildContext ctx,
-    BuildContext sheetContext,
-    EFormChipConfig config,
-  ) {
-    final meta = kEFormMetaRegistry[config.formKey];
+  BuildContext ctx,
+  BuildContext sheetContext,
+  EFormChipConfig config,
+) {
+  final meta = kEFormMetaRegistry[config.formKey];
 
-    if (meta == null) {
-      return _buildEFormTypeTile(
-        icon: Icons.help_outline,
-        title: config.title,
-        subtitle: 'Not yet implemented',
-        color: Colors.grey,
-        onTap: () {
-          ScaffoldMessenger.of(ctx).showSnackBar(
-            SnackBar(content: Text('${config.title} is not yet implemented.')),
-          );
-        },
-      );
-    }
-
+  // If no metadata found, create a default tile that still works
+  if (meta == null) {
     return _buildEFormTypeTile(
-      icon: meta.icon,
-      title: meta.title,
-      subtitle: meta.subtitle,
-      color: meta.color,
+      icon: Icons.description,
+      title: config.title,
+      subtitle: 'Open form',
+      color: Colors.blueGrey,
       onTap: () async {
         debugPrint('${config.title} tapped');
         Navigator.of(sheetContext).pop();
@@ -5832,6 +5829,20 @@ class _HomePageState extends State<HomePage> {
       },
     );
   }
+
+  // If metadata exists, use it
+  return _buildEFormTypeTile(
+    icon: meta.icon,
+    title: meta.title,
+    subtitle: meta.subtitle,
+    color: meta.color,
+    onTap: () async {
+      debugPrint('${config.title} tapped');
+      Navigator.of(sheetContext).pop();
+      await _openSelectedEForm(config);
+    },
+  );
+}
   
   @override
   Widget build(BuildContext context) {
