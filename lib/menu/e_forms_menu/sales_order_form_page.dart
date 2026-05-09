@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 // Theme constants
 const Color kPrimary     = Color(0xFF5958B2);
@@ -54,11 +53,11 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
 
   // Catalogs
   static const List<String> kTermsOptions = [
-    'COD - Cash', 
-    'COD - Check', 
+    'COD - Cash',
+    'COD - Check',
     'I.S. 60 Days',
-    'Net 30 Days', 
-    'PDC 30 Days', 
+    'Net 30 Days',
+    'PDC 30 Days',
     'PDC 60 Days',
   ];
 
@@ -68,163 +67,10 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
     'Indofil 455 F':   ['455 F',   'Mancozeb 455 g/L',                                       '100 L Drum',                             '3500.00'],
     'Indofil 750 WDG': ['750 WDG', 'Mancozeb 750 g/Kg',                                      '25 Kg bag',                              '1500.00'],
     'Proviso 250 EC':  ['250 EC',  'Propiconazole 250 g/L',                                  '100 L Drum',                             '3500.00'],
-    'Moximate 505 WP': ['505 WP',  'Cymoxanil 40 g/Kg + Mancozeb 465 g/Kg',                '500 g and 1 kg pouch',                   '2500.00'],
-    'Matco 720 WP':    ['720 WP',  'Metalaxyl 80 g/Kg + Mancozeb 640 g/Kg WP',             '100 g pouch and 25 Kg bag',              '1500.00'],
-    'Nexa 250 EC':     ['250 EC',  'Difenoconazole 250 g/L',                                '250 ml & 500 ml bottle and 200 L drum',  '1500.00'],
-    'Grifon SC':       ['SC',      'Copper hydroxide 223 g/L + Copper oxychloride 239 g/L', '500 ml Bottle',                          '2500.00'],
-    // ============================================================================================
-
-    // "Cramin Forte Caps": ["CRA1", "Vitamin B1 + B6 + B12", "100pcs", "1500.00"],
-    // "Dayzinc Drops": [
-    //   "DAZ1",
-    //   "Ascorbic Acid + Ascorbic Acid (as Sodium Ascorbate) + Zinc",
-    //   "30mL",
-    //   "121.00"
-    // ],
-    // "Dayzinc Syrup (120ml)": [
-    //   "DAZ2",
-    //   "Ascorbic Acid + Ascorbic Acid (as Sodium Ascorbate) + Zinc",
-    //   "120mL",
-    //   "130"
-    // ],
-    // "Dayzinc Syrup (250ml)": [
-    //   "DAZ6",
-    //   "Ascorbic Acid + Ascorbic Acid (as Sodium Ascorbate) + Zinc",
-    //   "250mL",
-    //   "240"
-    // ],
-    // "Dayzinc Chew Tabs (30pcs)": [
-    //   "DAZ7",
-    //   "Ascorbic Acid + Ascorbic Acid (as Sodium Ascorbate) + Zinc",
-    //   "30pcs",
-    //   "195"
-    // ],
-    // "Dayzinc Chew Tabs 10+2": [
-    //   "DAZ5",
-    //   "Ascorbic Acid + Ascorbic Acid (as Sodium Ascorbate) + Zinc",
-    //   "12pcs",
-    //   "65"
-    // ],
-    // "Dayzinc Chew Tabs 24+6": [
-    //   "DAZ12",
-    //   "Ascorbic Acid + Ascorbic Acid (as Sodium Ascorbate) + Zinc",
-    //   "30pcs",
-    //   "156"
-    // ],
-    // "Dayzinc Cap": [
-    //   "DAZ3",
-    //   "Ascorbic Acid + Ascorbic Acid (as Sodium Ascorbate) + Zinc",
-    //   "30pcs",
-    //   "232.5"
-    // ],
-    // "Dayzinc Cap 10+2": [
-    //   "DAZ8",
-    //   "Ascorbic Acid + Ascorbic Acid (as Sodium Ascorbate) + Zinc",
-    //   "12pcs",
-    //   "77.5"
-    // ],
-    // "Dayzinc Cap 24+6": [
-    //   "DAZ11",
-    //   "Ascorbic Acid + Ascorbic Acid (as Sodium Ascorbate) + Zinc",
-    //   "30pcs",
-    //   "186"
-    // ],
-    // "Nutri 10 Plus Drops": [
-    //   "NUR1",
-    //   "Vitamins A-E + CGF + Taurine + Lysine + Zinc",
-    //   "30mL",
-    //   "145"
-    // ],
-    // "Nutri 10 Plus Syrup (120ml)": [
-    //   "NUR2",
-    //   "Vitamins A-E + CGF + Taurine + Lysine + Zinc",
-    //   "120mL",
-    //   "200"
-    // ],
-    // "Nutri 10 Plus Syrup (250ml)": [
-    //   "NUR5",
-    //   "Vitamins A-E + CGF + Taurine + Lysine + Zinc",
-    //   "250mL",
-    //   "345"
-    // ],
-    // "Nutri 10 Excel Cap": [
-    //   "NUR3",
-    //   "Vitamins A-E + CGF + Taurine + Lysine + Zinc",
-    //   "30pcs",
-    //   "210"
-    // ],
-    // "Nutri 10 Plus OB Cap": [
-    //   "NUR4",
-    //   "Vitamins A-D + Iron, Folic Acid",
-    //   "30pcs",
-    //   "210"
-    // ],
-    // "Nutrigrow Syrup": [
-    //   "NUG2",
-    //   "Vitamins + CGF + Taurine",
-    //   "120mL",
-    //   "155"
-    // ],
-    // "Nutrigrow Syrup B1G1": [
-    //   "NUG3",
-    //   "Vitamins + CGF + Taurine",
-    //   "120mL",
-    //   "155"
-    // ],
-    // "Aplhabetic Tablet": [
-    //   "ABCD",
-    //   "Ampalaya + Banaba + Camote + Duhat",
-    //   "30pcs",
-    //   "330"
-    // ],
-    // "Daycee Syrup": [
-    //   "DAY3",
-    //   "Ascorbic Acid (as Sodium Ascorbate)",
-    //   "120mL",
-    //   "125"
-    // ],
-    // "Daycee Syrup B1G1": [
-    //   "PRM05",
-    //   "Ascorbic Acid (as Sodium Ascorbate)",
-    //   "120mL",
-    //   "125"
-    // ],
-    // "Daycee Cap": ["DAY6", "Sodium Ascorbate", "30pcs", "180"],
-    // "Daycee Cap Buy 60 Cap Save 150": [
-    //   "PRM09",
-    //   "Sodium Ascorbate",
-    //   "30pcs",
-    //   "180"
-    // ],
-    // "Calciday Tab": [
-    //   "CAL1",
-    //   "Calcium Carbonate + Vitamin D3",
-    //   "30pcs",
-    //   "210"
-    // ],
-    // "Calciday Tab 10+2": [
-    //   "CAL2",
-    //   "Calcium Carbonate + Vitamin D3",
-    //   "12pcs",
-    //   "70"
-    // ],
-    // "Perispa 50 Tab": ["PER1", "Eperisone HCI", "30pcs", "540"],
-    // "Zefaxim 100PFS": ["ZEF1", "Cefixime", "60mL", "528"],
-    // "Maximmune Syrup": ["MAX1", "CM-Glucan", "120mL", "360"],
-    // "C2Zinc Drops": [
-    //   "C2Z2",
-    //   "Ascorbic Acid + Sodium Ascorbate + Zinc",
-    //   "30mL",
-    //   "100"
-    // ],
-    // "C2Zinc Syrup": [
-    //   "C2Z4",
-    //   "Ascorbic Acid + Sodium Ascorbate + Zinc",
-    //   "120mL",
-    //   "120"
-    // ],
-    // "SGX Cap": ["SGX2", "Salbutamol + Guaifanesin", "100pcs", "650"],
-    // "CFC 50 PFOD": ["CFC1", "Cefactor", "20mL", "200"],
+    'Moximate 505 WP': ['505 WP',  'Cymoxanil 40 g/Kg + Mancozeb 465 g/Kg',                 '500 g and 1 kg pouch',                   '2500.00'],
+    'Matco 720 WP':    ['720 WP',  'Metalaxyl 80 g/Kg + Mancozeb 640 g/Kg WP',              '100 g pouch and 25 Kg bag',              '1500.00'],
+    'Nexa 250 EC':     ['250 EC',  'Difenoconazole 250 g/L',                                 '250 ml & 500 ml bottle and 200 L drum',  '1500.00'],
+    'Grifon SC':       ['SC',      'Copper hydroxide 223 g/L + Copper oxychloride 239 g/L',  '500 ml Bottle',                          '2500.00'],
   };
 
   static const Map<String, List<String>> kHerbicideCatalog = {
@@ -245,7 +91,7 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
   void initState() {
     super.initState();
     _scrollCtrl = ScrollController();
-    _isEditMode = !widget.readonly; // start in edit if not readonly
+    _isEditMode = !widget.readonly;
     _initControllers(widget.formData);
   }
 
@@ -260,11 +106,41 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
     _specialNoteCtrl        = TextEditingController(text: d['specialNote']        ?? '');
     _specialInstructionCtrl = TextEditingController(text: d['specialInstruction'] ?? '');
     _notedBy1Ctrl           = TextEditingController(text: d['notedBy1']           ?? '');
-    _discountCtrl           = TextEditingController(text: d['discount']?.toString() ?? '');
-    _terms         = _resolveTerms(d['terms'] ?? '');
-    _fungicideRows = _sanitize(List<Map<String, dynamic>>.from(d['pharmaRows'] ?? []));
-    _herbicideRows = _sanitize(List<Map<String, dynamic>>.from(d['dermaRows']  ?? []));
+    _discountCtrl           = TextEditingController(text: d['discount']?.toString() ?? '0');
+    
+    _terms = _resolveTerms(d['terms'] ?? '');
+    
+    // Read fungicideRows and herbicideRows from Firestore
+    _fungicideRows = _sanitize(_extractRows(d['fungicideRows']));
+    _herbicideRows = _sanitize(_extractRows(d['herbicideRows']));
+    
+    // Read grossAmount and netAmount from Firestore
+    _grossAmount = _parseDouble(d['grossAmount']);
+    _netAmount   = _parseDouble(d['netAmount']);
+    
     _recalc();
+  }
+
+  // Helper to extract rows from various data types
+  List<Map<String, dynamic>> _extractRows(dynamic rowsData) {
+    if (rowsData == null) return [];
+    if (rowsData is List) {
+      return rowsData.map((item) {
+        if (item is Map<String, dynamic>) return item;
+        if (item is Map) return Map<String, dynamic>.from(item);
+        return <String, dynamic>{};
+      }).toList();
+    }
+    return [];
+  }
+
+  // Helper to parse double values from Firestore
+  double _parseDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
   }
 
   void _populateFromData(Map<String, dynamic> d) {
@@ -278,11 +154,17 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
     _specialNoteCtrl.text        = d['specialNote']        ?? '';
     _specialInstructionCtrl.text = d['specialInstruction'] ?? '';
     _notedBy1Ctrl.text           = d['notedBy1']           ?? '';
-    _discountCtrl.text           = d['discount']?.toString() ?? '';
+    _discountCtrl.text           = d['discount']?.toString() ?? '0';
+    
     _terms         = _resolveTerms(d['terms'] ?? '');
-    _fungicideRows = _sanitize(List<Map<String, dynamic>>.from(d['pharmaRows'] ?? []));
-    _herbicideRows = _sanitize(List<Map<String, dynamic>>.from(d['dermaRows']  ?? []));
+    _fungicideRows = _sanitize(_extractRows(d['fungicideRows']));
+    _herbicideRows = _sanitize(_extractRows(d['herbicideRows']));
+    
+    _grossAmount = _parseDouble(d['grossAmount']);
+    _netAmount   = _parseDouble(d['netAmount']);
+    
     _expanded.clear();
+    _recalc();
   }
 
   String _resolveTerms(String raw) => kTermsOptions.firstWhere(
@@ -292,12 +174,23 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
 
   List<Map<String, dynamic>> _sanitize(List<Map<String, dynamic>> rows) =>
       rows.map((r) => {
-        ...r,
-        'reg':    (r['reg']    as num?)?.toInt()    ?? 0,
-        'free':   (r['free']   as num?)?.toInt()    ?? 0,
-        'price':  (r['price']  ?? r['unitPrice'] ?? '0').toString(),
-        'amount': (r['amount'] as num?)?.toDouble() ?? 0.0,
+        'desc':             r['desc']             ?? '',
+        'code':             r['code']             ?? '',
+        'activeIngredient': r['activeIngredient'] ?? r['generic'] ?? '',
+        'packSize':         r['packSize']         ?? r['pack']    ?? '',
+        'reg':              _parseInt(r['reg']),
+        'free':             _parseInt(r['free']),
+        'unitPrice':        (r['unitPrice'] ?? r['price'] ?? '0').toString(),
+        'amount':           _parseDouble(r['amount']),
       }).toList();
+
+  int _parseInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
 
   @override
   void dispose() {
@@ -319,8 +212,8 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
   void _recalc() {
     double gross = 0;
     for (final r in [..._fungicideRows, ..._herbicideRows]) {
-      final reg   = (r['reg'] as int? ?? 0).toDouble();
-      final price = double.tryParse(r['price'].toString()) ?? 0.0;
+      final reg   = _parseInt(r['reg']).toDouble();
+      final price = double.tryParse(r['unitPrice'].toString()) ?? 0.0;
       r['amount'] = reg * price;
       gross += r['amount'] as double;
     }
@@ -339,7 +232,7 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
     final prodsOk = _hasProducts;
     bool rowsOk   = true;
     for (final r in [..._fungicideRows, ..._herbicideRows]) {
-      if ((r['reg'] as int? ?? 0) <= 0) rowsOk = false;
+      if (_parseInt(r['reg']) <= 0) rowsOk = false;
     }
     if (!prodsOk) {
       _toast('Please add at least one Fungicide or Herbicide.', error: true);
@@ -430,21 +323,38 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
       'notedBy1':           _notedBy1Ctrl.text.trim(),
       'notedBy2':           '',
       'discount':           _discountCtrl.text.trim(),
-      'pharmaRows':         _fungicideRows,
-      'dermaRows':          _herbicideRows,
+      'fungicideRows':      _fungicideRows.map((r) => {
+        'desc':             r['desc'],
+        'code':             r['code'],
+        'activeIngredient': r['activeIngredient'],
+        'packSize':         r['packSize'],
+        'reg':              r['reg'],
+        'free':             r['free'],
+        'unitPrice':        r['unitPrice'],
+        'amount':           r['amount'],
+      }).toList(),
+      'herbicideRows':      _herbicideRows.map((r) => {
+        'desc':             r['desc'],
+        'code':             r['code'],
+        'activeIngredient': r['activeIngredient'],
+        'packSize':         r['packSize'],
+        'reg':              r['reg'],
+        'free':             r['free'],
+        'unitPrice':        r['unitPrice'],
+        'amount':           r['amount'],
+      }).toList(),
       'grossAmount':        _grossAmount,
       'netAmount':          _netAmount,
       'timestamp':          FieldValue.serverTimestamp(),
     };
 
     try {
-      final prefs     = await SharedPreferences.getInstance();
-      final userEmail = prefs.getString('userEmail') ?? '';
-      final userKey   = userEmail.replaceAll(RegExp(r'[.#\$\\\[\]/]'), '_');
       await FirebaseFirestore.instance
-          .collection('flowDB').doc('users')
-          .collection(userKey).doc('sales_orders')
-          .collection('sales_orders')
+          .collection('DaloyClients')
+          .doc('WERT')
+          .collection('EForms')
+          .doc('Sales Order Form')
+          .collection('submissions')
           .doc(widget.docId)
           .update(data);
 
@@ -485,8 +395,14 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
     final meta = catalog[selected]!;
     setState(() {
       final row = {
-        'desc': selected, 'code': meta[0], 'generic': meta[1],
-        'pack': meta[2],  'price': meta[3], 'reg': 0, 'free': 0, 'amount': 0.0,
+        'desc': selected,
+        'code': meta[0],
+        'activeIngredient': meta[1],
+        'packSize': meta[2],
+        'unitPrice': meta[3],
+        'reg': 0,
+        'free': 0,
+        'amount': 0.0,
       };
       if (isFungicide) {
         _fungicideRows.add(row);
@@ -535,9 +451,9 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
   @override
   Widget build(BuildContext context) {
     _recalc();
-    final appTitle = _mrNameCtrl.text.trim().isEmpty
+    final appTitle = _salesOrderNoCtrl.text.trim().isEmpty
         ? 'Sales Order'
-        : _mrNameCtrl.text.trim();
+        : _salesOrderNoCtrl.text.trim();
 
     return Scaffold(
       backgroundColor: kSurface,
@@ -760,14 +676,14 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 18),
         child: Column(children: [
           Row(children: [
-            Expanded(child: _pfView('Product Code',        row['code']    ?? '')),
+            Expanded(child: _pfView('Product Code',        row['code']            ?? '')),
             const SizedBox(width: 12),
-            Expanded(child: _pfView('Product Description', row['desc']    ?? '')),
+            Expanded(child: _pfView('Product Description', row['desc']            ?? '')),
           ]),
           const SizedBox(height: 14),
-          _pfView('Active Ingredient', row['generic'] ?? ''),
+          _pfView('Active Ingredient', row['activeIngredient'] ?? ''),
           const SizedBox(height: 14),
-          _pfView('Pack Size', row['pack'] ?? ''),
+          _pfView('Pack Size', row['packSize'] ?? ''),
           const SizedBox(height: 14),
           Row(children: [
             Expanded(child: _pfView('Qty Regular', row['reg']?.toString()  ?? '0')),
@@ -776,11 +692,11 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
           ]),
           const SizedBox(height: 14),
           Row(children: [
-            Expanded(child: _pfView('Unit Price', row['price']?.toString() ?? '')),
+            Expanded(child: _pfView('Unit Price', row['unitPrice']?.toString() ?? '')),
             const SizedBox(width: 10),
             Expanded(child: _pfView('Amount',
-                row['amount'] != null && (row['amount'] as double) > 0
-                    ? '₱ ${_fmt(row['amount'] as double)}'
+                row['amount'] != null && _parseDouble(row['amount']) > 0
+                    ? '₱ ${_fmt(_parseDouble(row['amount']))}'
                     : '')),
           ]),
         ]),
@@ -869,7 +785,7 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
         : 'Product ${idx + 1}';
 
     final descErr = _submitted && (row['desc'] == null || row['desc'].toString().isEmpty);
-    final regErr  = _submitted && (row['reg'] as int? ?? 0) <= 0;
+    final regErr  = _submitted && _parseInt(row['reg']) <= 0;
 
     final regCtrl  = TextEditingController(text: row['reg']?.toString()  ?? '');
     final freeCtrl = TextEditingController(text: row['free']?.toString() ?? '');
@@ -897,11 +813,11 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
                 if (v == null) return;
                 final meta = catalog[v]!;
                 setState(() {
-                  row['desc']    = v;
-                  row['code']    = meta[0];
-                  row['generic'] = meta[1];
-                  row['pack']    = meta[2];
-                  row['price']   = meta[3];
+                  row['desc']             = v;
+                  row['code']             = meta[0];
+                  row['activeIngredient'] = meta[1];
+                  row['packSize']         = meta[2];
+                  row['unitPrice']        = meta[3];
                   if (isFungicide) _fungicideRows[idx] = row;
                   else             _herbicideRows[idx] = row;
                   _recalc();
@@ -912,9 +828,9 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
             Expanded(child: _pfDisabled('Product Code', row['code'] ?? '')),
           ]),
           const SizedBox(height: 14),
-          _pfDisabled('Active Ingredient', row['generic'] ?? ''),
+          _pfDisabled('Active Ingredient', row['activeIngredient'] ?? ''),
           const SizedBox(height: 14),
-          _pfDisabled('Pack Size', row['pack'] ?? ''),
+          _pfDisabled('Pack Size', row['packSize'] ?? ''),
           const SizedBox(height: 14),
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(child: _pfTextInput(
@@ -946,11 +862,11 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
           ]),
           const SizedBox(height: 14),
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(child: _pfDisabled('Unit Price', row['price'] ?? '')),
+            Expanded(child: _pfDisabled('Unit Price', row['unitPrice'] ?? '')),
             const SizedBox(width: 10),
             Expanded(child: _pfDisabled('Amount',
-                (row['amount'] as double? ?? 0) > 0
-                    ? _fmt(row['amount'] as double)
+                _parseDouble(row['amount']) > 0
+                    ? _fmt(_parseDouble(row['amount']))
                     : '')),
           ]),
         ]),
@@ -1055,7 +971,7 @@ class _SalesOrderFormPageState extends State<SalesOrderFormPage> {
       );
 
   Widget _pfBar(String title, {required VoidCallback onAdd}) => Padding(
-      padding: const EdgeInsets.only(left: 8, bottom: 8, top: 8), // added left: 8
+      padding: const EdgeInsets.only(left: 8, bottom: 8, top: 8),
       child: Row(children: [
         Text(title.toUpperCase(),
             style: const TextStyle(
