@@ -694,17 +694,13 @@ class _FormsPageState extends State<FormsPage> {
   // IN-FIELD COACHING HISTORY BODY
   // ================================
   Widget _buildInFieldCoachingHistorySection(BuildContext context) {
-    if (_userKey.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('users')
-          .collection(_userKey)
-          .doc('coaching_forms')
-          .collection('coaching_forms')
+          .collection('DaloyClients')
+          .doc('WERT')
+          .collection('EForms')
+          .doc('In-Field Coaching Form')
+          .collection('submissions')
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
@@ -883,17 +879,13 @@ class _FormsPageState extends State<FormsPage> {
   // INCIDENTAL COVERAGE HISTORY BODY
   // =======================================
   Widget _buildIncidentalCoverageHistorySection(BuildContext context) {
-    if (_userKey.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('users')
-          .collection(_userKey)
-          .doc('inc_cov_forms')
-          .collection('inc_cov_forms')
+          .collection('DaloyClients')
+          .doc('WERT')
+          .collection('EForms')
+          .doc('Incidental Coverage Form')
+          .collection('submissions')
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
@@ -959,11 +951,13 @@ class _FormsPageState extends State<FormsPage> {
             final data = doc.data() as Map<String, dynamic>;
             final String lastName = data['lastName'] ?? '';
             final String firstName = data['firstName'] ?? '';
-            final String fullName = '$lastName $firstName'.trim();
+            final String middleName = data['middleName'] ?? '';
+            final String fullName = '$firstName $middleName $lastName'.trim();
             final String title =
                 fullName.isNotEmpty ? fullName : 'Unnamed Coverage';
             final String date =
                 _formatReadableDate(data['dateOfCover']);
+            final String specialty = data['specialty'] ?? '';
 
             return Material(
               color: Colors.white,
@@ -1033,6 +1027,19 @@ class _FormsPageState extends State<FormsPage> {
                               ),
                             ),
                             const SizedBox(height: 3),
+                            if (specialty.isNotEmpty)
+                              Text(
+                                specialty,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'OpenSauce',
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF4A2371)
+                                      .withValues(alpha: 0.8),
+                                ),
+                              ),
                             Text(
                               date,
                               style: TextStyle(
@@ -1060,17 +1067,13 @@ class _FormsPageState extends State<FormsPage> {
   // SALES ORDER HISTORY BODY
   // =======================================
   Widget _buildSalesOrderHistorySection(BuildContext context) {
-    if (_userKey.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('users')
-          .collection(_userKey)
-          .doc('sales_orders')
-          .collection('sales_orders')
+          .collection('DaloyClients')
+          .doc('WERT')
+          .collection('EForms')
+          .doc('Sales Order Form')
+          .collection('submissions')
           .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
@@ -1134,11 +1137,9 @@ class _FormsPageState extends State<FormsPage> {
           itemBuilder: (context, idx) {
             final doc = docs[idx];
             final data = doc.data() as Map<String, dynamic>;
-            final String mrName =
-                data['mrName'] ?? 'Unnamed Sales Order';
+            final String salesOrderNo = data['salesOrderNo'] ?? 'Unnamed Sales Order';
             final String soldTo = data['soldTo'] ?? '';
-            final String dateOfOrder =
-                _formatReadableDate(data['dateOfOrder']);
+            final String dateOfOrder = _formatReadableDate(data['dateOfOrder']);
 
             return Material(
               color: Colors.white,
@@ -1196,7 +1197,7 @@ class _FormsPageState extends State<FormsPage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              mrName,
+                              salesOrderNo,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(

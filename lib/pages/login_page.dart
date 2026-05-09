@@ -290,7 +290,7 @@ class _LoginPageState extends State<LoginPage> {
                                 children: [
                                   SizedBox(height: 16),
                                   Text(
-                                    'iDoXs',
+                                    'Daloy',
                                     style: TextStyle(
                                       fontSize: 100,
                                       fontWeight: FontWeight.bold,
