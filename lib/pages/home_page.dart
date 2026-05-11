@@ -705,31 +705,31 @@ class _HomePageState extends State<HomePage> {
       ];
     }
 
-    // Default / IVA: use the same IVA demo forms as forms_page.dart
-    if (_efDomainType == 'iva') {
-      return const [
-        EFormChipConfig(
-          formKey: 'demo_liquidation',
-          title: 'Demo Liquidation Form',
-        ),
-        EFormChipConfig(
-          formKey: 'custom_itinerary',
-          title: 'Custom Itinerary',
-        ),
-        EFormChipConfig(
-          formKey: 'inventory_report',
-          title: 'Inventory Report',
-        ),
-        EFormChipConfig(
-          formKey: 'f2f_visit',
-          title: 'F2F Visit Form',
-        ),
-        EFormChipConfig(
-          formKey: 'customer_ledger',
-          title: 'Customer Ledger Form',
-        ),
-      ];
-    };
+  // Default / IVA: use the same IVA demo forms as forms_page.dart
+  if (_efDomainType == 'iva') {
+    return const [
+      EFormChipConfig(
+        formKey: 'demo_liquidation',
+        title: 'Demo Liquidation Form',
+      ),
+      EFormChipConfig(
+        formKey: 'custom_itinerary',
+        title: 'Custom Itinerary',
+      ),
+      EFormChipConfig(
+        formKey: 'inventory_report',
+        title: 'Inventory Report',
+      ),
+      EFormChipConfig(
+        formKey: 'f2f_visit',
+        title: 'F2F Visit Form',
+      ),
+      EFormChipConfig(
+        formKey: 'customer_ledger',
+        title: 'Customer Ledger Form',
+      ),
+    ];
+  }
 
     return const [
       EFormChipConfig(
@@ -6728,376 +6728,626 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
+class EFormWebViewPage extends StatefulWidget {
+  final String localHtmlPath;
+  final String title;
 
-  class EFormWebViewPage extends StatefulWidget {
-    final String localHtmlPath;
-    final String title;
+  const EFormWebViewPage({
+    Key? key,
+    required this.localHtmlPath,
+    required this.title,
+  }) : super(key: key);
 
-    const EFormWebViewPage({
-      Key? key,
-      required this.localHtmlPath,
-      required this.title,
-    }) : super(key: key);
+  @override
+  State<EFormWebViewPage> createState() => _EFormWebViewPageState();
+}
 
-    @override
-    State<EFormWebViewPage> createState() => _EFormWebViewPageState();
+class _EFormWebViewPageState extends State<EFormWebViewPage> {
+  late WebViewController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeWebView();
   }
 
-  class _EFormWebViewPageState extends State<EFormWebViewPage> {
-    late WebViewController _controller;
+  void _initializeWebView() {
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0x00000000))
+      ..addJavaScriptChannel(
+        'InFieldBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from InFieldBridge: ${message.message}',
+          );
+          await _handleInFieldFormSubmission(message.message);
+        },
+      )
+      ..addJavaScriptChannel(
+        'IncidentalCoverageBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from IncidentalCoverageBridge: ${message.message}',
+          );
+          await _handleIncidentalCoverageFormSubmission(message.message);
+        },
+      )
+      ..addJavaScriptChannel(
+        'SalesOrderBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from SalesOrderBridge: ${message.message}',
+          );
+          await _handleSalesOrderFormSubmission(message.message);
+        },
+      )
+      ..addJavaScriptChannel(
+        'DemoLiqBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from DemoLiqBridge: ${message.message}',
+          );
+          await _handleDemoLiquidationFormSubmission(message.message);
+        },
+      )
+      // NEW: Ending Inventory Report bridge
+      ..addJavaScriptChannel(
+        'EIBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from EIBridge: ${message.message}',
+          );
+          await _handleEndingInventoryReportSubmission(message.message);
+        },
+      )
+      // NEW: F2F Visit Form bridge
+      ..addJavaScriptChannel(
+        'F2FBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from F2FBridge: ${message.message}',
+          );
+          await _handleF2FVisitFormSubmission(message.message);
+        },
+      )
+      // NEW: Customer Ledger Form bridge
+      ..addJavaScriptChannel(
+        'CLFBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from CLFBridge: ${message.message}',
+          );
+          await _handleCustomerLedgerFormSubmission(message.message);
+        },
+      )
+      ..loadFile(widget.localHtmlPath);
+  }
 
-    @override
-    void initState() {
-      super.initState();
-      _initializeWebView();
-    }
+  Future<void> _handleInFieldFormSubmission(String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed In-Field Coaching form data: $data');
 
-    void _initializeWebView() {
-      _controller = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setBackgroundColor(const Color(0x00000000))
-        ..addJavaScriptChannel(
-          'InFieldBridge',
-          onMessageReceived: (JavaScriptMessage message) async {
-            debugPrint('Received message from InFieldBridge: ${message.message}');
-            await _handleInFieldFormSubmission(message.message);
-          },
-        )
-        ..addJavaScriptChannel(
-          'IncidentalCoverageBridge',
-          onMessageReceived: (JavaScriptMessage message) async {
-            debugPrint('Received message from IncidentalCoverageBridge: ${message.message}');
-            await _handleIncidentalCoverageFormSubmission(message.message);
-          },
-        )
-        ..addJavaScriptChannel(
-          'SalesOrderBridge',
-          onMessageReceived: (JavaScriptMessage message) async {
-            debugPrint('Received message from SalesOrderBridge: ${message.message}');
-            await _handleSalesOrderFormSubmission(message.message);
-          },
-        )
-        ..addJavaScriptChannel(
-          'DemoLiqBridge',
-          onMessageReceived: (JavaScriptMessage message) async {
-            debugPrint('Received message from DemoLiqBridge: ${message.message}');
-            await _handleDemoLiquidationFormSubmission(message.message);
-          },
-        )
-        ..loadFile(widget.localHtmlPath);
-    }
+      final String firstName = (data['firstName'] ?? '').toString().trim();
+      final String middleName = (data['middleName'] ?? '').toString().trim();
+      final String lastName = (data['lastName'] ?? '').toString().trim();
 
-    Future<void> _handleInFieldFormSubmission(String jsonMessage) async {
-      try {
-        final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
-        debugPrint('Parsed In-Field Coaching form data: $data');
+      String customDocId = '${firstName}_${middleName}_${lastName}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_');
 
-        // Create custom document ID from firstName, middleName, lastName
-        final String firstName = (data['firstName'] ?? '').toString().trim();
-        final String middleName = (data['middleName'] ?? '').toString().trim();
-        final String lastName = (data['lastName'] ?? '').toString().trim();
-        
-        // Combine to create document ID (sanitize to remove invalid characters)
-        String customDocId = '${firstName}_${middleName}_${lastName}'
-            .replaceAll(RegExp(r'[^\w\s-]'), '') // Remove special characters
-            .replaceAll(RegExp(r'\s+'), '_') // Replace spaces with underscores
-            .replaceAll(RegExp(r'_+'), '_'); // Replace multiple underscores with single
-        
-        // If custom ID is empty, fall back to auto-generated ID
-        if (customDocId.isEmpty || customDocId == '__') {
-          customDocId = FirebaseFirestore.instance
-              .collection('DaloyClients')
-              .doc('WERT')
-              .collection('EForms')
-              .doc('In-Field Coaching Form')
-              .collection('submissions')
-              .doc()
-              .id;
-          debugPrint('Using auto-generated document ID: $customDocId');
-        } else {
-          debugPrint('Using custom document ID: $customDocId');
-        }
-
-        // Save to Firestore with custom document ID using set() instead of add()
-        await FirebaseFirestore.instance
+      if (customDocId.isEmpty || customDocId == '__') {
+        customDocId = FirebaseFirestore.instance
             .collection('DaloyClients')
             .doc('WERT')
             .collection('EForms')
             .doc('In-Field Coaching Form')
             .collection('submissions')
-            .doc(customDocId) // Specify custom document ID
-            .set(data); // Use set() instead of add()
-
-        debugPrint('In-Field Coaching form data saved to Firestore successfully with ID: $customDocId');
-
-        if (!mounted) return;
-
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('In-Field Coaching Form submitted successfully!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-
-        // Optional: Navigate back after a delay
-        await Future.delayed(const Duration(seconds: 2));
-        if (!mounted) return;
-        Navigator.pop(context);
-        
-      } catch (e, stack) {
-        debugPrint('Error handling In-Field Coaching form submission: $e');
-        debugPrint('Stack trace: $stack');
-
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error submitting In-Field Coaching form: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID: $customDocId');
+      } else {
+        debugPrint('Using custom document ID: $customDocId');
       }
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('WERT')
+          .collection('EForms')
+          .doc('In-Field Coaching Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'In-Field Coaching form data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('In-Field Coaching Form submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling In-Field Coaching form submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting In-Field Coaching form: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
+  }
 
-    Future<void> _handleIncidentalCoverageFormSubmission(String jsonMessage) async {
-      try {
-        final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
-        debugPrint('Parsed Incidental Coverage form data: $data');
+  Future<void> _handleIncidentalCoverageFormSubmission(
+      String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed Incidental Coverage form data: $data');
 
-        // Create custom document ID from firstName, middleName, lastName
-        final String firstName = (data['firstName'] ?? '').toString().trim();
-        final String middleName = (data['middleName'] ?? '').toString().trim();
-        final String lastName = (data['lastName'] ?? '').toString().trim();
-        
-        // Combine to create document ID: firstName_middleName_lastName
-        String customDocId = '${firstName}_${middleName}_${lastName}'
-            .replaceAll(RegExp(r'[^\w\s-]'), '') // Remove special characters except word chars, spaces, hyphens
-            .replaceAll(RegExp(r'\s+'), '_') // Replace spaces with underscores
-            .replaceAll(RegExp(r'_+'), '_') // Replace multiple underscores with single underscore
-            .replaceAll(RegExp(r'^_+|_+$'), ''); // Remove leading/trailing underscores
-        
-        // If custom ID is empty, fall back to auto-generated ID
-        if (customDocId.isEmpty) {
-          customDocId = FirebaseFirestore.instance
-              .collection('DaloyClients')
-              .doc('WERT')
-              .collection('EForms')
-              .doc('Incidental Coverage Form')
-              .collection('submissions')
-              .doc()
-              .id;
-          debugPrint('Using auto-generated document ID: $customDocId');
-        } else {
-          debugPrint('Using custom document ID: $customDocId');
-        }
+      final String firstName = (data['firstName'] ?? '').toString().trim();
+      final String middleName = (data['middleName'] ?? '').toString().trim();
+      final String lastName = (data['lastName'] ?? '').toString().trim();
 
-        // Save to Firestore with custom document ID using set() instead of add()
-        await FirebaseFirestore.instance
+      String customDocId = '${firstName}_${middleName}_${lastName}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
             .collection('DaloyClients')
             .doc('WERT')
             .collection('EForms')
             .doc('Incidental Coverage Form')
             .collection('submissions')
-            .doc(customDocId) // Specify custom document ID
-            .set(data); // Use set() instead of add()
-
-        debugPrint('Incidental Coverage form data saved to Firestore successfully with ID: $customDocId');
-
-        if (!mounted) return;
-
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Incidental Coverage Form submitted successfully!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-
-        // Optional: Navigate back after a delay
-        await Future.delayed(const Duration(seconds: 2));
-        if (!mounted) return;
-        Navigator.pop(context);
-        
-      } catch (e, stack) {
-        debugPrint('Error handling Incidental Coverage form submission: $e');
-        debugPrint('Stack trace: $stack');
-
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error submitting Incidental Coverage form: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID: $customDocId');
+      } else {
+        debugPrint('Using custom document ID: $customDocId');
       }
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('WERT')
+          .collection('EForms')
+          .doc('Incidental Coverage Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'Incidental Coverage form data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Incidental Coverage Form submitted successfully!',
+          ),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling Incidental Coverage form submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting Incidental Coverage form: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
+  }
 
-    Future<void> _handleSalesOrderFormSubmission(String jsonMessage) async {
-      try {
-        final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
-        debugPrint('Parsed Sales Order form data: $data');
+  Future<void> _handleSalesOrderFormSubmission(String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed Sales Order form data: $data');
 
-        // Create custom document ID from salesOrderNo and soldTo
-        final String salesOrderNo = (data['salesOrderNo'] ?? '').toString().trim();
-        final String soldTo = (data['soldTo'] ?? '').toString().trim();
-        
-        // Combine to create document ID: salesOrderNo_soldTo
-        String customDocId = '${salesOrderNo}_${soldTo}'
-            .replaceAll(RegExp(r'[^\w\s-]'), '') // Remove special characters except word chars, spaces, hyphens
-            .replaceAll(RegExp(r'\s+'), '_') // Replace spaces with underscores
-            .replaceAll(RegExp(r'_+'), '_') // Replace multiple underscores with single underscore
-            .replaceAll(RegExp(r'^_+|_+$'), ''); // Remove leading/trailing underscores
-        
-        // If custom ID is empty, fall back to auto-generated ID
-        if (customDocId.isEmpty) {
-          customDocId = FirebaseFirestore.instance
-              .collection('DaloyClients')
-              .doc('WERT')
-              .collection('EForms')
-              .doc('Sales Order Form')
-              .collection('submissions')
-              .doc()
-              .id;
-          debugPrint('Using auto-generated document ID: $customDocId');
-        } else {
-          debugPrint('Using custom document ID: $customDocId');
-        }
+      final String salesOrderNo =
+          (data['salesOrderNo'] ?? '').toString().trim();
+      final String soldTo = (data['soldTo'] ?? '').toString().trim();
 
-        // Save to Firestore with custom document ID using set() instead of add()
-        await FirebaseFirestore.instance
+      String customDocId = '${salesOrderNo}_${soldTo}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
             .collection('DaloyClients')
             .doc('WERT')
             .collection('EForms')
             .doc('Sales Order Form')
             .collection('submissions')
-            .doc(customDocId) // Specify custom document ID
-            .set(data); // Use set() instead of add()
-
-        debugPrint('Sales Order form data saved to Firestore successfully with ID: $customDocId');
-
-        if (!mounted) return;
-
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Sales Order Form submitted successfully!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-
-        // Optional: Navigate back after a delay
-        await Future.delayed(const Duration(seconds: 2));
-        if (!mounted) return;
-        Navigator.pop(context);
-        
-      } catch (e, stack) {
-        debugPrint('Error handling Sales Order form submission: $e');
-        debugPrint('Stack trace: $stack');
-
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error submitting Sales Order form: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID: $customDocId');
+      } else {
+        debugPrint('Using custom document ID: $customDocId');
       }
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('WERT')
+          .collection('EForms')
+          .doc('Sales Order Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'Sales Order form data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sales Order Form submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling Sales Order form submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting Sales Order form: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
+  }
 
-    Future<void> _handleDemoLiquidationFormSubmission(String jsonMessage) async {
-      try {
-        final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
-        debugPrint('Parsed Demo Liquidation form data: $data');
+  Future<void> _handleDemoLiquidationFormSubmission(
+      String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed Demo Liquidation form data: $data');
 
-        // Create custom document ID from firstName, lastName, and dateReceived
-        final String firstName = (data['firstName'] ?? '').toString().trim();
-        final String lastName = (data['lastName'] ?? '').toString().trim();
-        final String dateReceived = (data['dateReceived'] ?? '').toString().trim();
-        
-        // Combine to create document ID: firstName_lastName_dateReceived
-        String customDocId = '${firstName}_${lastName}_${dateReceived}'
-            .replaceAll(RegExp(r'[^\w\s-]'), '') // Remove special characters except word chars, spaces, hyphens
-            .replaceAll(RegExp(r'\s+'), '_') // Replace spaces with underscores
-            .replaceAll(RegExp(r'_+'), '_') // Replace multiple underscores with single underscore
-            .replaceAll(RegExp(r'^_+|_+$'), ''); // Remove leading/trailing underscores
-        
-        // If custom ID is empty, fall back to auto-generated ID
-        if (customDocId.isEmpty) {
-          customDocId = FirebaseFirestore.instance
-              .collection('DaloyClients')
-              .doc('IVA')
-              .collection('EForms')
-              .doc('Demo Liquidation Form')
-              .collection('submissions')
-              .doc()
-              .id;
-          debugPrint('Using auto-generated document ID: $customDocId');
-        } else {
-          debugPrint('Using custom document ID: $customDocId');
-        }
+      final String firstName = (data['firstName'] ?? '').toString().trim();
+      final String lastName = (data['lastName'] ?? '').toString().trim();
+      final String dateReceived =
+          (data['dateReceived'] ?? '').toString().trim();
 
-        // Save to Firestore with custom document ID using set() instead of add()
-        await FirebaseFirestore.instance
+      String customDocId = '${firstName}_${lastName}_${dateReceived}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
             .collection('DaloyClients')
             .doc('IVA')
             .collection('EForms')
             .doc('Demo Liquidation Form')
             .collection('submissions')
-            .doc(customDocId) // Specify custom document ID
-            .set(data); // Use set() instead of add()
-
-        debugPrint('Demo Liquidation form data saved to Firestore successfully with ID: $customDocId');
-
-        if (!mounted) return;
-
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Demo Liquidation Form submitted successfully!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-
-        // Optional: Navigate back after a delay
-        await Future.delayed(const Duration(seconds: 2));
-        if (!mounted) return;
-        Navigator.pop(context);
-        
-      } catch (e, stack) {
-        debugPrint('Error handling Demo Liquidation form submission: $e');
-        debugPrint('Stack trace: $stack');
-
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error submitting Demo Liquidation form: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID: $customDocId');
+      } else {
+        debugPrint('Using custom document ID: $customDocId');
       }
-    }
 
-    @override
-    Widget build(BuildContext context) {
-      return Scaffold(
-        appBar: AppBar(
-          title: Text(widget.title),
-          backgroundColor: const Color(0xFF4A2371),
-          foregroundColor: Colors.white,
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('EForms')
+          .doc('Demo Liquidation Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'Demo Liquidation form data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Demo Liquidation Form submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
         ),
-        body: WebViewWidget(controller: _controller),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling Demo Liquidation form submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting Demo Liquidation form: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
       );
     }
   }
+
+  Future<void> _handleEndingInventoryReportSubmission(
+      String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed Ending Inventory Report data: $data');
+
+      // You can base the doc ID on EI reference + account name to keep it readable.
+      final String eiRef =
+          (data['eiReferenceNumber'] ?? '').toString().trim();
+      final String accountName =
+          (data['accountName'] ?? '').toString().trim();
+
+      String customDocId = '${eiRef}_${accountName}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
+            .collection('DaloyClients')
+            .doc('IVA')
+            .collection('EForms')
+            .doc('Ending Inventory Report')
+            .collection('submissions')
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID: $customDocId');
+      } else {
+        debugPrint('Using custom document ID: $customDocId');
+      }
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('EForms')
+          .doc('Ending Inventory Report')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'Ending Inventory Report saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ending Inventory Report submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint(
+        'Error handling Ending Inventory Report submission: $e',
+      );
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Error submitting Ending Inventory Report: $e',
+          ),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleF2FVisitFormSubmission(String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed F2F Visit Form data: $data');
+
+      final String visitRefNo =
+          (data['visitRefNo'] ?? '').toString().trim();
+      final String customerName =
+          (data['customerName'] ?? '').toString().trim();
+
+      // Build a readable custom ID: visitRefNo_customerName
+      String customDocId = '${visitRefNo}_${customerName}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
+            .collection('DaloyClients')
+            .doc('IVA')
+            .collection('EForms')
+            .doc('F2F Visit Form')
+            .collection('submissions')
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID for F2F: $customDocId');
+      } else {
+        debugPrint('Using custom document ID for F2F: $customDocId');
+      }
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('EForms')
+          .doc('F2F Visit Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'F2F Visit Form data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('F2F Visit Form submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling F2F Visit Form submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting F2F Visit Form: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleCustomerLedgerFormSubmission(
+      String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed Customer Ledger Form data: $data');
+
+      final String controlNumber =
+          (data['controlNumber'] ?? '').toString().trim();
+      final String customerName =
+          (data['customerName'] ?? '').toString().trim();
+
+      // Build a readable custom ID: controlNumber_customerName
+      String customDocId = '${controlNumber}_${customerName}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
+            .collection('DaloyClients')
+            .doc('IVA')
+            .collection('EForms')
+            .doc('Customer Ledger Form')
+            .collection('submissions')
+            .doc()
+            .id;
+        debugPrint(
+            'Using auto-generated document ID for Customer Ledger Form: $customDocId');
+      } else {
+        debugPrint(
+            'Using custom document ID for Customer Ledger Form: $customDocId');
+      }
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('EForms')
+          .doc('Customer Ledger Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'Customer Ledger Form data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Customer Ledger Form submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling Customer Ledger Form submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting Customer Ledger Form: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title),
+        backgroundColor: const Color(0xFF4A2371),
+        foregroundColor: Colors.white,
+      ),
+      body: WebViewWidget(controller: _controller),
+    );
+  }
+}
