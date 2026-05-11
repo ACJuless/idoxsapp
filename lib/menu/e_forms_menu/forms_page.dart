@@ -13,6 +13,167 @@ import 'abr_form_transactions_page.dart';
 import 'in_field_coaching_form_transactions_page.dart';
 import 'sales_order_form_page.dart';
 import 'incidental_coverage_form_page.dart';
+import 'demo_liquidation_form_page.dart';
+import 'ending_inventory_report.dart';
+import 'f2f_visit_form.dart'; 
+import 'customer_ledger_form.dart';
+
+// Simple config holder for each chip
+class _FormChipConfig {
+  final String title;
+  final String sectionTitle;
+  final String formKey;
+  final Widget Function(BuildContext) historyBuilder;
+
+  _FormChipConfig({
+    required this.title,
+    required this.sectionTitle,
+    required this.formKey,
+    required this.historyBuilder,
+  });
+}
+
+// Public metadata describing each E-Form type.
+class EFormMeta {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+
+  const EFormMeta({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+  });
+}
+
+// Global map from formKey -> metadata.
+const Map<String, EFormMeta> kEFormMetaRegistry = {
+  // INDOfil forms
+  'attendance': EFormMeta(
+    title: 'Attendance Form',
+    subtitle: 'Monitor attendance for your events',
+    icon: Icons.people_outline,
+    color: Colors.deepPurple,
+  ),
+  'scp': EFormMeta(
+    title: 'Sample Crop Prescription Form',
+    subtitle: "Get your farmer's specific crops needed",
+    icon: Icons.grass_outlined,
+    color: Colors.green,
+  ),
+  'abr': EFormMeta(
+    title: 'Activity Budget Request Form',
+    subtitle: 'Request additional budget for future activities',
+    icon: Icons.request_page_outlined,
+    color: Colors.orange,
+  ),
+
+  // WERT forms
+  'coaching': EFormMeta(
+    title: 'In-Field Coaching Form',
+    subtitle: 'Document coaching sessions and field visits',
+    icon: Icons.school_outlined,
+    color: Colors.blue,
+  ),
+  'inc_cov': EFormMeta(
+    title: 'Incidental Coverage Form',
+    subtitle: 'Record incidental activities and field coverages',
+    icon: Icons.event_available_outlined,
+    color: Colors.teal,
+  ),
+  'sales_order': EFormMeta(
+    title: 'Sales Order Form',
+    subtitle: 'Create and track customer sales orders',
+    icon: Icons.shopping_cart_outlined,
+    color: Colors.red,
+  ),
+
+  // IVA (demo) forms
+  'demo_liquidation': EFormMeta(
+    title: 'Demo Liquidation Form',
+    subtitle: 'Track demo-related expenses and liquidation',
+    icon: Icons.description_outlined,
+    color: Colors.purple,
+  ),
+  'custom_itinerary': EFormMeta(
+    title: 'Custom Itinerary',
+    subtitle: 'Plan and manage your custom itineraries',
+    icon: Icons.route_outlined,
+    color: Colors.indigo,
+  ),
+  'inventory_report': EFormMeta(
+    title: 'Inventory Report',
+    subtitle: 'Summarize current stock and inventory levels',
+    icon: Icons.inventory_2_outlined,
+    color: Colors.brown,
+  ),
+  'f2f_visit': EFormMeta(
+    title: 'F2F Visit Form',
+    subtitle: 'Log face-to-face visits with customers',
+    icon: Icons.face_retouching_natural_outlined,
+    color: Colors.cyan,
+  ),
+  'customer_ledger': EFormMeta(
+    title: 'Customer Ledger Form',
+    subtitle: 'Maintain customer ledger details',
+    icon: Icons.account_balance_wallet_outlined,
+    color: Colors.deepOrange,
+  ),
+};
+
+String _formatReadableDate(
+  dynamic value, {
+  String fallback = '-',
+}) {
+  const monthNames = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  DateTime? dt;
+
+  if (value is Timestamp) {
+    dt = value.toDate();
+  } else if (value is String && value.isNotEmpty) {
+    dt = DateTime.tryParse(value);
+    if (dt == null) {
+      final parts = value.split(RegExp(r'[/\-]'));
+      if (parts.length == 3) {
+        final a = int.tryParse(parts[0]);
+        final b = int.tryParse(parts[1]);
+        final c = int.tryParse(parts[2]);
+        if (a != null && b != null && c != null) {
+          if (c > 31) {
+            dt = DateTime.tryParse(
+              '$c-${a.toString().padLeft(2, '0')}-${b.toString().padLeft(2, '0')}',
+            );
+          } else {
+            dt = DateTime.tryParse(
+              '${a.toString().padLeft(4, '0')}-${b.toString().padLeft(2, '0')}-${c.toString().padLeft(2, '0')}',
+            );
+          }
+        }
+      }
+    }
+  }
+
+  if (dt == null) {
+    return fallback.isNotEmpty ? fallback : '-';
+  }
+  return '${monthNames[dt.month - 1]} ${dt.day}, ${dt.year}';
+}
 
 class FormsPage extends StatefulWidget {
   const FormsPage({Key? key}) : super(key: key);
@@ -22,17 +183,12 @@ class FormsPage extends StatefulWidget {
 }
 
 class _FormsPageState extends State<FormsPage> {
-  // Selected chip index (within the visible list for that domain)
   int _selectedIndex = -1;
 
-  // userKey for Firestore path (shared by all forms)
   String _userKey = '';
-
-  // Email + domain classification
   String _userEmail = '';
   String _domainType = ''; // 'iva', 'indofil', 'wert'
 
-  /// Direct Firebase Storage URLs for the ZIP E-Forms.
   static const String _attendanceZipUrl =
       'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fattendance_form_page.zip?alt=media&token=094e7010-e56c-4e90-b30f-e06629578114';
 
@@ -50,6 +206,9 @@ class _FormsPageState extends State<FormsPage> {
 
   static const String _salesOrderZipUrl =
       'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fsales_order_form_page.zip?alt=media&token=38447df2-d34f-4377-84a7-0a9227aca89e';
+
+  static const String _demoLiquidationZipUrl =
+      'https://firebasestorage.googleapis.com/v0/b/doxs-42fe8.appspot.com/o/flowDB%2Fdemo_liquidation_form_page.zip?alt=media';
 
   @override
   void initState() {
@@ -154,14 +313,16 @@ class _FormsPageState extends State<FormsPage> {
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
+                      color:
+                          const Color(0xFF4A2371).withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -225,8 +386,8 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
@@ -249,7 +410,8 @@ class _FormsPageState extends State<FormsPage> {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          color:
+                              const Color(0xFF4A2371).withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
@@ -327,14 +489,16 @@ class _FormsPageState extends State<FormsPage> {
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
+                      color:
+                          const Color(0xFF4A2371).withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -402,8 +566,8 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
@@ -424,7 +588,8 @@ class _FormsPageState extends State<FormsPage> {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          color:
+                              const Color(0xFF4A2371).withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
@@ -515,14 +680,16 @@ class _FormsPageState extends State<FormsPage> {
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
+                      color:
+                          const Color(0xFF4A2371).withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -602,8 +769,8 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 14),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
@@ -626,7 +793,8 @@ class _FormsPageState extends State<FormsPage> {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          color:
+                              const Color(0xFF4A2371).withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
@@ -690,9 +858,7 @@ class _FormsPageState extends State<FormsPage> {
     );
   }
 
-  // ================================
   // IN-FIELD COACHING HISTORY BODY
-  // ================================
   Widget _buildInFieldCoachingHistorySection(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -713,14 +879,16 @@ class _FormsPageState extends State<FormsPage> {
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
+                      color:
+                          const Color(0xFF4A2371).withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -779,8 +947,7 @@ class _FormsPageState extends State<FormsPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) =>
-                          InFieldCoachingFormReadonlyPage(
+                      builder: (_) => InFieldCoachingFormReadonlyPage(
                         formData: data,
                         docId: doc.id,
                         userKey: _userKey,
@@ -789,8 +956,8 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
@@ -811,7 +978,8 @@ class _FormsPageState extends State<FormsPage> {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          color:
+                              const Color(0xFF4A2371).withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
@@ -875,9 +1043,7 @@ class _FormsPageState extends State<FormsPage> {
     );
   }
 
-  // =======================================
   // INCIDENTAL COVERAGE HISTORY BODY
-  // =======================================
   Widget _buildIncidentalCoverageHistorySection(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -898,14 +1064,16 @@ class _FormsPageState extends State<FormsPage> {
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
+                      color:
+                          const Color(0xFF4A2371).withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -952,7 +1120,8 @@ class _FormsPageState extends State<FormsPage> {
             final String lastName = data['lastName'] ?? '';
             final String firstName = data['firstName'] ?? '';
             final String middleName = data['middleName'] ?? '';
-            final String fullName = '$firstName $middleName $lastName'.trim();
+            final String fullName =
+                '$firstName $middleName $lastName'.trim();
             final String title =
                 fullName.isNotEmpty ? fullName : 'Unnamed Coverage';
             final String date =
@@ -977,8 +1146,8 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
@@ -999,7 +1168,8 @@ class _FormsPageState extends State<FormsPage> {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          color:
+                              const Color(0xFF4A2371).withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
@@ -1063,9 +1233,7 @@ class _FormsPageState extends State<FormsPage> {
     );
   }
 
-  // =======================================
   // SALES ORDER HISTORY BODY
-  // =======================================
   Widget _buildSalesOrderHistorySection(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -1086,14 +1254,16 @@ class _FormsPageState extends State<FormsPage> {
         if (docs.isEmpty) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A2371).withValues(alpha: 0.08),
+                      color:
+                          const Color(0xFF4A2371).withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -1137,9 +1307,11 @@ class _FormsPageState extends State<FormsPage> {
           itemBuilder: (context, idx) {
             final doc = docs[idx];
             final data = doc.data() as Map<String, dynamic>;
-            final String salesOrderNo = data['salesOrderNo'] ?? 'Unnamed Sales Order';
+            final String salesOrderNo =
+                data['salesOrderNo'] ?? 'Unnamed Sales Order';
             final String soldTo = data['soldTo'] ?? '';
-            final String dateOfOrder = _formatReadableDate(data['dateOfOrder']);
+            final String dateOfOrder =
+                _formatReadableDate(data['dateOfOrder']);
 
             return Material(
               color: Colors.white,
@@ -1159,8 +1331,8 @@ class _FormsPageState extends State<FormsPage> {
                   );
                 },
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
@@ -1181,7 +1353,8 @@ class _FormsPageState extends State<FormsPage> {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          color:
+                              const Color(0xFF4A2371).withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
@@ -1245,9 +1418,922 @@ class _FormsPageState extends State<FormsPage> {
     );
   }
 
-  // =======================================
+  // DEMO LIQUIDATION HISTORY BODY (IVA)
+  Widget _buildDemoLiquidationHistorySection(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('EForms')
+          .doc('Demo Liquidation Form')
+          .collection('submissions')
+          .orderBy('timestamp', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData ||
+            snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) {
+          return Center(
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(
+                    LucideIcons.fileText,
+                    size: 40,
+                    color: Color(0xFF4A2371),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'No demo liquidation forms yet',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontFamily: 'OpenSauce',
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'Tap + in the Demo Liquidation page to create a new form.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontFamily: 'OpenSauce',
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: docs.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, idx) {
+            final doc = docs[idx];
+            final data = doc.data() as Map<String, dynamic>;
+
+            final String firstName = (data['firstName'] ?? '').toString();
+            final String lastName = (data['lastName'] ?? '').toString();
+            final String fullName =
+                '$firstName $lastName'.trim().isEmpty
+                    ? 'Unnamed Recipient'
+                    : '$firstName $lastName'.trim();
+
+            final String recipientType =
+                (data['recipient'] ?? '').toString();
+            final String remarks =
+                (data['remarks'] ?? '').toString().trim();
+
+            final dynamic ts = data['timestamp'] ?? data['dateReceived'];
+            final String date = _formatReadableDate(
+              ts,
+              fallback: _formatReadableDate(
+                data['dateReceived'],
+              ),
+            );
+
+            final String subtitleLine = [
+              if (recipientType.isNotEmpty) recipientType,
+              if (remarks.isNotEmpty) remarks,
+            ].join(' • ');
+
+            return Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => DemoLiquidationFormPage(
+                        formData: data,
+                        docId: doc.id,
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Colors.grey.shade200,
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                    color: Colors.white,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          LucideIcons.fileText,
+                          color: Color(0xFF4A2371),
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              fullName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontFamily: 'OpenSauce',
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1A1A2E),
+                                letterSpacing: -0.1,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            if (subtitleLine.isNotEmpty)
+                              Text(
+                                subtitleLine,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'OpenSauce',
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF4A2371)
+                                      .withValues(alpha: 0.8),
+                                ),
+                              ),
+                            Text(
+                              date,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontFamily: 'OpenSauce',
+                                fontWeight: FontWeight.w400,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // F2F VISIT HISTORY BODY (IVA)
+  Widget _buildF2FVisitHistorySection(BuildContext context) {
+    final query = FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc('IVA')
+        .collection('EForms')
+        .doc('F2F Visit Form')
+        .collection('submissions')
+        .orderBy('timestamp', descending: true);
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: query.snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData ||
+            snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) {
+          return Center(
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(
+                    LucideIcons.fileText,
+                    size: 40,
+                    color: Color(0xFF4A2371),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'No F2F visit forms yet',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontFamily: 'OpenSauce',
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'Submit a F2F Visit Form to see it here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontFamily: 'OpenSauce',
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: docs.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, idx) {
+            final doc = docs[idx];
+            final data = doc.data() as Map<String, dynamic>;
+
+            final String customerName =
+                (data['customerName'] ?? '').toString().trim();
+            final String storeName =
+                (data['storeName'] ?? '').toString().trim();
+            final String province =
+                (data['province'] ?? '').toString().trim();
+            final String municipality =
+                (data['municipality'] ?? '').toString().trim();
+            final String visitDateRaw =
+                (data['visitDate'] ?? '').toString().trim();
+            final String visitOutcome =
+                (data['visitOutcome'] ?? '').toString().trim();
+            final String nameOfUser =
+                (data['name'] ?? '').toString().trim();
+
+            final String visitDate = _formatReadableDate(
+              data['timestamp'] ?? visitDateRaw,
+              fallback: visitDateRaw,
+            );
+
+            final String title = customerName.isNotEmpty
+                ? customerName
+                : (storeName.isNotEmpty ? storeName : 'F2F Visit');
+
+            final List<String> subLines = [];
+
+            if (storeName.isNotEmpty) {
+              subLines.add('Store: $storeName');
+            }
+            if (province.isNotEmpty || municipality.isNotEmpty) {
+              subLines.add('Location: $municipality, $province');
+            }
+            if (visitDate.isNotEmpty && visitDate != '-') {
+              subLines.add('Date: $visitDate');
+            }
+            if (nameOfUser.isNotEmpty) {
+              subLines.add('User: $nameOfUser');
+            }
+
+            final String outcomePreview = visitOutcome.isNotEmpty
+                ? visitOutcome
+                : '';
+
+            return Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => F2FVisitReadonlyPage(
+                        formData: data,
+                        docId: doc.id,
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Colors.grey.shade200,
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                    color: Colors.white,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          LucideIcons.fileText,
+                          color: Color(0xFF4A2371),
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontFamily: 'OpenSauce',
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1A1A2E),
+                                letterSpacing: -0.1,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            for (final line in subLines)
+                              Text(
+                                line,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'OpenSauce',
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF4A2371)
+                                      .withValues(alpha: 0.8),
+                                ),
+                              ),
+                            if (outcomePreview.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  outcomePreview,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontFamily: 'OpenSauce',
+                                    fontWeight: FontWeight.w400,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // INVENTORY REPORT HISTORY BODY (IVA)
+  Widget _buildInventoryReportHistorySection(BuildContext context) {
+    final query = FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc('IVA')
+        .collection('EForms')
+        .doc('Ending Inventory Report')
+        .collection('submissions')
+        .orderBy('timestamp', descending: true);
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: query.snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData ||
+            snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) {
+          return Center(
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(
+                    LucideIcons.fileText,
+                    size: 40,
+                    color: Color(0xFF4A2371),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'No inventory reports yet',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontFamily: 'OpenSauce',
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'Submit an Ending Inventory Report to see it here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontFamily: 'OpenSauce',
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: docs.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, idx) {
+            final doc = docs[idx];
+            final data = doc.data() as Map<String, dynamic>;
+
+            final String eiRef =
+                (data['eiReferenceNumber'] ?? '').toString().trim();
+            final String nameOfUser =
+                (data['nameOfUser'] ?? '').toString().trim();
+            final String date =
+                (data['date'] ?? '').toString().trim();
+            final String accountName =
+                (data['accountName'] ?? '').toString().trim();
+            final String accountType =
+                (data['accountType'] ?? '').toString().trim();
+            final String province =
+                (data['province'] ?? '').toString().trim();
+            final String municipality =
+                (data['municipality'] ?? '').toString().trim();
+            final String authRep =
+                (data['nameOfAuthorizedStoreRepresentative'] ?? '')
+                    .toString()
+                    .trim();
+
+            final List<dynamic> rows =
+                (data['productRows'] ?? []) as List<dynamic>;
+            final int totalProducts = rows.length;
+
+            final String title =
+                eiRef.isNotEmpty
+                    ? 'EI Ref: $eiRef'
+                    : (accountName.isNotEmpty
+                        ? accountName
+                        : 'Ending Inventory Report');
+
+            final List<String> subLines = [];
+
+            if (date.isNotEmpty) {
+              subLines.add('Date: $date');
+            }
+            if (accountType.isNotEmpty || accountName.isNotEmpty) {
+              subLines.add(
+                'Account: ${accountType.isNotEmpty ? "[$accountType] " : ""}$accountName',
+              );
+            }
+            if (province.isNotEmpty || municipality.isNotEmpty) {
+              subLines.add('Location: $municipality, $province');
+            }
+            subLines.add('Products: $totalProducts item(s)');
+            if (authRep.isNotEmpty) {
+              subLines.add('Authorized Rep: $authRep');
+            }
+            if (nameOfUser.isNotEmpty) {
+              subLines.add('User: $nameOfUser');
+            }
+
+            String firstProductLine = '';
+            if (rows.isNotEmpty) {
+              final first = rows.first as Map<String, dynamic>;
+              final String productName =
+                  (first['productName'] ?? '').toString().trim();
+              final String qty =
+                  (first['quantity'] ?? '').toString().trim();
+              final String uom =
+                  (first['uom'] ?? '').toString().trim();
+              if (productName.isNotEmpty) {
+                firstProductLine = 'Top product: $productName';
+                if (qty.isNotEmpty) {
+                  firstProductLine += ' • Qty: $qty';
+                }
+                if (uom.isNotEmpty) {
+                  firstProductLine += ' $uom';
+                }
+              }
+            }
+
+            return Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EndingInventoryReportPage(
+                        formData: data,
+                        docId: doc.id,
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: Colors.grey.shade200, width: 1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                    color: Colors.white,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          LucideIcons.fileText,
+                          color: Color(0xFF4A2371),
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontFamily: 'OpenSauce',
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1A1A2E),
+                                letterSpacing: -0.1,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            for (final line in subLines)
+                              Text(
+                                line,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'OpenSauce',
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF4A2371)
+                                      .withValues(alpha: 0.8),
+                                ),
+                              ),
+                            if (firstProductLine.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  firstProductLine,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontFamily: 'OpenSauce',
+                                    fontWeight: FontWeight.w400,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // CUSTOMER LEDGER HISTORY BODY (IVA)
+  Widget _buildCustomerLedgerHistorySection(BuildContext context) {
+    final query = FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc('IVA')
+        .collection('EForms')
+        .doc('Customer Ledger Form')
+        .collection('submissions')
+        .orderBy('timestamp', descending: true);
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: query.snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData ||
+            snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) {
+          return Center(
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(
+                    LucideIcons.fileText,
+                    size: 40,
+                    color: Color(0xFF4A2371),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'No customer ledger forms yet',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontFamily: 'OpenSauce',
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'Submit a Customer Ledger Form to see it here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontFamily: 'OpenSauce',
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: docs.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, idx) {
+            final doc = docs[idx];
+            final data = doc.data() as Map<String, dynamic>;
+
+            final String controlNumber =
+                (data['controlNumber'] ?? '').toString().trim();
+            final String customerName =
+                (data['customerName'] ?? '').toString().trim();
+            final String documentType =
+                (data['documentType'] ?? '').toString().trim();
+            final String documentNumber =
+                (data['documentNumber'] ?? '').toString().trim();
+            final String province =
+                (data['province'] ?? '').toString().trim();
+            final String municipality =
+                (data['municipality'] ?? '').toString().trim();
+            final String barangay =
+                (data['barangay'] ?? '').toString().trim();
+            final String customerClassification =
+                (data['customerClassification'] ?? '').toString().trim();
+            final String sourceType =
+                (data['sourceType'] ?? '').toString().trim();
+            final String sourceName =
+                (data['sourceName'] ?? '').toString().trim();
+            final num grandTotalNum = data['grandTotal'] ?? 0;
+            final String grandTotal =
+                '₱${grandTotalNum.toStringAsFixed(2)}';
+
+            final dynamic ts = data['timestamp'] ?? data['submittedDate'];
+            final String date = _formatReadableDate(
+              ts,
+              fallback: _formatReadableDate(
+                data['documentDate'],
+              ),
+            );
+
+            final String title = customerName.isNotEmpty
+                ? customerName
+                : (controlNumber.isNotEmpty
+                    ? controlNumber
+                    : 'Customer Ledger');
+
+            final List<String> subLines = [];
+
+            if (documentType.isNotEmpty || documentNumber.isNotEmpty) {
+              subLines.add(
+                'Doc: ${documentType.isNotEmpty ? "[$documentType] " : ""}$documentNumber',
+              );
+            }
+            if (province.isNotEmpty ||
+                municipality.isNotEmpty ||
+                barangay.isNotEmpty) {
+              subLines.add(
+                  'Location: $barangay, $municipality, $province');
+            }
+            if (customerClassification.isNotEmpty) {
+              subLines.add('Class: $customerClassification');
+            }
+            if (sourceType.isNotEmpty || sourceName.isNotEmpty) {
+              subLines.add(
+                  'Source: ${sourceType.isNotEmpty ? "[$sourceType] " : ""}$sourceName');
+            }
+            if (date.isNotEmpty && date != '-') {
+              subLines.add('Date: $date');
+            }
+
+            return Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CustomerLedgerReadonlyPage(
+                        formData: data,
+                        docId: doc.id,
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Colors.grey.shade200,
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                    color: Colors.white,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          LucideIcons.fileText,
+                          color: Color(0xFF4A2371),
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontFamily: 'OpenSauce',
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1A1A2E),
+                                letterSpacing: -0.1,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            for (final line in subLines)
+                              Text(
+                                line,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'OpenSauce',
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF4A2371)
+                                      .withValues(alpha: 0.8),
+                                ),
+                              ),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                'Grand Total: $grandTotal',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontFamily: 'OpenSauce',
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   // DOWNLOAD HELPERS
-  // =======================================
   Future<Directory> _getDownloadsDirectory() async {
     if (Platform.isAndroid) {
       final dir = Directory('/storage/emulated/0/Download');
@@ -1460,6 +2546,40 @@ class _FormsPageState extends State<FormsPage> {
     }
   }
 
+  Future<void> _downloadDemoLiquidationZip() async {
+    try {
+      final uri = Uri.parse(_demoLiquidationZipUrl);
+      final response = await http.get(uri);
+      if (response.statusCode != 200) {
+        throw Exception(
+          'Failed to download file (status ${response.statusCode})',
+        );
+      }
+
+      final downloadsDir = await _getDownloadsDirectory();
+      final filePath =
+          '${downloadsDir.path}/demo_liquidation_form_page.zip';
+      final file = File(filePath);
+      await file.writeAsBytes(response.bodyBytes);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Demo Liquidation E-Form saved to: $filePath'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Error downloading Demo Liquidation E-Form: $e'),
+        ),
+      );
+    }
+  }
+
   void _onDownloadPressed(String formKey) {
     if (formKey == 'attendance') {
       _downloadAttendanceZip();
@@ -1485,6 +2605,10 @@ class _FormsPageState extends State<FormsPage> {
       _downloadSalesOrderZip();
       return;
     }
+    if (formKey == 'demo_liquidation') {
+      _downloadDemoLiquidationZip();
+      return;
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1495,11 +2619,8 @@ class _FormsPageState extends State<FormsPage> {
     );
   }
 
-  // ============ MAIN BUILD ============
-
   @override
   Widget build(BuildContext context) {
-    // Build chips list depending on domain type
     final List<_FormChipConfig> chipsConfig = _buildChipsConfig();
 
     return Scaffold(
@@ -1584,8 +2705,6 @@ class _FormsPageState extends State<FormsPage> {
             ),
           ),
           const SizedBox(height: 20),
-
-          // Horizontal chips
           SizedBox(
             height: 80,
             child: ListView(
@@ -1605,7 +2724,6 @@ class _FormsPageState extends State<FormsPage> {
             ),
           ),
           const SizedBox(height: 24),
-
           if (_selectedIndex >= 0 &&
               _selectedIndex < chipsConfig.length) ...[
             Padding(
@@ -1640,7 +2758,6 @@ class _FormsPageState extends State<FormsPage> {
             ),
             const SizedBox(height: 12),
           ],
-
           Expanded(
             child: ListView(
               padding: EdgeInsets.zero,
@@ -1658,10 +2775,8 @@ class _FormsPageState extends State<FormsPage> {
     );
   }
 
-  // Build chip configuration based on email domain
   List<_FormChipConfig> _buildChipsConfig() {
     if (_domainType == 'indofil') {
-      // @indofil.com -> Attendance, SCP, ABR
       return [
         _FormChipConfig(
           title: 'Attendance Form',
@@ -1686,7 +2801,6 @@ class _FormsPageState extends State<FormsPage> {
     }
 
     if (_domainType == 'wert') {
-      // @wert.com -> In-Field, Incidental, Sales Order
       return [
         _FormChipConfig(
           title: 'In-Field Coaching Form',
@@ -1715,14 +2829,12 @@ class _FormsPageState extends State<FormsPage> {
     }
 
     // Default / @iva.com -> IVA forms only
-    // Demo Liquidation Form, Custom Itinerary, Inventory Report,
-    // F2F Visit Form, Customer Ledger Form.
     return [
       _FormChipConfig(
         title: 'Demo Liquidation Form',
         sectionTitle: 'Demo Liquidation Form History',
         formKey: 'demo_liquidation',
-        historyBuilder: _buildPlaceholderHistory,
+        historyBuilder: _buildDemoLiquidationHistorySection,
       ),
       _FormChipConfig(
         title: 'Custom Itinerary',
@@ -1734,19 +2846,19 @@ class _FormsPageState extends State<FormsPage> {
         title: 'Inventory Report',
         sectionTitle: 'Inventory Report History',
         formKey: 'inventory_report',
-        historyBuilder: _buildPlaceholderHistory,
+        historyBuilder: _buildInventoryReportHistorySection,
       ),
       _FormChipConfig(
         title: 'F2F Visit Form',
         sectionTitle: 'F2F Visit Form History',
         formKey: 'f2f_visit',
-        historyBuilder: _buildPlaceholderHistory,
+        historyBuilder: _buildF2FVisitHistorySection,
       ),
       _FormChipConfig(
         title: 'Customer Ledger Form',
         sectionTitle: 'Customer Ledger Form History',
         formKey: 'customer_ledger',
-        historyBuilder: _buildPlaceholderHistory,
+        historyBuilder: _buildCustomerLedgerHistorySection,
       ),
     ];
   }
@@ -1779,159 +2891,4 @@ class _FormsPageState extends State<FormsPage> {
       ),
     );
   }
-}
-
-// Simple config holder for each chip
-class _FormChipConfig {
-  final String title;
-  final String sectionTitle;
-  final String formKey;
-  final Widget Function(BuildContext) historyBuilder;
-
-  _FormChipConfig({
-    required this.title,
-    required this.sectionTitle,
-    required this.formKey,
-    required this.historyBuilder,
-  });
-}
-
-// Public metadata describing each E-Form type.
-// home_page.dart will use this to build the "+" popup tiles.
-class EFormMeta {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final Color color;
-
-  const EFormMeta({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.color,
-  });
-}
-
-// Global map from formKey -> metadata.
-// Make sure every formKey used in _buildChipsConfig() has an entry here.
-const Map<String, EFormMeta> kEFormMetaRegistry = {
-  // INDOfil forms
-  'attendance': EFormMeta(
-    title: 'Attendance Form',
-    subtitle: 'Monitor attendance for your events',
-    icon: Icons.people_outline,
-    color: Colors.deepPurple,
-  ),
-  'scp': EFormMeta(
-    title: 'Sample Crop Prescription Form',
-    subtitle: "Get your farmer's specific crops needed",
-    icon: Icons.grass_outlined,
-    color: Colors.green,
-  ),
-  'abr': EFormMeta(
-    title: 'Activity Budget Request Form',
-    subtitle: 'Request additional budget for future activities',
-    icon: Icons.request_page_outlined,
-    color: Colors.orange,
-  ),
-
-  // WERT forms
-  'coaching': EFormMeta(
-    title: 'In-Field Coaching Form',
-    subtitle: 'Document coaching sessions and field visits',
-    icon: Icons.school_outlined,
-    color: Colors.blue,
-  ),
-  'inc_cov': EFormMeta(
-    title: 'Incidental Coverage Form',
-    subtitle: 'Record incidental activities and field coverages',
-    icon: Icons.event_available_outlined,
-    color: Colors.teal,
-  ),
-  'sales_order': EFormMeta(
-    title: 'Sales Order Form',
-    subtitle: 'Create and track customer sales orders',
-    icon: Icons.shopping_cart_outlined,
-    color: Colors.red,
-  ),
-
-  // IVA (demo) forms
-  'demo_liquidation': EFormMeta(
-    title: 'Demo Liquidation Form',
-    subtitle: 'Track demo-related expenses and liquidation',
-    icon: Icons.description_outlined,
-    color: Colors.purple,
-  ),
-  'custom_itinerary': EFormMeta(
-    title: 'Custom Itinerary',
-    subtitle: 'Plan and manage your custom itineraries',
-    icon: Icons.route_outlined,
-    color: Colors.indigo,
-  ),
-  'inventory_report': EFormMeta(
-    title: 'Inventory Report',
-    subtitle: 'Summarize current stock and inventory levels',
-    icon: Icons.inventory_2_outlined,
-    color: Colors.brown,
-  ),
-  'f2f_visit': EFormMeta(
-    title: 'F2F Visit Form',
-    subtitle: 'Log face-to-face visits with customers',
-    icon: Icons.face_retouching_natural_outlined,
-    color: Colors.cyan,
-  ),
-  'customer_ledger': EFormMeta(
-    title: 'Customer Ledger Form',
-    subtitle: 'Maintain customer ledger details',
-    icon: Icons.account_balance_wallet_outlined,
-    color: Colors.deepOrange,
-  ),
-};
-
-String _formatReadableDate(dynamic value,
-    {String fallback = '-'}) {
-  const monthNames = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-
-  DateTime? dt;
-
-  if (value is Timestamp) {
-    dt = value.toDate();
-  } else if (value is String && value.isNotEmpty) {
-    dt = DateTime.tryParse(value);
-    if (dt == null) {
-      final parts = value.split(RegExp(r'[/\-]'));
-      if (parts.length == 3) {
-        final a = int.tryParse(parts[0]);
-        final b = int.tryParse(parts[1]);
-        final c = int.tryParse(parts[2]);
-        if (a != null && b != null && c != null) {
-          if (c > 31) {
-            dt = DateTime.tryParse(
-                '$c-${a.toString().padLeft(2, '0')}-${b.toString().padLeft(2, '0')}');
-          } else {
-            dt = DateTime.tryParse(
-                '${a.toString().padLeft(4, '0')}-${b.toString().padLeft(2, '0')}-${c.toString().padLeft(2, '0')}');
-          }
-        }
-      }
-    }
-  }
-
-  if (dt == null) {
-    return fallback.isNotEmpty ? fallback : '-';
-  }
-  return '${monthNames[dt.month - 1]} ${dt.day}, ${dt.year}';
 }
