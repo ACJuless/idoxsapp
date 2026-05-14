@@ -323,7 +323,7 @@ Map<int, bool> checkedStates = {};
       'accomplished': submittedCount,
     };
   }
-// Call Reach
+  // Call Reach
   Future<Map<String, dynamic>> getCallReachStats(
     String clientId, String userId) async {
   try {
@@ -2735,26 +2735,32 @@ class _HomePageState extends State<HomePage> {
   /// Base Doctor collection for this MR in Daloy:
   /// /DaloyClients/{segment}/Users/{_userId}/Doctor/{docId}
   CollectionReference<Map<String, dynamic>> _doctorCollectionRefForHome({
-    required String userClientType,
-    required String userId, // MR00001
-  }) {
-    final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
+  required String userClientType,
+  required String userId, // MR00001
+}) {
+  final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
 
-    String clientSegment;
-    if (userClientType == 'farmers') {
-      clientSegment = 'INDOFIL';
-    } else if (userClientType == 'pharma') {
-      clientSegment = 'IVA';
+  String clientSegment;
+  if (userClientType == 'farmers') {
+    clientSegment = 'INDOFIL';
+  } else if (userClientType == 'pharma') {
+    // ✅ FIX: Check email domain like other methods do
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@wert.com')) {
+      clientSegment = 'WERT';
     } else {
-      clientSegment = 'GENERAL';
+      clientSegment = 'IVA';
     }
-
-    final userDocRef =
-        daloyRoot.doc(clientSegment).collection('Users').doc(userId);
-
-    return userDocRef.collection('Doctor');
+  } else {
+    clientSegment = 'GENERAL';
   }
 
+  final userDocRef =
+      daloyRoot.doc(clientSegment).collection('Users').doc(userId);
+
+  return userDocRef.collection('Doctor');
+}
+  
   /// Time logs for this MR:
   /// /DaloyClients/{segment}/Users/{_userId}/TimeLogs/{yyyyMMdd}
   DocumentReference<Map<String, dynamic>> _timeLogDocRefForToday() {
@@ -3060,6 +3066,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
 
+                    // Add Unplanned Visit form
                     Expanded(
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.all(16),
@@ -3342,8 +3349,9 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                     ),
-
+                  
                     const Divider(height: 1),
+                  
                     Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -6791,7 +6799,15 @@ class _EFormWebViewPageState extends State<EFormWebViewPage> {
           await _handleDemoLiquidationFormSubmission(message.message);
         },
       )
-      // NEW: Ending Inventory Report bridge
+      ..addJavaScriptChannel(
+        'CustomItineraryBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from CustomItineraryBridge: ${message.message}',
+          );
+          await _handleCustomItineraryFormSubmission(message.message);
+        },
+      )
       ..addJavaScriptChannel(
         'EIBridge',
         onMessageReceived: (JavaScriptMessage message) async {
@@ -6801,7 +6817,6 @@ class _EFormWebViewPageState extends State<EFormWebViewPage> {
           await _handleEndingInventoryReportSubmission(message.message);
         },
       )
-      // NEW: F2F Visit Form bridge
       ..addJavaScriptChannel(
         'F2FBridge',
         onMessageReceived: (JavaScriptMessage message) async {
@@ -6811,7 +6826,6 @@ class _EFormWebViewPageState extends State<EFormWebViewPage> {
           await _handleF2FVisitFormSubmission(message.message);
         },
       )
-      // NEW: Customer Ledger Form bridge
       ..addJavaScriptChannel(
         'CLFBridge',
         onMessageReceived: (JavaScriptMessage message) async {
@@ -7112,6 +7126,90 @@ class _EFormWebViewPageState extends State<EFormWebViewPage> {
     }
   }
 
+  Future<void> _handleCustomItineraryFormSubmission(String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed Custom Itinerary form data: $data');
+
+      final int year = (data['year'] ?? 0) as int;
+      final int month = (data['month'] ?? 0) as int; // 0‑based index
+      final String monthLabel = (data['monthLabel'] ?? '').toString();
+      final String userCode = (data['user']?['code'] ?? '').toString();
+      final String userName = (data['user']?['name'] ?? '').toString();
+
+      // Build a readable doc ID, e.g. 2025_03_RRICT‑RR143
+      final String safeUserCode = userCode.trim().isEmpty ? 'UNKNOWN' : userCode.trim();
+      final String safeUserName = userName.trim().isEmpty ? 'User' : userName.trim();
+
+      String customDocId =
+          '${year}_${month.toString().padLeft(2, '0')}_${safeUserCode}_$safeUserName'
+              .replaceAll(RegExp(r'[^\w\s-]'), '')
+              .replaceAll(RegExp(r'\s+'), '_')
+              .replaceAll(RegExp(r'_+'), '_')
+              .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
+            .collection('DaloyClients')
+            .doc('IVA')
+            .collection('EForms')
+            .doc('Custom Itinerary Form')
+            .collection('submissions')
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID for Custom Itinerary: $customDocId');
+      } else {
+        debugPrint('Using custom document ID for Custom Itinerary: $customDocId');
+      }
+
+      // Add server timestamp and some derived fields
+      final Map<String, dynamic> payload = Map<String, dynamic>.from(data)
+        ..['createdAt'] = FieldValue.serverTimestamp()
+        ..['yearMonthKey'] = '${year}_${month.toString().padLeft(2, '0')}'
+        ..['docId'] = customDocId;
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('EForms')
+          .doc('Custom Itinerary Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(payload);
+
+      debugPrint(
+        'Custom Itinerary data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Custom Itinerary submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling Custom Itinerary submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting Custom Itinerary: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+    
   Future<void> _handleEndingInventoryReportSubmission(
       String jsonMessage) async {
     try {

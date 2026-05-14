@@ -14,6 +14,7 @@ import 'in_field_coaching_form_transactions_page.dart';
 import 'sales_order_form_page.dart';
 import 'incidental_coverage_form_page.dart';
 import 'demo_liquidation_form_page.dart';
+import 'custom_itinerary_form.dart';
 import 'ending_inventory_report.dart';
 import 'f2f_visit_form.dart'; 
 import 'customer_ledger_form.dart';
@@ -1841,6 +1842,214 @@ class _FormsPageState extends State<FormsPage> {
     );
   }
 
+  // CUSTOM ITINERARY HISTORY BODY (IVA)
+  Widget _buildCustomItineraryHistorySection(BuildContext context) {
+    final query = FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc('IVA')
+        .collection('EForms')
+        .doc('Custom Itinerary Form')
+        .collection('submissions')
+        .orderBy('timestamp', descending: true);
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: query.snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData ||
+            snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) {
+          return Center(
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(
+                    LucideIcons.fileText,
+                    size: 40,
+                    color: Color(0xFF4A2371),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'No custom itineraries yet',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontFamily: 'OpenSauce',
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'Submit a Custom Itinerary to see it here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontFamily: 'OpenSauce',
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: docs.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, idx) {
+            final doc = docs[idx];
+            final data = doc.data() as Map<String, dynamic>;
+
+            final String tripTitle =
+                (data['tripTitle'] ?? '').toString().trim();
+            final String travelerName =
+                (data['travelerName'] ?? '').toString().trim();
+            final String destination =
+                (data['destination'] ?? '').toString().trim();
+            final String startDate =
+                (data['startDate'] ?? '').toString().trim();
+            final String endDate =
+                (data['endDate'] ?? '').toString().trim();
+            final String createdBy =
+                (data['createdBy'] ?? '').toString().trim();
+
+            final dynamic ts = data['timestamp'] ?? data['createdAt'];
+            final String createdDate = _formatReadableDate(
+              ts,
+              fallback: startDate,
+            );
+
+            final String title = tripTitle.isNotEmpty
+                ? tripTitle
+                : (destination.isNotEmpty ? destination : 'Custom Itinerary');
+
+            final List<String> subLines = [];
+
+            if (destination.isNotEmpty) {
+              subLines.add('Destination: $destination');
+            }
+            if (startDate.isNotEmpty || endDate.isNotEmpty) {
+              subLines.add('Dates: $startDate – $endDate');
+            }
+            if (travelerName.isNotEmpty) {
+              subLines.add('Traveler: $travelerName');
+            }
+            if (createdBy.isNotEmpty) {
+              subLines.add('Created by: $createdBy');
+            }
+            if (createdDate.isNotEmpty && createdDate != '-') {
+              subLines.add('Created: $createdDate');
+            }
+
+            return Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CustomItineraryReadonlyPage(
+                        formData: data,
+                        docId: doc.id,
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Colors.grey.shade200,
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                    color: Colors.white,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFF4A2371).withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          LucideIcons.fileText,
+                          color: Color(0xFF4A2371),
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontFamily: 'OpenSauce',
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1A1A2E),
+                                letterSpacing: -0.1,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            for (final line in subLines)
+                              Text(
+                                line,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'OpenSauce',
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF4A2371)
+                                      .withValues(alpha: 0.8),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   // INVENTORY REPORT HISTORY BODY (IVA)
   Widget _buildInventoryReportHistorySection(BuildContext context) {
     final query = FirebaseFirestore.instance
@@ -2840,7 +3049,7 @@ class _FormsPageState extends State<FormsPage> {
         title: 'Custom Itinerary',
         sectionTitle: 'Custom Itinerary History',
         formKey: 'custom_itinerary',
-        historyBuilder: _buildPlaceholderHistory,
+        historyBuilder: _buildCustomItineraryHistorySection,
       ),
       _FormChipConfig(
         title: 'Inventory Report',
