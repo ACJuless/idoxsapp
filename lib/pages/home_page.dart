@@ -5,12 +5,6 @@ import 'package:flutter/material.dart';
 import '../menu/e_forms_menu/forms_page.dart';
 import '../menu/itinerary_menu/itinerary_page.dart';
 import '../menu/doctor_menu/doctor_page.dart';
-import '../webview/webview_in_field_page.dart';
-import '../webview/webview_attendance_form_page.dart';
-import '../webview/webview_abr_form_page.dart';
-import '../webview/webview_scp_form_page.dart';
-import '../webview/webview_incidental_coverage_form_page.dart';
-import '../webview/webview_sales_order_form_page.dart';
 import 'package:signature/signature.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -24,15 +18,23 @@ import 'dart:convert';
 import 'dart:ui';
 import 'dart:io';
 import 'dart:async';
+
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:archive/archive.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+
 // import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../pages/messages_page.dart';
 import '../pages/notif_page.dart';
-import '../menu/profile_view_page.dart';
+import 'profile_view_page.dart';
 import 'package:flutter/services.dart';
 
 import '../menu/doctor_menu/call_detail_page.dart';
 import '../constants/app_constants.dart';
+
+import '../menu/e_forms_menu/forms_page.dart' show EFormMeta, kEFormMetaRegistry;
 
 final logger = Logger();
 
@@ -159,141 +161,310 @@ Map<int, bool> checkedStates = {};
 
 // CALL PERFORMANCE STATS
 
-// MONTHLY CALL PERFORMANCE
-Future<Map<String, int>> _getAccomplishedVisitsForMonth(
-    String emailKey, String userName) async {
-  final now = DateTime.now();
-  final String monthPrefix =
-      '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}';
-  int totalCount = 0;
-  int accomplishedCount = 0;
+  Future<List<Map<String, dynamic>>> getAllScheduledVisitsForToday({
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs,
+    required DateTime selectedDay,
+  }) async {
+    // If there are no doctors, nothing to do.
+    if (doctorDocs.isEmpty) return [];
 
-  final doctorSnapshot = await FirebaseFirestore.instance
-      .collection('flowDB')
-      .doc('users')
-      .collection(emailKey)
-      .doc('doctors')
-      .collection('doctors')
-      .get();
+    final List<Map<String, dynamic>> allVisits = [];
 
-  for (var doc in doctorSnapshot.docs) {
-    var scheduledVisitsSnap =
-        await doc.reference.collection('scheduledVisits').get();
+    // Today formatted as "yyyyMMdd" to match VisitsTab and Daloy Visit docs.
+    final String targetDateKey = DateFormat('yyyyMMdd').format(selectedDay); // [web:9]
 
-    for (var v in scheduledVisitsSnap.docs) {
-      final visitData = v.data();
-      final visitDateString = visitData['scheduledDate'] ?? '';
-      if (visitDateString.startsWith(monthPrefix)) {
-        totalCount += 1;
-        if (visitData.containsKey('signaturePoints') &&
-            visitData['signaturePoints'] != null &&
-            (visitData['signaturePoints'] as List).isNotEmpty) {
-          accomplishedCount += 1;
+    for (final doc in doctorDocs) {
+      final Map<String, dynamic> docData = doc.data();
+      final String doctorId = docData['doc_id']?.toString() ?? doc.id;
+      final String doctorName =
+          "${docData['lastName'] ?? ''}, ${docData['firstName'] ?? ''}";
+
+      final String hospital = (docData['hospital'] ?? '').toString();
+      final String specialty = (docData['specialty'] ?? '').toString();
+
+      // New structure:
+      // /DaloyClients/{segment}/Users/{_userId}/Doctor/{docId}/Visits/{yyyyMMdd}
+      final visitsColRef = doc.reference.collection('Visits');
+
+      // Only visits scheduled for today:
+      // scheduledDate == targetDateKey ("yyyyMMdd"), order by scheduledTime string.[web:1][web:5]
+      final QuerySnapshot<Map<String, dynamic>> visitsSnap =
+          await visitsColRef
+              .where('scheduledDate', isEqualTo: targetDateKey)
+              .orderBy('scheduledTime')
+              .get();
+
+      for (final v in visitsSnap.docs) {
+        final Map<String, dynamic> visitData = v.data();
+
+        // Field or doc id (yyyyMMdd), similar to VisitsTab.
+        final String scheduledDateRaw =
+            (visitData['scheduledDate'] ?? v.id).toString();
+
+        // Defensive check: skip if not exactly today.
+        if (scheduledDateRaw != targetDateKey) continue;
+
+        final String scheduledTime =
+            (visitData['scheduledTime'] ?? '').toString();
+
+        allVisits.add({
+          'doctorName': doctorName,
+          'scheduledTime': scheduledTime,
+          'hospital': hospital,
+          'specialty': specialty,
+          'doctor': docData,
+          'doctorId': doctorId,
+          'visitId': v.id,       // yyyyMMdd
+          'visitData': visitData,
+        });
+      }
+    }
+
+    // Safety: final sort by time string (HH:mm).[web:1]
+    allVisits.sort(
+      (a, b) => (a['scheduledTime'] ?? '').compareTo(b['scheduledTime'] ?? ''),
+    );
+
+    return allVisits;
+  }
+
+// Today's Accomplished
+  Future<Map<String, int>> getAccomplishedVisitsForToday({
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs,
+    required DateTime selectedDay,
+  }) async {
+    // Call the existing getAllScheduledVisitsForToday method
+    final List<Map<String, dynamic>> allVisits = await getAllScheduledVisitsForToday(
+      doctorDocs: doctorDocs,
+      selectedDay: selectedDay,
+    );
+    
+    // Count how many have submitted == true
+    final int submittedCount = allVisits.where((visit) {
+      final visitData = visit['visitData'] as Map<String, dynamic>?;
+      return visitData?['submitted'] == true;
+    }).length;
+    
+    // Return both counts
+    return {
+      'total': allVisits.length,
+      'submitted': submittedCount,
+    };
+  }
+
+// Month's Accomplished 
+  Future<List<Map<String, dynamic>>> getAllScheduledVisitsForCurrentMonth({
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs,
+    required DateTime referenceDay, // typically DateTime.now()
+  }) async {
+    // Build current month prefix yyyyMM (e.g., "202604" for April 2026)
+    final String currentMonthPrefix =
+        '${referenceDay.year.toString().padLeft(4, '0')}'
+        '${referenceDay.month.toString().padLeft(2, '0')}';
+
+    final List<Map<String, dynamic>> allVisits = [];
+
+    for (final doctorDoc in doctorDocs) {
+      final String doctorId = doctorDoc.id;
+
+      // /DaloyClients/IVA/Users/MR00001/Doctor/{doctorId}/Visits
+      final visitsCollection =
+          doctorDoc.reference.collection('Visits');
+
+      final visitsSnap = await visitsCollection.get();
+
+      for (final visitDoc in visitsSnap.docs) {
+        final String visitId = visitDoc.id; // e.g., "20260430"
+
+        // Safety: ensure proper length
+        if (visitId.length < 8) {
+          print('Skipping invalid visit ID "$visitId" for doctor $doctorId');
+          continue;
+        }
+
+        // Filter to current month via ID prefix
+        if (visitId.startsWith(currentMonthPrefix)) {
+          final visitData = visitDoc.data();
+
+          // Store visit info, including doctorId and visitId for debugging if needed
+          allVisits.add({
+            'doctorId': doctorId,
+            'visitId': visitId,
+            'visitData': visitData,
+          });
         }
       }
     }
+
+    print('Total visits found for month $currentMonthPrefix: ${allVisits.length}');
+    return allVisits;
   }
-  return {
-    "total": totalCount,
-    "accomplished": accomplishedCount,
-  };
-}
 
-// Call Reach
-Future<Map<String, dynamic>> _getCallReachStats(
-    String emailKey, String userName) async {
-  final doctorsSnap = await FirebaseFirestore.instance
-      .collection('flowDB')
-      .doc('users')
-      .collection(emailKey)
-      .doc('doctors')
-      .collection('doctors')
-      .get();
+/// Count Total vs Accomplished visits for the Month
+  Future<Map<String, int>> getAccomplishedVisitsForMonthFromDoctors({
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs,
+    required DateTime referenceDay,
+  }) async {
+    // Get all scheduled visits for the current month
+    final List<Map<String, dynamic>> allVisits =
+        await getAllScheduledVisitsForCurrentMonth(
+      doctorDocs: doctorDocs,
+      referenceDay: referenceDay,
+    );
 
-  int totalDoctors = doctorsSnap.docs.length;
-  int visitedDoctors = 0;
+    // Count submitted == true
+    final int submittedCount = allVisits.where((visit) {
+      final visitData = visit['visitData'] as Map<String, dynamic>?;
+      return visitData?['submitted'] == true;
+    }).length;
 
-  for (final doc in doctorsSnap.docs) {
-    final scheduledSnapshots =
-        await doc.reference.collection('scheduledVisits').get();
+    return {
+      'total': allVisits.length,
+      'accomplished': submittedCount,
+    };
+  }
+  // Call Reach
+  Future<Map<String, dynamic>> getCallReachStats(
+    String clientId, String userId) async {
+  try {
+    // Get current month and year (e.g., April 2026 -> 202604)
+    final now = DateTime.now();
+    final currentYearMonth = '${now.year}${now.month.toString().padLeft(2, '0')}';
+    
+    // Get all doctors for this user
+    final doctorsSnap = await FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc(clientId)
+        .collection('Users')
+        .doc(userId)
+        .collection('Doctor')
+        .get();
 
-    bool hasSignaturePoints = false;
+    int totalDoctors = doctorsSnap.docs.length;
+    int visitedDoctorsWithSubmitted = 0;
 
-    for (final visit in scheduledSnapshots.docs) {
-      final visitData = visit.data();
-      if (visitData.containsKey('signaturePoints') &&
-          visitData['signaturePoints'] != null &&
-          (visitData['signaturePoints'] as List).isNotEmpty) {
-        hasSignaturePoints = true;
-        break;
+    // Check each doctor
+    for (final doctorDoc in doctorsSnap.docs) {
+      final doctorId = doctorDoc.id;
+      
+      // Get all visits for this doctor
+      final visitsSnap = await doctorDoc.reference
+          .collection('Visits')
+          .get();
+
+      bool hasSubmittedVisitThisMonth = false;
+
+      // Check each visit document (e.g., 20260430)
+      for (final visitDoc in visitsSnap.docs) {
+        final visitDate = visitDoc.id; // e.g., "20260430"
+        
+        // Check if visit is from current month
+        if (visitDate.startsWith(currentYearMonth)) {
+          final visitData = visitDoc.data();
+          
+          // Check if submitted is true
+          if (visitData.containsKey('submitted') &&
+              visitData['submitted'] == true) {
+            hasSubmittedVisitThisMonth = true;
+            break; // Found one submitted visit this month
+          }
+        }
+      }
+
+      if (hasSubmittedVisitThisMonth) {
+        visitedDoctorsWithSubmitted++;
       }
     }
 
-    if (hasSignaturePoints) visitedDoctors++;
-  }
+    double callReach = 0.0;
+    if (totalDoctors > 0) {
+      callReach = (visitedDoctorsWithSubmitted / totalDoctors) * 100.0;
+    }
 
-  double callReach = 0.0;
-  if (totalDoctors > 0) {
-    callReach = (visitedDoctors / totalDoctors) * 100.0;
+    return {
+      'callReach': callReach,
+      'totalDoctors': totalDoctors,
+      'visitedDoctors': visitedDoctorsWithSubmitted,
+    };
+  } catch (e) {
+    print('Error in _getMonthlyCallReachStats: $e');
+    return {
+      'callReach': 0.0,
+      'totalDoctors': 0,
+      'visitedDoctors': 0,
+    };
   }
-
-  return {
-    'callReach': callReach,
-    'totalDoctors': totalDoctors,
-    'visitedDoctors': visitedDoctors,
-  };
 }
 
 // Call Frequency
-Future<Map<String, dynamic>> _getCallFrequencyStats(
-    String emailKey, String userName) async {
-  final now = DateTime.now();
-  final String monthPrefix =
-      '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}';
+  Future<Map<String, dynamic>> _getCallFrequencyStatss() async {
+    final now = DateTime.now();
+    final String currentMonthPrefix =
+        '${now.year.toString().padLeft(4, '0')}${now.month.toString().padLeft(2, '0')}';
 
-  final doctorsSnap = await FirebaseFirestore.instance
-      .collection('flowDB')
-      .doc('users')
-      .collection(emailKey)
-      .doc('doctors')
-      .collection('doctors')
-      .get();
+    try {
+      // Get all doctors for user MR00001 ONLY
+      final doctorsSnap = await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('Users')
+          .doc('MR00001')
+          .collection('Doctor')
+          .get();
 
-  int totalDoctors = doctorsSnap.docs.length;
-  int completedFrequency = 0;
+      int totalDoctors = doctorsSnap.docs.length;
+      int completedFrequencyDoctors = 0;
 
-  for (final doc in doctorsSnap.docs) {
-    final scheduledVisitsSnap =
-        await doc.reference.collection('scheduledVisits').get();
+      // Check each doctor
+      for (final doctorDoc in doctorsSnap.docs) {
+        // Get all visits for this doctor
+        final visitsSnap = await doctorDoc.reference
+            .collection('Visits')
+            .get();
 
-    final thisMonthVisits = scheduledVisitsSnap.docs.where((v) {
-      final visitData = v.data();
-      final visitDateString = visitData['scheduledDate'] ?? '';
-      return visitDateString.startsWith(monthPrefix);
-    }).toList();
+        // Filter visits for current month only
+        final currentMonthVisits = visitsSnap.docs.where((visitDoc) {
+          final visitId = visitDoc.id;
+          // Check if visit ID starts with current year-month (e.g., "202604")
+          return visitId.length >= 6 && visitId.substring(0, 6) == currentMonthPrefix;
+        }).toList();
 
-    if (thisMonthVisits.isEmpty) continue;
+        // Skip if no visits this month
+        if (currentMonthVisits.isEmpty) continue;
 
-    bool allVisited = thisMonthVisits.every((visit) {
-      final visitData = visit.data();
-      return visitData.containsKey('signaturePoints') &&
-          visitData['signaturePoints'] != null &&
-          (visitData['signaturePoints'] as List).isNotEmpty;
-    });
+        // Check if ALL visits for this month have submitted == true
+        bool allVisitsSubmitted = currentMonthVisits.every((visitDoc) {
+          final visitData = visitDoc.data();
+          return visitData.containsKey('submitted') &&
+              visitData['submitted'] == true;
+        });
 
-    if (allVisited) completedFrequency++;
+        // If all visits are submitted, count this doctor as completed
+        if (allVisitsSubmitted) {
+          completedFrequencyDoctors++;
+        }
+      }
+
+      // Calculate percentage
+      double frequencyPercent = 0.0;
+      if (totalDoctors > 0) {
+        frequencyPercent = (completedFrequencyDoctors / totalDoctors) * 100.0;
+      }
+
+      return {
+        'frequencyPercent': frequencyPercent,
+        'totalDoctors': totalDoctors,
+        'completedFrequency': completedFrequencyDoctors,
+      };
+    } catch (e) {
+      print('Error in _getCallFrequencyStats: $e');
+      return {
+        'frequencyPercent': 0.0,
+        'totalDoctors': 0,
+        'completedFrequency': 0,
+      };
+    }
   }
-
-  double frequencyPercent = 0.0;
-  if (totalDoctors > 0) {
-    frequencyPercent = (completedFrequency / totalDoctors) * 100.0;
-  }
-  return {
-    'frequencyPercent': frequencyPercent,
-    'totalDoctors': totalDoctors,
-    'completedFrequency': completedFrequency,
-  };
-}
 
 class _DonutPainter extends CustomPainter {
   final double progress; // 0.0 â€“ 1.0
@@ -356,18 +527,60 @@ class _DonutPainter extends CustomPainter {
   }
 }
 
+class EFormChipConfig {
+  final String formKey;
+  final String title;
+
+  const EFormChipConfig({
+    required this.formKey,
+    required this.title,
+  });
+}
+
+class EFormRemoteConfig {
+  final String formKey;
+  final String title;
+  final String storagePath;
+  final String entryHtml;
+  final bool enabled;
+
+  EFormRemoteConfig({
+    required this.formKey,
+    required this.title,
+    required this.storagePath,
+    required this.entryHtml,
+    required this.enabled,
+  });
+
+  factory EFormRemoteConfig.fromDoc(
+    String formKey,
+    Map<String, dynamic> data,
+  ) {
+    return EFormRemoteConfig(
+      formKey: formKey,
+      title: (data['title'] ?? '').toString(),
+      storagePath: (data['storagePath'] ?? '').toString(),
+      entryHtml: (data['entryHtml'] ?? 'index.html').toString(),
+      enabled: data['enabled'] == true,
+    );
+  }
+}
+
 class _HomePageState extends State<HomePage> {
   Uint8List? signature;
   MapController? _mapController;
-// bool _isHeaderCollapsed = false; 
+  // bool _isHeaderCollapsed = false; 
 
+  String mrCode = ''; 
   String userName = '';
   String userEmail = '';
   String emailKey = '';
   String _userId = '';
   bool _hasSubmittedSignature = false;
   bool _isLoading = true;
-  String userClientType = ''; // 'pharma', 'farmers', or legacy/other
+  String userClientType = ''; 
+  String _efDomainType = ''; // 'iva', 'indofil', 'wert'
+  String _efUserEmail = '';
 
   int _selectedIndex = 0;
   bool _isOffline = false;
@@ -399,23 +612,25 @@ class _HomePageState extends State<HomePage> {
   final _preCallPlanController = TextEditingController();
 
   // Controllers for Add New Client
-final _firstNameController = TextEditingController();
-final _lastNameController = TextEditingController();
-final _middleNameController = TextEditingController();
-final _birthDateController = TextEditingController();
-final _specialtyController = TextEditingController();
-final _contactNumberController = TextEditingController();
-final _emailController = TextEditingController();
-final _hospitalClinicController = TextEditingController();
-final _frequencyController = TextEditingController();
-final ScrollController _doctorsScrollController = ScrollController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _middleNameController = TextEditingController();
+  final _birthDateController = TextEditingController();
+  final _specialtyController = TextEditingController();
+  final _contactNumberController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _hospitalClinicController = TextEditingController();
+  final _frequencyController = TextEditingController();
+  final ScrollController _doctorsScrollController = ScrollController();
 
-// Gender dropdown state
-String? _selectedGender;
+  // Gender dropdown state
+  String? _selectedGender;
 
   @override
   void initState() {
     super.initState();
+    _loadEFormsDomain();
+
     _loadUserData();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _openSignatureDialog();
@@ -423,6 +638,8 @@ String? _selectedGender;
 
     // initialize with one product row
     _addUnplannedProductRow();
+
+    
   }
 
   @override
@@ -452,6 +669,205 @@ String? _selectedGender;
     });
   }
 
+  List<EFormChipConfig> _buildEFormsChipConfigForHome() {
+    // Mirror forms_page.dart domain logic but only keep formKey + title.
+    if (_efDomainType == 'indofil') {
+      return const [
+        EFormChipConfig(
+          formKey: 'attendance',
+          title: 'Attendance Form',
+        ),
+        EFormChipConfig(
+          formKey: 'scp',
+          title: 'Sample Crop Prescription',
+        ),
+        EFormChipConfig(
+          formKey: 'abr',
+          title: 'Activity Budget Request',
+        ),
+      ];
+    }
+
+    if (_efDomainType == 'wert') {
+      return const [
+        EFormChipConfig(
+          formKey: 'in_field_coaching',
+          title: 'In-Field Coaching Form',
+        ),
+        EFormChipConfig(
+          formKey: 'inc_cov',
+          title: 'Incidental Coverage Form',
+        ),
+        EFormChipConfig(
+          formKey: 'sales_order',
+          title: 'Sales Order Form',
+        ),
+      ];
+    }
+
+  // Default / IVA: use the same IVA demo forms as forms_page.dart
+  if (_efDomainType == 'iva') {
+    return const [
+      EFormChipConfig(
+        formKey: 'demo_liquidation',
+        title: 'Demo Liquidation Form',
+      ),
+      EFormChipConfig(
+        formKey: 'custom_itinerary',
+        title: 'Custom Itinerary',
+      ),
+      EFormChipConfig(
+        formKey: 'inventory_report',
+        title: 'Inventory Report',
+      ),
+      EFormChipConfig(
+        formKey: 'f2f_visit',
+        title: 'F2F Visit Form',
+      ),
+      EFormChipConfig(
+        formKey: 'customer_ledger',
+        title: 'Customer Ledger Form',
+      ),
+    ];
+  }
+
+    return const [
+      EFormChipConfig(
+          formKey: 'demo_liquidation',
+          title: 'Demo Liquidation Form',
+        ),
+    ];
+  }
+
+  Future<void> _openSelectedEForm(EFormChipConfig chip) async {
+  try {
+    debugPrint('=== Opening form: ${chip.formKey} ===');
+
+    // Step 1: Fetch Firestore config
+    final doc = await FirebaseFirestore.instance
+        .collection('EFormsConfig')
+        .doc(chip.formKey)
+        .get();
+
+    debugPrint('Firestore doc exists: ${doc.exists}');
+
+    if (!doc.exists) {
+      debugPrint('ERROR: No Firestore config found for ${chip.formKey}');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Form config not found in database')),
+      );
+      return;
+    }
+
+    final data = doc.data()!;
+    final storagePath = data['storagePath'] as String;
+    final entryHtml = (data['entryHtml'] ?? 'index.html').toString();
+
+    debugPrint('Storage path: "$storagePath"');
+    debugPrint('Entry HTML: $entryHtml');
+    debugPrint('Storage path length: ${storagePath.length}');
+    debugPrint('Has leading/trailing spaces: ${storagePath.trim() != storagePath}');
+
+    // Step 2: Download ZIP from Firebase Storage
+    final dir = await getApplicationDocumentsDirectory();
+    debugPrint('App docs directory: ${dir.path}');
+
+    final zipFile = File('${dir.path}/${chip.formKey}.zip');
+    debugPrint('ZIP will be saved to: ${zipFile.path}');
+
+    final ref = FirebaseStorage.instance.ref(storagePath.trim());
+    debugPrint('Firebase Storage reference created for: ${storagePath.trim()}');
+
+    await ref.writeToFile(zipFile);
+    debugPrint('ZIP downloaded successfully');
+
+    final fileExists = await zipFile.exists();
+    final fileSize = fileExists ? await zipFile.length() : 0;
+    debugPrint('ZIP file exists: $fileExists, size: $fileSize bytes');
+
+    if (!fileExists || fileSize == 0) {
+      debugPrint('ERROR: ZIP file is empty or missing');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Download failed or file is empty')),
+      );
+      return;
+    }
+
+    // Step 3: Extract ZIP
+    final extractDir = Directory('${dir.path}/eforms/${chip.formKey}');
+    debugPrint('Extract directory: ${extractDir.path}');
+
+    if (await extractDir.exists()) {
+      await extractDir.delete(recursive: true);
+      debugPrint('Deleted old extraction folder');
+    }
+    await extractDir.create(recursive: true);
+    debugPrint('Created fresh extraction folder');
+
+    final bytes = await zipFile.readAsBytes();
+    debugPrint('Read ZIP bytes: ${bytes.length}');
+
+    final archive = ZipDecoder().decodeBytes(bytes);
+    debugPrint('Archive entries: ${archive.length}');
+
+    for (final file in archive) {
+      debugPrint('Extracting: ${file.name}');
+      final outPath = '${extractDir.path}/${file.name}';
+      if (file.isFile) {
+        final outFile = File(outPath);
+        await outFile.create(recursive: true);
+        await outFile.writeAsBytes(file.content as List<int>);
+      } else {
+        await Directory(outPath).create(recursive: true);
+      }
+    }
+    debugPrint('Extraction complete');
+
+    // Step 4: Verify HTML file
+    final htmlFile = File('${extractDir.path}/$entryHtml');
+    final htmlExists = await htmlFile.exists();
+    debugPrint('HTML file exists: $htmlExists at ${htmlFile.path}');
+
+    if (!htmlExists) {
+      debugPrint('ERROR: HTML entry file not found after extraction');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('HTML file not found in ZIP')),
+      );
+      return;
+    }
+
+    // Step 5: Navigate to WebView
+    debugPrint('Navigating to WebView with: ${htmlFile.path}');
+    if (!mounted) return;
+    
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EFormWebViewPage(
+          localHtmlPath: htmlFile.path,
+          title: chip.title,
+        ),
+      ),
+    );
+    
+    debugPrint('WebView page opened');
+
+  } catch (e, stack) {
+    debugPrint('ERROR in _openSelectedEForm: $e');
+    debugPrint('Stack trace: $stack');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Error opening form: $e'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+}
+  
   // simple network check
   Future<bool> _hasNetwork() async {
     try {
@@ -463,6 +879,26 @@ String? _selectedGender;
     return false;
   }
 
+  Future<void> _loadEFormsDomain() async {
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('userEmail') ?? '';
+    String domainType = '';
+    final lower = email.toLowerCase();
+
+    if (lower.endsWith('@iva.com')) {
+      domainType = 'iva';
+    } else if (lower.endsWith('@indofil.com')) {
+      domainType = 'indofil';
+    } else if (lower.endsWith('@wert.com')) {
+      domainType = 'wert';
+    }
+
+    setState(() {
+      _efUserEmail = email;
+      _efDomainType = domainType;
+    });
+  }
+
   Future<void> _loadUserData() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -471,6 +907,7 @@ String? _selectedGender;
     String storedClientType = prefs.getString('userClientType') ?? '';
     String fetchEmailKey = storedEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
     String storedUserId = prefs.getString('userId') ?? '';
+    mrCode = prefs.getString('mrCode') ?? ''; // e.g. "MR00001"
 
     bool online = await _hasNetwork();
     bool wentOffline = !online;
@@ -513,6 +950,7 @@ String? _selectedGender;
       _isLoading = false;
       _isOffline = wentOffline;
     });
+    
   }
   
   Future<bool?> _openTimeInDialog() async {
@@ -572,511 +1010,486 @@ String? _selectedGender;
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         // Header
-SingleChildScrollView(
-  padding: const EdgeInsets.all(16),
-  child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      // Header row
-      Row(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
-              shape: BoxShape.circle,
-            ),
-            padding: const EdgeInsets.all(6),
-            child: const Icon(
-              Icons.access_time,
-              color: Colors.white,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Text(
-              'Confirm Time In',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(
-              Icons.close,
-              color: Colors.white70,
-            ),
-            onPressed: () {
-              Navigator.of(dialogContext).pop(false);
-            },
-          ),
-        ],
-      ),
-      const SizedBox(height: 12),
-
-      // Current time
-      Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.25),
-          ),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.schedule,
-              color: Colors.white,
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'Current Time:',
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              currentTimeString,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 12),
-
-      // Location map
-      Container(
-        height: MediaQuery.of(dialogContext).size.height * 0.22,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.3),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.25),
-              blurRadius: 8,
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: position != null
-              ? FlutterMap(
-                  mapController: _mapController ?? MapController(),
-                  options: MapOptions(
-                    initialCenter: LatLng(
-                      position!.latitude,
-                      position!.longitude,
-                    ),
-                    initialZoom: 16.0,
-                    interactionOptions: const InteractionOptions(
-                      flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-                    ),
-                  ),
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.example.idoxsapp',
-                      maxZoom: 19,
-                    ),
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          width: 40.0,
-                          height: 40.0,
-                          point: LatLng(
-                            position!.latitude,
-                            position!.longitude,
-                          ),
-                          child: const Icon(
-                            Icons.location_pin,
-                            color: Colors.red,
-                            size: 40,
-                          ),
-                        ),
-                      ],
-                    ),
-                    RichAttributionWidget(
-                      attributions: [
-                        TextSourceAttribution(
-                          'OpenStreetMap contributors',
-                          onTap: () {},
-                        ),
-                      ],
-                    ),
-                  ],
-                )
-              : Container(
-                  color: Colors.white.withOpacity(0.05),
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Getting your location...',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: () async {
-                            Position? newPosition =
-                                await _getCurrentLocation();
-                            setDialogState(() {
-                              position = newPosition;
-                            });
-                          },
-                          child: const Text(
-                            'Retry',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
+                      SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Header row
+                            Row(
+                              children: [
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.15),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  padding: const EdgeInsets.all(6),
+                                  child: const Icon(
+                                    Icons.access_time,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    'Confirm Time In',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.close,
+                                    color: Colors.white70,
+                                  ),
+                                  onPressed: () {
+                                    Navigator.of(dialogContext).pop(false);
+                                  },
+                                ),
+                              ],
                             ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-        ),
-      
-      ),
-      const SizedBox(height: 10),
+                            const SizedBox(height: 12),
 
-      if (position != null)
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.3),
-            ),
-          ),
-          child: FutureBuilder<String>(
-            future: _getAddressFromCoordinates(position!),
-            builder: (context, snapshot) {
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(
-                    Icons.location_on,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      snapshot.data ?? 'Getting address...',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      if (position != null) const SizedBox(height: 10),
-
-      // Signature pad
-      Container(
-        width: double.infinity,
-        height: 200,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.9),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.6),
-            width: 2,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.25),
-              blurRadius: 8,
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Signature(
-            controller: timeInSignatureController,
-            width: double.infinity,
-            height: 200,
-            backgroundColor: Colors.white,
-          ),
-        ),
-      ),
-      const SizedBox(height: 8),
-
-      // Clear / Undo buttons
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          TextButton.icon(
-            onPressed: () => timeInSignatureController.clear(),
-            icon: const Icon(
-              Icons.clear,
-              size: 18,
-              color: Colors.white,
-            ),
-            label: const Text(
-              'Clear',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.white,
-              ),
-            ),
-            style: TextButton.styleFrom(
-              backgroundColor: Colors.red.withOpacity(0.3),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 8,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-          TextButton.icon(
-            onPressed: () => timeInSignatureController.undo(),
-            icon: const Icon(
-              Icons.undo,
-              size: 18,
-              color: Colors.white,
-            ),
-            label: const Text(
-              'Undo',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.white,
-              ),
-            ),
-            style: TextButton.styleFrom(
-              backgroundColor: Colors.orange.withOpacity(0.3),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 8,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-        ],
-      ),
-      const SizedBox(height: 10),
-
-      if (_isSubmittingTimeIn)
-        Column(
-          children: [
-            LinearProgressIndicator(
-              backgroundColor: Colors.white.withOpacity(0.2),
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                Color(0xFFf7ad01),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Submitting time in...',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-
-      // Action buttons
-      Row(
-        children: [
-          // Cancel button
-          Expanded(
-            child: SizedBox(
-              height: 46,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.of(dialogContext).pop(false);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey.withOpacity(0.2),
-                  foregroundColor: Colors.white,
-                  elevation: 4,
-                  shadowColor: Colors.black.withOpacity(0.4),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: Colors.white.withOpacity(0.3),
-                      width: 1.2,
-                    ),
-                  ),
-                ),
-                child: const Text(
-                  'Cancel',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Confirm Time In button
-          Expanded(
-            child: SizedBox(
-              height: 46,
-              child: ElevatedButton(
-                onPressed: _isSubmittingTimeIn
-                    ? null
-                    : () async {
-                        if (timeInSignatureController.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Please provide your signature before confirming time in.',
+                            // Current time
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
                               ),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                          return;
-                        }
-
-                        setDialogState(() {
-                          _isSubmittingTimeIn = true;
-                        });
-
-                        try {
-                          // Get current time and location
-                          final DateTime now = DateTime.now();
-                          final String timestamp = now.toIso8601String();
-                          final Position? latestPosition =
-                              await _getCurrentLocation();
-
-                          // Prepare Firestore data (current time + location only)
-                          final Map<String, dynamic> timeInData = {
-                            'type': 'time_in',
-                            'timestamp': timestamp,
-                            'created_at': FieldValue.serverTimestamp(),
-                            'date_only': DateTime(now.year, now.month, now.day),
-                            'device_time': now.toIso8601String(),
-                            'location': latestPosition != null
-                                ? {
-                                    'lat': latestPosition.latitude,
-                                    'lng': latestPosition.longitude,
-                                    'address': await _getAddressFromCoordinates(latestPosition),
-                                  }
-                                : null,
-                            'user_id': FirebaseAuth.instance.currentUser?.uid,
-                          };
-
-                          // Save to Firestore
-                          await FirebaseFirestore.instance
-                              .collection('time_records')
-                              .add(timeInData);
-
-                          final String locationInfo =
-                              latestPosition != null
-                                  ? '\nLocation: ${await _getAddressFromCoordinates(latestPosition)}'
-                                  : '\nLocation: Not available';
-
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Time In recorded!\nTimestamp: $timestamp$locationInfo',
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.25),
+                                ),
                               ),
-                              backgroundColor: Colors.green,
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.schedule,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Current Time:',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    currentTimeString,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          );
+                            const SizedBox(height: 12),
 
-                          Navigator.of(dialogContext).pop(true);
-                        } catch (e) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Failed to save time in: $e'),
-                              backgroundColor: Colors.red,
+                            // Location map
+                            Container(
+                              height: MediaQuery.of(dialogContext).size.height * 0.22,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.3),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.25),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: position != null
+                                    ? FlutterMap(
+                                        mapController: _mapController ?? MapController(),
+                                        options: MapOptions(
+                                          initialCenter: LatLng(
+                                            position!.latitude,
+                                            position!.longitude,
+                                          ),
+                                          initialZoom: 16.0,
+                                          interactionOptions: const InteractionOptions(
+                                            flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                                          ),
+                                        ),
+                                        children: [
+                                          TileLayer(
+                                            urlTemplate:
+                                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                            userAgentPackageName: 'com.example.idoxsapp',
+                                            maxZoom: 19,
+                                          ),
+                                          MarkerLayer(
+                                            markers: [
+                                              Marker(
+                                                width: 40.0,
+                                                height: 40.0,
+                                                point: LatLng(
+                                                  position!.latitude,
+                                                  position!.longitude,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.location_pin,
+                                                  color: Colors.red,
+                                                  size: 40,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          RichAttributionWidget(
+                                            attributions: [
+                                              TextSourceAttribution(
+                                                'OpenStreetMap contributors',
+                                                onTap: () {},
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      )
+                                    : Container(
+                                        color: Colors.white.withOpacity(0.05),
+                                        child: Center(
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              const CircularProgressIndicator(
+                                                color: Colors.white,
+                                                strokeWidth: 2,
+                                              ),
+                                              const SizedBox(height: 12),
+                                              const Text(
+                                                'Getting your location...',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 8),
+                                              TextButton(
+                                                onPressed: () async {
+                                                  Position? newPosition =
+                                                      await _getCurrentLocation();
+                                                  setDialogState(() {
+                                                    position = newPosition;
+                                                  });
+                                                },
+                                                child: const Text(
+                                                  'Retry',
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                            
                             ),
-                          );
-                        } finally {
-                          setDialogState(() {
-                            _isSubmittingTimeIn = false;
-                          });
-                        }
-                      },
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  backgroundColor: Colors.transparent,
-                  shadowColor: Colors.black.withOpacity(0.5),
-                  elevation: 6,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Ink(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Color(0xFF4e2f80),
-                        Color(0xFF715999),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.all(Radius.circular(12)),
-                  ),
-                  child: Container(
-                    alignment: Alignment.center,
-                    child: const Text(
-                      'Confirm Time In',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
+                            const SizedBox(height: 10),
+
+                            if (position != null)
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: FutureBuilder<String>(
+                                  future: _getAddressFromCoordinates(position!),
+                                  builder: (context, snapshot) {
+                                    return Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(
+                                          Icons.location_on,
+                                          color: Colors.white,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            snapshot.data ?? 'Getting address...',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                              ),
+                            if (position != null) const SizedBox(height: 10),
+
+                            // Signature pad
+                            Container(
+                              width: double.infinity,
+                              height: 200,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.9),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.6),
+                                  width: 2,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.25),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Signature(
+                                  controller: timeInSignatureController,
+                                  width: double.infinity,
+                                  height: 200,
+                                  backgroundColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+
+                            // Clear / Undo buttons
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                TextButton.icon(
+                                  onPressed: () => timeInSignatureController.clear(),
+                                  icon: const Icon(
+                                    Icons.clear,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                  label: const Text(
+                                    'Clear',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    backgroundColor: Colors.red.withOpacity(0.3),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 8,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  onPressed: () => timeInSignatureController.undo(),
+                                  icon: const Icon(
+                                    Icons.undo,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                  label: const Text(
+                                    'Undo',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    backgroundColor: Colors.orange.withOpacity(0.3),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 8,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+
+                            if (_isSubmittingTimeIn)
+                              Column(
+                                children: [
+                                  LinearProgressIndicator(
+                                    backgroundColor: Colors.white.withOpacity(0.2),
+                                    valueColor: const AlwaysStoppedAnimation<Color>(
+                                      Color(0xFFf7ad01),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Submitting time in...',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                ],
+                              ),
+
+                            // Action buttons
+                            Row(
+                              children: [
+                                // Cancel button
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 46,
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        Navigator.of(dialogContext).pop(false);
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.grey.withOpacity(0.2),
+                                        foregroundColor: Colors.white,
+                                        elevation: 4,
+                                        shadowColor: Colors.black.withOpacity(0.4),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          side: BorderSide(
+                                            color: Colors.white.withOpacity(0.3),
+                                            width: 1.2,
+                                          ),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'Cancel',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // Confirm Time In button
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 46,
+                                    child: ElevatedButton(
+                                      onPressed: _isSubmittingTimeIn
+                                        ? null
+                                        : () async {
+                                            if (timeInSignatureController.isEmpty) {
+                                              // show snackbar...
+                                              return;
+                                            }
+
+                                            setDialogState(() {
+                                              _isSubmittingTimeIn = true;
+                                            });
+
+                                            try {
+                                              final DateTime now = DateTime.now();
+                                              final String timestamp = now.toIso8601String();
+                                              final Position? latestPosition = await _getCurrentLocation();
+
+                                              await _saveTimeLog(
+                                                isTimeIn: true,
+                                                timestamp: now,
+                                                position: latestPosition,
+                                              );
+
+                                              final String locationInfo = latestPosition != null
+                                                  ? '\nLocation: ${await _getAddressFromCoordinates(latestPosition)}'
+                                                  : '\nLocation: Not available';
+
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    'Time In recorded!\nTimestamp: $timestamp$locationInfo',
+                                                  ),
+                                                  backgroundColor: Colors.green,
+                                                ),
+                                              );
+
+                                              Navigator.of(dialogContext).pop(true);
+                                            } catch (e) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                  content: Text('Failed to save time in: $e'),
+                                                  backgroundColor: Colors.red,
+                                                ),
+                                              );
+                                            } finally {
+                                              setDialogState(() {
+                                                _isSubmittingTimeIn = false;
+                                              });
+                                            }
+                                          },
+                                      style: ElevatedButton.styleFrom(
+                                        padding: EdgeInsets.zero,
+                                        backgroundColor: Colors.transparent,
+                                        shadowColor: Colors.black.withOpacity(0.5),
+                                        elevation: 6,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                      child: Ink(
+                                        decoration: const BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              Color(0xFF4e2f80),
+                                              Color(0xFF715999),
+                                            ],
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                          ),
+                                          borderRadius: BorderRadius.all(Radius.circular(12)),
+                                        ),
+                                        child: Container(
+                                          alignment: Alignment.center,
+                                          child: const Text(
+                                            'Confirm Time In',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    ],
-  ),
-),
+                      
                       ],
                     ),
                   ),
@@ -1456,28 +1869,28 @@ SingleChildScrollView(
                               height: 46,
                               child: ElevatedButton(
                                 onPressed: _isSubmittingTimeOut
-                                    ? null
-                                    : () async {
-                                        setDialogState(() {
-                                          _isSubmittingTimeOut = true;
-                                        });
+                                  ? null
+                                  : () async {
+                                      setDialogState(() {
+                                        _isSubmittingTimeOut = true;
+                                      });
 
+                                      try {
                                         final DateTime now = DateTime.now();
-                                        final String timestamp =
-                                            now.toIso8601String();
-                                        final Position? latestPosition =
-                                            await _getCurrentLocation();
+                                        final String timestamp = now.toIso8601String();
+                                        final Position? latestPosition = await _getCurrentLocation();
 
-                                        // TODO: Save Time Out record here
-                                        // using timestamp and latestPosition.
+                                        await _saveTimeLog(
+                                          isTimeIn: false,
+                                          timestamp: now,
+                                          position: latestPosition,
+                                        );
 
-                                        String locationInfo =
-                                            latestPosition != null
-                                                ? '\nLocation: ${await _getAddressFromCoordinates(latestPosition)}'
-                                                : '\nLocation: Not available';
+                                        final String locationInfo = latestPosition != null
+                                            ? '\nLocation: ${await _getAddressFromCoordinates(latestPosition)}'
+                                            : '\nLocation: Not available';
 
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(
                                             content: Text(
                                               'Time Out recorded!\nTimestamp: $timestamp$locationInfo',
@@ -1486,13 +1899,21 @@ SingleChildScrollView(
                                           ),
                                         );
 
+                                        Navigator.of(dialogContext).pop(true);
+                                      } catch (e) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Failed to save time out: $e'),
+                                            backgroundColor: Colors.redAccent,
+                                          ),
+                                        );
+                                      } finally {
                                         setDialogState(() {
                                           _isSubmittingTimeOut = false;
                                         });
-
-                                        Navigator.of(dialogContext).pop(true);
-                                      },
-                                style: ElevatedButton.styleFrom(
+                                      }
+                                    },
+                                  style: ElevatedButton.styleFrom(
                                   padding: EdgeInsets.zero,
                                   backgroundColor: Colors.transparent,
                                   shadowColor: Colors.black.withOpacity(0.5),
@@ -1542,7 +1963,7 @@ SingleChildScrollView(
       );
     },
   );
-}
+  }
 
   Future<void> _saveSignatureOffline(
     List<Point> points,
@@ -1641,43 +2062,6 @@ SingleChildScrollView(
     );
 
     return allVisits;
-  }
-
-  Future<Map<String, int>> getAccomplishedVisitsForToday(
-      String emailKey, String userName) async {
-    final String todayKey =
-        DateFormat('yyyy-MM-dd').format(DateTime.now());
-    int totalCount = 0;
-    int accomplishedCount = 0;
-
-    final doctorSnapshot = await FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey)
-        .doc('doctors')
-        .collection('doctors')
-        .get(); 
-
-    for (var doc in doctorSnapshot.docs) {
-      var scheduledVisitsSnap =
-          await doc.reference.collection('scheduledVisits').get();
-      for (var v in scheduledVisitsSnap.docs) {
-        final visitData = v.data();
-        final visitDateString = visitData['scheduledDate'] ?? '';
-        if (visitDateString == todayKey) {
-          totalCount += 1;
-          if (visitData.containsKey('signaturePoints') &&
-              visitData['signaturePoints'] != null &&
-              (visitData['signaturePoints'] as List).isNotEmpty) {
-            accomplishedCount += 1;
-          }
-        }
-      }
-    }
-    return {
-      "total": totalCount,
-      "accomplished": accomplishedCount,
-    };
   }
 
   Future<void> _refreshDashboard() async {
@@ -2313,6 +2697,7 @@ SingleChildScrollView(
                               ],
                             ),
                           ),
+                        
                         ),
                       ),
                     ),
@@ -2346,9 +2731,10 @@ SingleChildScrollView(
     }
   }
 
-/// Base Doctor collection for this MR in Daloy:
-/// /DaloyClients/{segment}/Users/{_userId}/Doctor/{docId}
-CollectionReference<Map<String, dynamic>> _doctorCollectionRefForHome({
+
+  /// Base Doctor collection for this MR in Daloy:
+  /// /DaloyClients/{segment}/Users/{_userId}/Doctor/{docId}
+  CollectionReference<Map<String, dynamic>> _doctorCollectionRefForHome({
   required String userClientType,
   required String userId, // MR00001
 }) {
@@ -2358,7 +2744,13 @@ CollectionReference<Map<String, dynamic>> _doctorCollectionRefForHome({
   if (userClientType == 'farmers') {
     clientSegment = 'INDOFIL';
   } else if (userClientType == 'pharma') {
-    clientSegment = 'IVA';
+    // ✅ FIX: Check email domain like other methods do
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@wert.com')) {
+      clientSegment = 'WERT';
+    } else {
+      clientSegment = 'IVA';
+    }
   } else {
     clientSegment = 'GENERAL';
   }
@@ -2368,71 +2760,218 @@ CollectionReference<Map<String, dynamic>> _doctorCollectionRefForHome({
 
   return userDocRef.collection('Doctor');
 }
+  
+  /// Time logs for this MR:
+  /// /DaloyClients/{segment}/Users/{_userId}/TimeLogs/{yyyyMMdd}
+  DocumentReference<Map<String, dynamic>> _timeLogDocRefForToday() {
+    final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
 
-  Future<void> _saveSignatureToFirestore(
-    List<Point> points,
-    String timestamp,
-    Position? position,
-  ) async {
-    try {
-      if (userEmail.isEmpty) {
-        throw Exception('User email missing');
+    String clientSegment;
+    if (userClientType == 'farmers') {
+      clientSegment = 'INDOFIL';
+    } else if (userClientType == 'pharma') {
+      final lower = userEmail.toLowerCase();
+      if (lower.endsWith('@wert.com')) {
+        clientSegment = 'WERT';
+      } else {
+        clientSegment = 'IVA';
       }
-
-      String address = position != null
-          ? await _getAddressFromCoordinates(position)
-          : 'Location not available';
-
-      final List<Map<String, dynamic>> signaturePoints = points.map((point) {
-        return {
-          'x': point.offset.dx,
-          'y': point.offset.dy,
-          'pressure': point.pressure,
-          'type': point.type.toString(),
-        };
-      }).toList();
-
-      Map<String, dynamic> signatureData = {
-        'userEmail': userEmail,
-        'userName': userName,
-        'timestamp': timestamp,
-        'createdAt': FieldValue.serverTimestamp(),
-        'signaturePoints': signaturePoints,
-        'address': address,
-      };
-
-      if (position != null) {
-        signatureData['location'] = {
-          'address': address,
-          'latitude': position.latitude,
-          'longitude': position.longitude,
-          'accuracy': position.accuracy,
-          'altitude': position.altitude,
-          'heading': position.heading,
-          'speed': position.speed,
-          'speedAccuracy': position.speedAccuracy,
-          'timestamp': DateTime.now().toIso8601String(),
-        };
-        signatureData['hasLocation'] = true;
+    } else {
+      // fallback for 'both' or others
+      final lower = userEmail.toLowerCase();
+      if (lower.endsWith('@indofil.com')) {
+        clientSegment = 'INDOFIL';
+      } else if (lower.endsWith('@wert.com')) {
+        clientSegment = 'WERT';
+      } else if (lower.endsWith('@iva.com')) {
+        clientSegment = 'IVA';
+      } else {
+        clientSegment = 'GENERAL';
       }
+    }
 
-      String docId = '${userEmail}_$timestamp';
+    final String mrCodeEffective = _userId; // loaded from SharedPreferences
 
-      await FirebaseFirestore.instance
-          .collection('flowDB')
-          .doc('signatures')
-          .collection('signatures')
-          .doc(docId)
-          .set(signatureData);
+    if (mrCodeEffective.isEmpty) {
+      throw Exception('MR code / userId is missing.');
+    }
 
-      print('âœ“ Vector signature saved successfully');
-    } catch (e) {
-      // Instead of throwing, cache offline and let user proceed
-      print('âœ— Error saving signature (probably offline): $e');
-      await _saveSignatureOffline(points, timestamp, position);
+    final now = DateTime.now();
+    final dateKey = DateFormat('yyyyMMdd').format(now);
+
+    return daloyRoot
+        .doc(clientSegment)
+        .collection('Users')
+        .doc(mrCodeEffective)
+        .collection('TimeLogs')
+        .doc(dateKey);
+  }
+  
+  DocumentReference<Map<String, dynamic>> _signatureDocRefForToday() {
+  final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
+
+  // Same client segment logic as _timeLogDocRefForToday
+  String clientSegment;
+  if (userClientType == 'farmers') {
+    clientSegment = 'INDOFIL';
+  } else if (userClientType == 'pharma') {
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@wert.com')) {
+      clientSegment = 'WERT';
+    } else {
+      clientSegment = 'IVA';
+    }
+  } else {
+    // fallback for 'both' or others
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@indofil.com')) {
+      clientSegment = 'INDOFIL';
+    } else if (lower.endsWith('@wert.com')) {
+      clientSegment = 'WERT';
+    } else if (lower.endsWith('@iva.com')) {
+      clientSegment = 'IVA';
+    } else {
+      clientSegment = 'GENERAL';
     }
   }
 
+  final String mrCodeEffective = _userId; // loaded from SharedPreferences
+
+  if (mrCodeEffective.isEmpty) {
+    throw Exception('MR code / userId is missing for signature.');
+  }
+
+  final now = DateTime.now();
+  final dateKey = DateFormat('yyyyMMdd').format(now);
+
+  // NEW path: /DaloyClients/{segment}/Users/{MRxxx}/Signatures/{yyyyMMdd}
+  return daloyRoot
+      .doc(clientSegment)
+      .collection('Users')
+      .doc(mrCodeEffective)
+      .collection('Signatures')
+      .doc(dateKey);
+  }
+
+  /// Save a Time In or Time Out log for the current user
+  Future<void> _saveTimeLog({
+  required bool isTimeIn,
+  required DateTime timestamp,
+  required Position? position,
+  }) async {
+  try {
+    final timeLogRef = _timeLogDocRefForToday();
+
+    final String iso = timestamp.toIso8601String();
+
+    final Map<String, dynamic> payload = {
+      'type': isTimeIn ? 'time_in' : 'time_out',
+      'timestamp': iso,
+      'created_at': FieldValue.serverTimestamp(),
+      'date_only': DateTime(timestamp.year, timestamp.month, timestamp.day),
+      'device_time': iso,
+      'location': position != null
+          ? {
+              'lat': position.latitude,
+              'lng': position.longitude,
+              'address': await _getAddressFromCoordinates(position),
+            }
+          : null,
+      'user_id': FirebaseAuth.instance.currentUser?.uid,
+    };
+
+    await timeLogRef.set(
+      isTimeIn
+          ? {
+              'timeIn': payload,
+              'hasTimeIn': true,
+            }
+          : {
+              'timeOut': payload,
+              'hasTimeOut': true,
+            },
+      SetOptions(merge: true),
+    );
+  } catch (e) {
+    // Let caller show the snackbar
+    rethrow;
+  }
+  }
+  
+  Future<void> _saveSignatureToFirestore(
+  List<Point> points,
+  String timestamp,
+  Position? position,
+  ) async {
+  try {
+    // 1) Basic guards – make sure user context is loaded
+    if (userEmail.isEmpty) {
+      throw Exception('User email missing for signature.');
+    }
+    if (_userId.isEmpty) {
+      throw Exception('MR code / userId is missing for signature.');
+    }
+
+    // 2) Optional: get human-readable address
+    final String address = position != null
+        ? await _getAddressFromCoordinates(position)
+        : 'Location not available';
+
+    // 3) Convert drawing points into a serializable list
+    final List<Map<String, dynamic>> signaturePoints = points.map((point) {
+      return {
+        'x': point.offset.dx,
+        'y': point.offset.dy,
+        'pressure': point.pressure,
+        'type': point.type.toString(),
+      };
+    }).toList();
+
+    // 4) Build the payload for this signature
+    final DateTime now = DateTime.now();
+
+    final Map<String, dynamic> signatureData = {
+      'userEmail': userEmail,
+      'userName': userName,
+      'timestamp': timestamp,
+      'device_time': now.toIso8601String(),
+      'createdAt': FieldValue.serverTimestamp(),
+      'address': address,
+      'hasLocation': position != null,
+      'signaturePoints': signaturePoints,
+      'location': position != null
+          ? {
+              'lat': position.latitude,
+              'lng': position.longitude,
+              'accuracy': position.accuracy,
+              'altitude': position.altitude,
+              'heading': position.heading,
+              'speed': position.speed,
+              'speedAccuracy': position.speedAccuracy,
+              'position_timestamp': DateTime.now().toIso8601String(),
+            }
+          : null,
+    };
+
+    // 5) Get today's Signature doc for this MR (SEPARATE from TimeLogs)
+    final DocumentReference<Map<String, dynamic>> signatureDoc =
+        _signatureDocRefForToday();
+
+    // 6) Save (or merge) the signature into that doc
+    //    If you want ONE signature per day, this is fine (overwrite/merge).
+    await signatureDoc.set(
+      signatureData,
+      SetOptions(merge: false), // overwrite per day; use merge:true if needed
+    );
+
+    print('✓ Signature saved under ${signatureDoc.path}');
+  } catch (e) {
+    print('✗ Error saving signature: $e');
+    // Fallback: your offline cache handler, so user can still proceed
+    await _saveSignatureOffline(points, timestamp, position);
+  }
+  }
+  
   // ===== UNPLANNED VISIT HELPERS =====
 
   void _addUnplannedProductRow() {
@@ -2527,6 +3066,7 @@ CollectionReference<Map<String, dynamic>> _doctorCollectionRefForHome({
                       ),
                     ),
 
+                    // Add Unplanned Visit form
                     Expanded(
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.all(16),
@@ -2809,8 +3349,9 @@ CollectionReference<Map<String, dynamic>> _doctorCollectionRefForHome({
                         ),
                       ),
                     ),
-
+                  
                     const Divider(height: 1),
+                  
                     Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -2871,219 +3412,130 @@ CollectionReference<Map<String, dynamic>> _doctorCollectionRefForHome({
     );
   }
 
-void _openCreateEFormDialog() {
-  showDialog(
-    context: context,
-    barrierDismissible: true,
-    builder: (ctx) {
-      return Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        insetPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 24,
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+  void _openCreateEFormDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Header
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 20, // higher header
-                ),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF4e2f80),
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(16),
-                    topRight: Radius.circular(16),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 24,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 20, // higher header
                   ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: const [
-                    Icon(
-                      Icons.description_outlined, // document-like icon
-                      color: Colors.white,
-                      size: 24,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF4e2f80),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
                     ),
-                    SizedBox(width: 8),
-                    Text(
-                      'Create New E-Form',
-                      style: TextStyle(
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: const [
+                      Icon(
+                        Icons.description_outlined, // document-like icon
                         color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
+                        size: 24,
                       ),
-                    ),
-                  ],
-                ),
-              ),
-
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Select the type of form you want to create:',
+                      SizedBox(width: 8),
+                      Text(
+                        'Create New E-Form',
                         style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 13,
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                      const SizedBox(height: 8),
-
-                      // Attendance Form
-                      _buildEFormTypeTile(
-                        icon: Icons.people_outline,
-                        title: 'Attendance Form',
-                        subtitle: 'Monitor attendance for your events',
-                        color: Colors.deepPurple,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const AttendanceFormWebviewPage(),
-                            ),
-                          );
-                        },
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // Sample Crop Prescription Form
-                      _buildEFormTypeTile(
-                        icon: Icons.grass_outlined,
-                        title: 'Sample Crop Prescription Form',
-                        subtitle: "Get your farmer's specific crops needed",
-                        color: Colors.green.shade700,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const ScpFormWebviewPage(),
-                            ),
-                          );
-                        },
-                      ),
-
-
-                      const SizedBox(height: 12),
-
-                      // Activity Budget Request Form
-                      _buildEFormTypeTile(
-                        icon: Icons.request_page_outlined,
-                        title: 'Activity Budget Request Form',
-                        subtitle:
-                            'Request for Additional Budget for your future needs',
-                        color: Colors.orange.shade700,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const AbrFormWebviewPage(),
-                            ),
-                          );
-                        },
-                      ),
-
-
-                      const SizedBox(height: 12),
-
-                      // In-Field Coaching Form
-                      _buildEFormTypeTile(
-                        icon: Icons.school_outlined,
-                        title: 'In-Field Coaching Form',
-                        subtitle: 'Document coaching sessions and farmer field visits',
-                        color: Colors.blue.shade700,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const WebviewInFieldPage(),
-                            ),
-                          );
-                        },
-                      ),
-
-
-                      const SizedBox(height: 12),
-
-                      // Incidental Coverage Form
-                      _buildEFormTypeTile(
-                        icon: Icons.event_available_outlined,
-                        title: 'Incidental Coverage Form',
-                        subtitle: 'Record incidental activities and field coverages',
-                        color: Colors.teal.shade700,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const IncidentalCoverageFormWebviewPage(),
-                            ),
-                          );
-                        },
-                      ),
-
-
-                      const SizedBox(height: 12),
-
-                      // Sales Order Form
-                      _buildEFormTypeTile(
-                        icon: Icons.shopping_cart_outlined,
-                        title: 'Sales Order Form',
-                        subtitle: 'Create and track sales orders for your customers',
-                        color: Colors.red.shade700,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const WebviewSalesOrderFormPage(),
-                            ),
-                          );
-                        },
-                      ),
-
-                      const SizedBox(height: 12),
-
                     ],
                   ),
                 ),
-              ),
 
-              const Divider(height: 1),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Select the type of form you want to create:',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
 
-              Container(
-                width: double.infinity,
-                color: Colors.grey[200],
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Center(
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.of(ctx).pop();
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: Text('Cancel'),
+                        // Build tiles based on the same config as forms_page.dart
+                        Builder(
+                          builder: (innerCtx) {
+                            final configs = _buildEFormsChipConfigForHome();
+
+                            if (configs.isEmpty) {
+                              return const Padding(
+                                padding: EdgeInsets.only(top: 16),
+                                child: Text(
+                                  'No forms available for your account type.',
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              );
+                            }
+
+                            return Column(
+                              children: [
+                                for (final cfg in configs) ...[
+                                  _buildEFormTileFromConfig(ctx, context, cfg),
+                                  const SizedBox(height: 12),
+                                ],
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),              
+                const Divider(height: 1),
+
+                Container(
+                  width: double.infinity,
+                  color: Colors.grey[200],
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Center(
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: Text('Cancel'),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      );
-    },
-  );
-}
+        );
+      },
+    );
+  }
 
   void _openAddPlannedVisitDialog() {
   _doctorNameController.clear();
@@ -3405,7 +3857,7 @@ void _openCreateEFormDialog() {
       );
     },
   );
-}
+  }
 
   void _openAddNewClientDialog() {
   showDialog(
@@ -3691,7 +4143,7 @@ void _openCreateEFormDialog() {
       );
     },
   );
-}
+  }
 
   Widget _buildEFormTypeTile({
     required IconData icon,
@@ -4053,7 +4505,6 @@ void _openCreateEFormDialog() {
                                       child: InkWell(
                                         onTap: () async {
                                           if (!_isTimedIn) {
-                                            // Currently not timed in -> open Time In dialog
                                             final bool? didTimeIn = await _openTimeInDialog();
                                             if (didTimeIn == true) {
                                               setState(() {
@@ -4061,7 +4512,6 @@ void _openCreateEFormDialog() {
                                               });
                                             }
                                           } else {
-                                            // Already timed in -> open Time Out dialog
                                             final bool? didTimeOut = await _openTimeOutDialog();
                                             if (didTimeOut == true) {
                                               setState(() {
@@ -4212,6 +4662,7 @@ void _openCreateEFormDialog() {
                                             ),
                                           ),
                                         ),
+                                      
                                       ],
                                     ),
                                   ),
@@ -4268,7 +4719,7 @@ void _openCreateEFormDialog() {
                                   // Build the Doctor collection for this MR using the same logic as DoctorDetailPage.[file:11]
                                   final doctorsCol = _doctorCollectionRefForHome(
                                     userClientType: userClientType,
-                                    userId: _userId, // MR00001 from SharedPreferences
+                                    userId: _userId, 
                                   );
 
                                   return doctorsCol.get().timeout(
@@ -4471,6 +4922,8 @@ void _openCreateEFormDialog() {
 
                               SizedBox(height: 24),
                               
+                              // CALL PERFORMANCE SECTION
+
                               Padding(
                                 padding: EdgeInsets.only(left: 20),
                                 child: Text(
@@ -4504,26 +4957,35 @@ void _openCreateEFormDialog() {
                                           ),
                                         ],
                                       ),
-                                      child: FutureBuilder<Map<String, int>>(
-                                        future: getAccomplishedVisitsForToday(emailKey, userName)
-                                            .timeout(
-                                              Duration(seconds: 10),
-                                              onTimeout: () {
-                                                print('Timeout loading today accomplished');
-                                                return {"total": 0, "accomplished": 0};
-                                              },
-                                            ),
-                                        builder: (context, snapshot) {
-                                          if (snapshot.hasError) {
-                                            print('Error loading today accomplished: ${snapshot.error}');
-                                            return Container(
+                                      child: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                                        future: (() {
+                                          final doctorsCol = _doctorCollectionRefForHome(
+                                            userClientType: userClientType,
+                                            userId: _userId,
+                                          );
+
+                                          return doctorsCol.get().timeout(
+                                            const Duration(seconds: 10),
+                                            onTimeout: () {
+                                              throw TimeoutException('Failed to load doctors data');
+                                            },
+                                          );
+                                        })(),
+                                        builder: (context, doctorSnapshot) {
+                                          if (doctorSnapshot.hasError) {
+                                            print('Error loading doctors for count: ${doctorSnapshot.error}');
+                                            return SizedBox(
                                               height: 120,
                                               child: Column(
                                                 mainAxisAlignment: MainAxisAlignment.center,
                                                 children: [
-                                                  Icon(Icons.error_outline, color: Colors.red, size: 24),
-                                                  SizedBox(height: 4),
-                                                  Text(
+                                                  const Icon(
+                                                    Icons.error_outline,
+                                                    color: Colors.red,
+                                                    size: 24,
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  const Text(
                                                     'Error loading data',
                                                     textAlign: TextAlign.center,
                                                     style: TextStyle(color: Colors.red, fontSize: 11),
@@ -4532,15 +4994,17 @@ void _openCreateEFormDialog() {
                                                     onPressed: () {
                                                       setState(() {});
                                                     },
-                                                    child: Text('Retry', style: TextStyle(fontSize: 10)),
+                                                    child: const Text(
+                                                      'Retry',
+                                                      style: TextStyle(fontSize: 10),
+                                                    ),
                                                   ),
                                                 ],
                                               ),
                                             );
                                           }
 
-                                          if (snapshot.connectionState == ConnectionState.waiting &&
-                                              !snapshot.hasData) {
+                                          if (doctorSnapshot.connectionState == ConnectionState.waiting) {
                                             return const SizedBox(
                                               height: 120,
                                               child: Center(
@@ -4549,14 +5013,14 @@ void _openCreateEFormDialog() {
                                             );
                                           }
 
-                                          if (!snapshot.hasData) {
+                                          if (!doctorSnapshot.hasData || doctorSnapshot.data!.docs.isEmpty) {
                                             return SizedBox(
                                               height: 120,
                                               child: Center(
                                                 child: Text(
                                                   _isOffline
-                                                      ? "Offline: showing last known performance from cache."
-                                                      : "Unable to load today's data.",
+                                                      ? "Offline: showing last known data."
+                                                      : "No doctors found.",
                                                   textAlign: TextAlign.center,
                                                   style: TextStyle(
                                                     color: Colors.grey[700],
@@ -4567,95 +5031,148 @@ void _openCreateEFormDialog() {
                                             );
                                           }
 
-                                          final Map<String, int> data = snapshot.data!;
-                                          final int total = data['total'] ?? 0;
-                                          final int accomplished = data['accomplished'] ?? 0;
-                                          final double ratio = total == 0 ? 0.0 : accomplished / total;
-                                          final double percent = ratio.clamp(0.0, 1.0);
+                                          final List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs =
+                                              doctorSnapshot.data!.docs;
 
-                                          return Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                "Today's Accomplished",
-                                                style: TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          return FutureBuilder<Map<String, int>>(
+                                            future: getAccomplishedVisitsForToday(
+                                              doctorDocs: doctorDocs,
+                                              selectedDay: DateTime.now(),
+                                            ).timeout(
+                                              const Duration(seconds: 10),
+                                              onTimeout: () {
+                                                print('Timeout counting scheduled visits');
+                                                return {'total': 0, 'submitted': 0};
+                                              },
+                                            ),
+                                            builder: (context, countSnapshot) {
+                                              if (countSnapshot.hasError) {
+                                                print('Error counting visits: ${countSnapshot.error}');
+                                                return SizedBox(
+                                                  height: 120,
+                                                  child: Column(
+                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                    children: [
+                                                      const Icon(
+                                                        Icons.error_outline,
+                                                        color: Colors.red,
+                                                        size: 24,
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      const Text(
+                                                        'Error loading count',
+                                                        textAlign: TextAlign.center,
+                                                        style: TextStyle(color: Colors.red, fontSize: 11),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                              }
+
+                                              if (countSnapshot.connectionState == ConnectionState.waiting &&
+                                                  !countSnapshot.hasData) {
+                                                return const SizedBox(
+                                                  height: 120,
+                                                  child: Center(
+                                                    child: CircularProgressIndicator(),
+                                                  ),
+                                                );
+                                              }
+
+                                              final Map<String, int> counts = countSnapshot.data ?? {'total': 0, 'submitted': 0};
+                                              final int scheduledCount = counts['total'] ?? 0;
+                                              final int submittedCount = counts['submitted'] ?? 0;
+
+                                              final double ratio = scheduledCount == 0
+                                                  ? 0.0
+                                                  : submittedCount / scheduledCount;
+                                              final double percent = ratio.clamp(0.0, 1.0);
+
+                                              return Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
-                                                  const SizedBox.shrink(),
-                                                  Container(
-                                                    width: 26,
-                                                    height: 26,
-                                                    decoration: const BoxDecoration(
-                                                      color: Color(0xFFF5F4FF),
-                                                      shape: BoxShape.circle,
+                                                  const Text(
+                                                    "Today's Accomplished",
+                                                    style: TextStyle(
+                                                      fontFamily: 'Lato',
+                                                      fontSize: 16,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: Colors.black,
                                                     ),
-                                                    child: Icon(
-                                                      Icons.speed,
-                                                      size: 16,
-                                                      color: Colors.purple.shade400,
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      const SizedBox.shrink(),
+                                                      Container(
+                                                        width: 26,
+                                                        height: 26,
+                                                        decoration: const BoxDecoration(
+                                                          color: Color(0xFFF5F4FF),
+                                                          shape: BoxShape.circle,
+                                                        ),
+                                                        child: Icon(
+                                                          Icons.speed,
+                                                          size: 16,
+                                                          color: Colors.purple.shade400,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  SizedBox(
+                                                    height: 96,
+                                                    child: Row(
+                                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                                      children: [
+                                                        Expanded(
+                                                          child: Text(
+                                                            ratio.toStringAsFixed(2),
+                                                            maxLines: 1,
+                                                            overflow: TextOverflow.ellipsis,
+                                                            style: const TextStyle(
+                                                              fontFamily: 'Lato',
+                                                              fontSize: 32,
+                                                              fontWeight: FontWeight.w900,
+                                                              color: Colors.black,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 8),
+                                                        SizedBox(
+                                                          width: 70,
+                                                          height: 70,
+                                                          child: CustomPaint(
+                                                            painter: _DonutPainter(
+                                                              progress: percent,
+                                                              color: Colors.green.shade500,
+                                                              strokeWidth: 12,
+                                                              backgroundColor: const Color(0xFFE8ECEF),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    '$submittedCount / $scheduledCount',
+                                                    style: const TextStyle(
+                                                      fontFamily: 'Lato',
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Colors.black,
                                                     ),
                                                   ),
                                                 ],
-                                              ),
-                                              const SizedBox(height: 4),
-                                              SizedBox(
-                                                height: 96,
-                                                child: Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                                  children: [
-                                                    Expanded(
-                                                      child: Text(
-                                                        ratio.toStringAsFixed(2),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: const TextStyle(
-                                                          fontFamily: 'Lato',
-                                                          fontSize: 32,
-                                                          fontWeight: FontWeight.w900,
-                                                          color: Colors.black,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    SizedBox(
-                                                      width: 70,
-                                                      height: 70,
-                                                      child: CustomPaint(
-                                                        painter: _DonutPainter(
-                                                          progress: percent,
-                                                          color: Colors.green.shade500,
-                                                          strokeWidth: 12,
-                                                          backgroundColor: const Color(0xFFE8ECEF),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '$accomplished / $total',
-                                                style: const TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                            ],
-                                          );
+                                              );
+                                            },
+                                          );                                        
                                         },
                                       ),
-                                    ),
-
+                                    ),                                    
+                                                                        
                                     // MONTH'S ACCOMPLISHED
                                     Container(
                                       width: 220,
@@ -4672,26 +5189,35 @@ void _openCreateEFormDialog() {
                                           ),
                                         ],
                                       ),
-                                      child: FutureBuilder<Map<String, int>>(
-                                        future: _getAccomplishedVisitsForMonth(emailKey, userName)
-                                            .timeout(
-                                              Duration(seconds: 10),
-                                              onTimeout: () {
-                                                print('Timeout loading month accomplished');
-                                                return {"total": 0, "accomplished": 0};
-                                              },
-                                            ),
-                                        builder: (context, snapshot) {
-                                          if (snapshot.hasError) {
-                                            print('Error loading month accomplished: ${snapshot.error}');
-                                            return Container(
+                                      child: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                                        future: (() {
+                                          final doctorsCol = _doctorCollectionRefForHome(
+                                            userClientType: userClientType,
+                                            userId: _userId, // or mrCode if that’s your MR id
+                                          );
+
+                                          return doctorsCol.get().timeout(
+                                            const Duration(seconds: 10),
+                                            onTimeout: () {
+                                              throw TimeoutException('Failed to load doctors data for month');
+                                            },
+                                          );
+                                        })(),
+                                        builder: (context, doctorSnapshot) {
+                                          if (doctorSnapshot.hasError) {
+                                            print('Error loading doctors for month: ${doctorSnapshot.error}');
+                                            return SizedBox(
                                               height: 120,
                                               child: Column(
                                                 mainAxisAlignment: MainAxisAlignment.center,
                                                 children: [
-                                                  Icon(Icons.error_outline, color: Colors.red, size: 24),
-                                                  SizedBox(height: 4),
-                                                  Text(
+                                                  const Icon(
+                                                    Icons.error_outline,
+                                                    color: Colors.red,
+                                                    size: 24,
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  const Text(
                                                     'Error loading data',
                                                     textAlign: TextAlign.center,
                                                     style: TextStyle(color: Colors.red, fontSize: 11),
@@ -4700,15 +5226,17 @@ void _openCreateEFormDialog() {
                                                     onPressed: () {
                                                       setState(() {});
                                                     },
-                                                    child: Text('Retry', style: TextStyle(fontSize: 10)),
+                                                    child: const Text(
+                                                      'Retry',
+                                                      style: TextStyle(fontSize: 10),
+                                                    ),
                                                   ),
                                                 ],
                                               ),
                                             );
                                           }
 
-                                          if (snapshot.connectionState == ConnectionState.waiting &&
-                                              !snapshot.hasData) {
+                                          if (doctorSnapshot.connectionState == ConnectionState.waiting) {
                                             return const SizedBox(
                                               height: 120,
                                               child: Center(
@@ -4717,14 +5245,14 @@ void _openCreateEFormDialog() {
                                             );
                                           }
 
-                                          if (!snapshot.hasData) {
+                                          if (!doctorSnapshot.hasData || doctorSnapshot.data!.docs.isEmpty) {
                                             return SizedBox(
                                               height: 120,
                                               child: Center(
                                                 child: Text(
                                                   _isOffline
-                                                      ? "Offline: showing last known monthly performance from cache."
-                                                      : "Unable to load month's data.",
+                                                      ? "Offline: showing last known monthly data."
+                                                      : "No doctors found.",
                                                   textAlign: TextAlign.center,
                                                   style: TextStyle(
                                                     color: Colors.grey[700],
@@ -4735,96 +5263,150 @@ void _openCreateEFormDialog() {
                                             );
                                           }
 
-                                          final Map<String, int> data = snapshot.data!;
-                                          final int total = data['total'] ?? 0;
-                                          final int accomplished = data['accomplished'] ?? 0;
-                                          final double ratio = total == 0 ? 0.0 : accomplished / total;
-                                          final double percent = ratio.clamp(0.0, 1.0);
+                                          final List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs =
+                                              doctorSnapshot.data!.docs;
 
-                                          return Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                "Month's Accomplished",
-                                                style: TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          // Second FutureBuilder: count monthly accomplished visits
+                                          return FutureBuilder<Map<String, int>>(
+                                            future: getAccomplishedVisitsForMonthFromDoctors(
+                                              doctorDocs: doctorDocs,
+                                              referenceDay: DateTime.now(),
+                                            ).timeout(
+                                              const Duration(seconds: 10),
+                                              onTimeout: () {
+                                                print('Timeout counting monthly accomplished visits');
+                                                return {'total': 0, 'accomplished': 0};
+                                              },
+                                            ),
+                                            builder: (context, monthSnapshot) {
+                                              if (monthSnapshot.hasError) {
+                                                print('Error counting monthly visits: ${monthSnapshot.error}');
+                                                return SizedBox(
+                                                  height: 120,
+                                                  child: Column(
+                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                    children: const [
+                                                      Icon(
+                                                        Icons.error_outline,
+                                                        color: Colors.red,
+                                                        size: 24,
+                                                      ),
+                                                      SizedBox(height: 4),
+                                                      Text(
+                                                        'Error loading count',
+                                                        textAlign: TextAlign.center,
+                                                        style: TextStyle(color: Colors.red, fontSize: 11),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                              }
+
+                                              if (monthSnapshot.connectionState == ConnectionState.waiting &&
+                                                  !monthSnapshot.hasData) {
+                                                return const SizedBox(
+                                                  height: 120,
+                                                  child: Center(
+                                                    child: CircularProgressIndicator(),
+                                                  ),
+                                                );
+                                              }
+
+                                              final Map<String, int> counts =
+                                                  monthSnapshot.data ?? {'total': 0, 'accomplished': 0};
+                                              final int total = counts['total'] ?? 0;
+                                              final int accomplished = counts['accomplished'] ?? 0;
+
+                                              final double ratio =
+                                                  total == 0 ? 0.0 : accomplished / total;
+                                              final double percent = ratio.clamp(0.0, 1.0);
+
+                                              return Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
-                                                  const SizedBox.shrink(),
-                                                  Container(
-                                                    width: 26,
-                                                    height: 26,
-                                                    decoration: const BoxDecoration(
-                                                      color: Color(0xFFF5F4FF),
-                                                      shape: BoxShape.circle,
+                                                  const Text(
+                                                    "Month's Accomplished",
+                                                    style: TextStyle(
+                                                      fontFamily: 'Lato',
+                                                      fontSize: 16,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: Colors.black,
                                                     ),
-                                                    child: Icon(
-                                                      Icons.date_range,
-                                                      size: 16,
-                                                      color: Colors.purple.shade400,
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      const SizedBox.shrink(),
+                                                      Container(
+                                                        width: 26,
+                                                        height: 26,
+                                                        decoration: const BoxDecoration(
+                                                          color: Color(0xFFF5F4FF),
+                                                          shape: BoxShape.circle,
+                                                        ),
+                                                        child: Icon(
+                                                          Icons.date_range,
+                                                          size: 16,
+                                                          color: Colors.purple.shade400,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  SizedBox(
+                                                    height: 96,
+                                                    child: Row(
+                                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                                      children: [
+                                                        Expanded(
+                                                          child: Text(
+                                                            ratio.toStringAsFixed(2),
+                                                            maxLines: 1,
+                                                            overflow: TextOverflow.ellipsis,
+                                                            style: const TextStyle(
+                                                              fontFamily: 'Lato',
+                                                              fontSize: 32,
+                                                              fontWeight: FontWeight.w900,
+                                                              color: Colors.black,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 8),
+                                                        SizedBox(
+                                                          width: 70,
+                                                          height: 70,
+                                                          child: CustomPaint(
+                                                            painter: _DonutPainter(
+                                                              progress: percent,
+                                                              color: Colors.blue.shade500,
+                                                              strokeWidth: 12,
+                                                              backgroundColor: const Color(0xFFE8ECEF),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    '$accomplished / $total', // e.g., "15 / 20"
+                                                    style: const TextStyle(
+                                                      fontFamily: 'Lato',
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Colors.black,
                                                     ),
                                                   ),
                                                 ],
-                                              ),
-                                              const SizedBox(height: 4),
-                                              SizedBox(
-                                                height: 96,
-                                                child: Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                                  children: [
-                                                    Expanded(
-                                                      child: Text(
-                                                        ratio.toStringAsFixed(2),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: const TextStyle(
-                                                          fontFamily: 'Lato',
-                                                          fontSize: 32,
-                                                          fontWeight: FontWeight.w900,
-                                                          color: Colors.black,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    SizedBox(
-                                                      width: 70,
-                                                      height: 70,
-                                                      child: CustomPaint(
-                                                        painter: _DonutPainter(
-                                                          progress: percent,
-                                                          color: Colors.blue.shade500,
-                                                          strokeWidth: 12,
-                                                          backgroundColor: const Color(0xFFE8ECEF),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '$accomplished / $total',
-                                                style: const TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                            ],
+                                              );
+                                            },
                                           );
                                         },
                                       ),
-                                    ),
-
-                                    // CALL REACH
+                                    ),                                    
+                                    
+                                    // CALL REACH (Number of Doctors visited at least once divided by the number of Doctors)
                                     Container(
                                       width: 220,
                                       margin: const EdgeInsets.only(right: 16),
@@ -4841,11 +5423,11 @@ void _openCreateEFormDialog() {
                                         ],
                                       ),
                                       child: FutureBuilder<Map<String, dynamic>>(
-                                        future: _getCallReachStats(emailKey, userName)
+                                        future: getCallReachStats('IVA', 'MR00001')  // Replace with your actual clientId/userId
                                             .timeout(
-                                              Duration(seconds: 10),
+                                              Duration(seconds: 15),  // Increased timeout for more data
                                               onTimeout: () {
-                                                print('Timeout loading call reach');
+                                                print('Timeout loading monthly call reach');
                                                 return {
                                                   'callReach': 0.0,
                                                   'totalDoctors': 0,
@@ -4995,189 +5577,189 @@ void _openCreateEFormDialog() {
                                         },
                                       ),
                                     ),
-
-                                    // CALL FREQUENCY
+                                                                        
+                                    // CALL FREQUENCY (Number of Doctors with completed frequency visits divided by the number of Doctors)
                                     Container(
-                                      width: 220,
-                                      margin: const EdgeInsets.only(right: 16),
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(18),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(0.05),
-                                            blurRadius: 10,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: FutureBuilder<Map<String, dynamic>>(
-                                        future: _getCallFrequencyStats(emailKey, userName)
-                                            .timeout(
-                                              Duration(seconds: 10),
-                                              onTimeout: () {
-                                                print('Timeout loading call frequency');
-                                                return {
-                                                  'frequencyPercent': 0.0,
-                                                  'totalDoctors': 0,
-                                                  'completedFrequency': 0,
-                                                };
-                                              },
+                                        width: 220,
+                                        margin: const EdgeInsets.only(right: 16),
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(18),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(0.05),
+                                              blurRadius: 10,
+                                              offset: const Offset(0, 4),
                                             ),
-                                        builder: (context, snapshot) {
-                                          if (snapshot.hasError) {
-                                            print('Error loading call frequency: ${snapshot.error}');
-                                            return Container(
-                                              height: 120,
-                                              child: Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Icon(Icons.error_outline, color: Colors.red, size: 24),
-                                                  SizedBox(height: 4),
-                                                  Text(
-                                                    'Error loading data',
-                                                    textAlign: TextAlign.center,
-                                                    style: TextStyle(color: Colors.red, fontSize: 11),
-                                                  ),
-                                                  TextButton(
-                                                    onPressed: () {
-                                                      setState(() {});
-                                                    },
-                                                    child: Text('Retry', style: TextStyle(fontSize: 10)),
-                                                  ),
-                                                ],
+                                          ],
+                                        ),
+                                        child: FutureBuilder<Map<String, dynamic>>(
+                                          future: _getCallFrequencyStatss()
+                                              .timeout(
+                                                Duration(seconds: 10),
+                                                onTimeout: () {
+                                                  print('Timeout loading call frequency');
+                                                  return {
+                                                    'frequencyPercent': 0.0,
+                                                    'totalDoctors': 0,
+                                                    'completedFrequency': 0,
+                                                  };
+                                                },
                                               ),
-                                            );
-                                          }
-
-                                          if (snapshot.connectionState == ConnectionState.waiting &&
-                                              !snapshot.hasData) {
-                                            return const SizedBox(
-                                              height: 120,
-                                              child: Center(
-                                                child: CircularProgressIndicator(),
-                                              ),
-                                            );
-                                          }
-
-                                          if (!snapshot.hasData) {
-                                            return SizedBox(
-                                              height: 120,
-                                              child: Center(
-                                                child: Text(
-                                                  _isOffline
-                                                      ? "Offline: showing last known call frequency from cache."
-                                                      : "Unable to load call frequency data.",
-                                                  textAlign: TextAlign.center,
-                                                  style: TextStyle(
-                                                    color: Colors.grey[700],
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                              ),
-                                            );
-                                          }
-
-                                          final Map<String, dynamic> data = snapshot.data!;
-                                          final double frequencyPercent =
-                                              (data['frequencyPercent'] ?? 0.0) as double;
-                                          final int totalDoctors = (data['totalDoctors'] ?? 0) as int;
-                                          final int completedFrequency =
-                                              (data['completedFrequency'] ?? 0) as int;
-                                          final double percent =
-                                              (frequencyPercent / 100.0).clamp(0.0, 1.0);
-
-                                          return Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                "Call Frequency",
-                                                style: TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                children: [
-                                                  const SizedBox.shrink(),
-                                                  Container(
-                                                    width: 26,
-                                                    height: 26,
-                                                    decoration: const BoxDecoration(
-                                                      color: Color(0xFFF5F4FF),
-                                                      shape: BoxShape.circle,
-                                                    ),
-                                                    child: Icon(
-                                                      Icons.repeat,
-                                                      size: 16,
-                                                      color: Colors.purple.shade400,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 4),
-                                              SizedBox(
-                                                height: 96,
-                                                child: Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                          builder: (context, snapshot) {
+                                            if (snapshot.hasError) {
+                                              print('Error loading call frequency: ${snapshot.error}');
+                                              return Container(
+                                                height: 120,
+                                                child: Column(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
                                                   children: [
-                                                    Expanded(
-                                                      child: Text(
-                                                        frequencyPercent.toStringAsFixed(2),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: const TextStyle(
-                                                          fontFamily: 'Lato',
-                                                          fontSize: 32,
-                                                          fontWeight: FontWeight.w900,
-                                                          color: Colors.black,
-                                                        ),
-                                                      ),
+                                                    Icon(Icons.error_outline, color: Colors.red, size: 24),
+                                                    SizedBox(height: 4),
+                                                    Text(
+                                                      'Error loading data',
+                                                      textAlign: TextAlign.center,
+                                                      style: TextStyle(color: Colors.red, fontSize: 11),
                                                     ),
-                                                    const SizedBox(width: 8),
-                                                    SizedBox(
-                                                      width: 70,
-                                                      height: 70,
-                                                      child: CustomPaint(
-                                                        painter: _DonutPainter(
-                                                          progress: percent,
-                                                          color: Colors.purple.shade600,
-                                                          strokeWidth: 12,
-                                                          backgroundColor: const Color(0xFFE8ECEF),
-                                                        ),
+                                                    TextButton(
+                                                      onPressed: () {
+                                                        setState(() {});
+                                                      },
+                                                      child: Text('Retry', style: TextStyle(fontSize: 10)),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            }
+
+                                            if (snapshot.connectionState == ConnectionState.waiting &&
+                                                !snapshot.hasData) {
+                                              return const SizedBox(
+                                                height: 120,
+                                                child: Center(
+                                                  child: CircularProgressIndicator(),
+                                                ),
+                                              );
+                                            }
+
+                                            if (!snapshot.hasData) {
+                                              return SizedBox(
+                                                height: 120,
+                                                child: Center(
+                                                  child: Text(
+                                                    _isOffline
+                                                        ? "Offline: showing last known call frequency from cache."
+                                                        : "Unable to load call frequency data.",
+                                                    textAlign: TextAlign.center,
+                                                    style: TextStyle(
+                                                      color: Colors.grey[700],
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                            }
+
+                                            final Map<String, dynamic> data = snapshot.data!;
+                                            final double frequencyPercent =
+                                                (data['frequencyPercent'] ?? 0.0) as double;
+                                            final int totalDoctors = (data['totalDoctors'] ?? 0) as int;
+                                            final int completedFrequency =
+                                                (data['completedFrequency'] ?? 0) as int;
+                                            final double percent =
+                                                (frequencyPercent / 100.0).clamp(0.0, 1.0);
+
+                                            return Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                const Text(
+                                                  "Call Frequency",
+                                                  style: TextStyle(
+                                                    fontFamily: 'Lato',
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: Colors.black,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Row(
+                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                  children: [
+                                                    const SizedBox.shrink(),
+                                                    Container(
+                                                      width: 26,
+                                                      height: 26,
+                                                      decoration: const BoxDecoration(
+                                                        color: Color(0xFFF5F4FF),
+                                                        shape: BoxShape.circle,
+                                                      ),
+                                                      child: Icon(
+                                                        Icons.repeat,
+                                                        size: 16,
+                                                        color: Colors.purple.shade400,
                                                       ),
                                                     ),
                                                   ],
                                                 ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '$completedFrequency / $totalDoctors',
-                                                style: const TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.black,
+                                                const SizedBox(height: 4),
+                                                SizedBox(
+                                                  height: 96,
+                                                  child: Row(
+                                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                                    children: [
+                                                      Expanded(
+                                                        child: Text(
+                                                          frequencyPercent.toStringAsFixed(2),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: const TextStyle(
+                                                            fontFamily: 'Lato',
+                                                            fontSize: 32,
+                                                            fontWeight: FontWeight.w900,
+                                                            color: Colors.black,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      SizedBox(
+                                                        width: 70,
+                                                        height: 70,
+                                                        child: CustomPaint(
+                                                          painter: _DonutPainter(
+                                                            progress: percent,
+                                                            color: Colors.purple.shade600,
+                                                            strokeWidth: 12,
+                                                            backgroundColor: const Color(0xFFE8ECEF),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
-                                          );
-                                        },
-                                      ),
-                                    ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  '$completedFrequency / $totalDoctors',
+                                                  style: const TextStyle(
+                                                    fontFamily: 'Lato',
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.black,
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          },
+                                        ),
+                                      ), 
+                                  
                                   ],
                                 ),
                               ),
+                            
                             ],
                           ),
                         ),
-
-                        // MARK MARK MARK
 
                       ],
                     ),
@@ -5234,6 +5816,42 @@ void _openCreateEFormDialog() {
     );
   }
 
+  Widget _buildEFormTileFromConfig(
+  BuildContext ctx,
+  BuildContext sheetContext,
+  EFormChipConfig config,
+) {
+  final meta = kEFormMetaRegistry[config.formKey];
+
+  // If no metadata found, create a default tile that still works
+  if (meta == null) {
+    return _buildEFormTypeTile(
+      icon: Icons.description,
+      title: config.title,
+      subtitle: 'Open form',
+      color: Colors.blueGrey,
+      onTap: () async {
+        debugPrint('${config.title} tapped');
+        Navigator.of(sheetContext).pop();
+        await _openSelectedEForm(config);
+      },
+    );
+  }
+
+  // If metadata exists, use it
+  return _buildEFormTypeTile(
+    icon: meta.icon,
+    title: meta.title,
+    subtitle: meta.subtitle,
+    color: meta.color,
+    onTap: () async {
+      debugPrint('${config.title} tapped');
+      Navigator.of(sheetContext).pop();
+      await _openSelectedEForm(config);
+    },
+  );
+}
+  
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -5277,7 +5895,7 @@ void _openCreateEFormDialog() {
             padding: const EdgeInsets.only(right: 16, top: 5, bottom: 5),
             child: Center(
               child: Text(
-                'iDoXs',
+                'Daloy',
                 style: const TextStyle(
                   fontFamily: 'Lato',
                   fontSize: 24,
@@ -5990,132 +6608,844 @@ void _openCreateEFormDialog() {
       },
     ),
   );
-}
+  }
   
-Widget _buildSamplesToBringRow(List<Map<String, dynamic>> samplesList) {
-  return StatefulBuilder(
-    builder: (context, setBoxState) {
-      return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        clipBehavior: Clip.none,
-        child: Row(
-          children: samplesList.asMap().entries.map((entry) {
-            int idx = entry.key;
-            var item = entry.value;
-            final bool isChecked = checkedStates[idx] ?? false;
-            final String promoName = item['sample'] ?? '';
-            final int qty = item['qty'] ?? 0;
+  Widget _buildSamplesToBringRow(List<Map<String, dynamic>> samplesList) {
+    return StatefulBuilder(
+      builder: (context, setBoxState) {
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.none,
+          child: Row(
+            children: samplesList.asMap().entries.map((entry) {
+              int idx = entry.key;
+              var item = entry.value;
+              final bool isChecked = checkedStates[idx] ?? false;
+              final String promoName = item['sample'] ?? '';
+              final int qty = item['qty'] ?? 0;
 
-            return Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: GestureDetector(
-                onTap: () {
-                  checkedStates[idx] = !(checkedStates[idx] ?? false);
-                  setBoxState(() {});
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeInOut,
-                  width: 160,
-                  height: 160,
-                  padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
-                  decoration: BoxDecoration(
-                    color: isChecked
-                        ? Colors.green.shade50
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
+              return Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: GestureDetector(
+                  onTap: () {
+                    checkedStates[idx] = !(checkedStates[idx] ?? false);
+                    setBoxState(() {});
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut,
+                    width: 160,
+                    height: 160,
+                    padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
+                    decoration: BoxDecoration(
                       color: isChecked
-                          ? Colors.green
-                          : Colors.grey.shade200,
-                      width: isChecked ? 1.5 : 0.5,
+                          ? Colors.green.shade50
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isChecked
+                            ? Colors.green
+                            : Colors.grey.shade200,
+                        width: isChecked ? 1.5 : 0.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isChecked
+                              ? Colors.green.withValues(alpha: 0.15)
+                              : Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 16,
+                          spreadRadius: 0,
+                          offset: const Offset(0, 6),
+                        ),
+                        BoxShadow(
+                          color: isChecked
+                              ? Colors.green.withValues(alpha: 0.06)
+                              : Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 6,
+                          spreadRadius: 0,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: isChecked
-                            ? Colors.green.withValues(alpha: 0.15)
-                            : Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 16,
-                        spreadRadius: 0,
-                        offset: const Offset(0, 6),
-                      ),
-                      BoxShadow(
-                        color: isChecked
-                            ? Colors.green.withValues(alpha: 0.06)
-                            : Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 6,
-                        spreadRadius: 0,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Icon
-                      Container(
-                        width: 55,
-                        height: 55,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFEEEDFE),
-                          shape: BoxShape.circle,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Icon
+                        Container(
+                          width: 55,
+                          height: 55,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEEEDFE),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            LucideIcons.package,
+                            size: 26,
+                            color: Color(0xFF4A2371),
+                          ),
                         ),
-                        child: Icon(
-                          LucideIcons.package,
-                          size: 26,
-                          color: Color(0xFF4A2371),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 16),
 
-                      // Product name
-                      Text(
-                        promoName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontFamily: 'OpenSauce',
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                          color: Colors.black87,
+                        // Product name
+                        Text(
+                          promoName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontFamily: 'OpenSauce',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: Colors.black87,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
+                        const SizedBox(height: 6),
 
-                      // Quantity
-                      RichText(
-                        text: TextSpan(
-                          style: const TextStyle(fontSize: 14),
-                          children: [
-                            TextSpan(
-                              text: 'Qty: ',
-                              style: TextStyle(
-                                color: Colors.grey.shade800,
+                        // Quantity
+                        RichText(
+                          text: TextSpan(
+                            style: const TextStyle(fontSize: 14),
+                            children: [
+                              TextSpan(
+                                text: 'Qty: ',
+                                style: TextStyle(
+                                  color: Colors.grey.shade800,
+                                ),
                               ),
-                            ),
-                            TextSpan(
-                              text: '${qty}x',
-                              style: const TextStyle(
-                                color: Color(0xFF4A2371),
-                                fontWeight: FontWeight.w700,
+                              TextSpan(
+                                text: '${qty}x',
+                                style: const TextStyle(
+                                  color: Color(0xFF4A2371),
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            );
-          }).toList(),
-        ),
-      );
-    },
-  );
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+  }
+}
+class EFormWebViewPage extends StatefulWidget {
+  final String localHtmlPath;
+  final String title;
+
+  const EFormWebViewPage({
+    Key? key,
+    required this.localHtmlPath,
+    required this.title,
+  }) : super(key: key);
+
+  @override
+  State<EFormWebViewPage> createState() => _EFormWebViewPageState();
 }
 
+class _EFormWebViewPageState extends State<EFormWebViewPage> {
+  late WebViewController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeWebView();
+  }
+
+  void _initializeWebView() {
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0x00000000))
+      ..addJavaScriptChannel(
+        'InFieldBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from InFieldBridge: ${message.message}',
+          );
+          await _handleInFieldFormSubmission(message.message);
+        },
+      )
+      ..addJavaScriptChannel(
+        'IncidentalCoverageBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from IncidentalCoverageBridge: ${message.message}',
+          );
+          await _handleIncidentalCoverageFormSubmission(message.message);
+        },
+      )
+      ..addJavaScriptChannel(
+        'SalesOrderBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from SalesOrderBridge: ${message.message}',
+          );
+          await _handleSalesOrderFormSubmission(message.message);
+        },
+      )
+      ..addJavaScriptChannel(
+        'DemoLiqBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from DemoLiqBridge: ${message.message}',
+          );
+          await _handleDemoLiquidationFormSubmission(message.message);
+        },
+      )
+      ..addJavaScriptChannel(
+        'CustomItineraryBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from CustomItineraryBridge: ${message.message}',
+          );
+          await _handleCustomItineraryFormSubmission(message.message);
+        },
+      )
+      ..addJavaScriptChannel(
+        'EIBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from EIBridge: ${message.message}',
+          );
+          await _handleEndingInventoryReportSubmission(message.message);
+        },
+      )
+      ..addJavaScriptChannel(
+        'F2FBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from F2FBridge: ${message.message}',
+          );
+          await _handleF2FVisitFormSubmission(message.message);
+        },
+      )
+      ..addJavaScriptChannel(
+        'CLFBridge',
+        onMessageReceived: (JavaScriptMessage message) async {
+          debugPrint(
+            'Received message from CLFBridge: ${message.message}',
+          );
+          await _handleCustomerLedgerFormSubmission(message.message);
+        },
+      )
+      ..loadFile(widget.localHtmlPath);
+  }
+
+  Future<void> _handleInFieldFormSubmission(String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed In-Field Coaching form data: $data');
+
+      final String firstName = (data['firstName'] ?? '').toString().trim();
+      final String middleName = (data['middleName'] ?? '').toString().trim();
+      final String lastName = (data['lastName'] ?? '').toString().trim();
+
+      String customDocId = '${firstName}_${middleName}_${lastName}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_');
+
+      if (customDocId.isEmpty || customDocId == '__') {
+        customDocId = FirebaseFirestore.instance
+            .collection('DaloyClients')
+            .doc('WERT')
+            .collection('EForms')
+            .doc('In-Field Coaching Form')
+            .collection('submissions')
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID: $customDocId');
+      } else {
+        debugPrint('Using custom document ID: $customDocId');
+      }
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('WERT')
+          .collection('EForms')
+          .doc('In-Field Coaching Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'In-Field Coaching form data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('In-Field Coaching Form submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling In-Field Coaching form submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting In-Field Coaching form: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleIncidentalCoverageFormSubmission(
+      String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed Incidental Coverage form data: $data');
+
+      final String firstName = (data['firstName'] ?? '').toString().trim();
+      final String middleName = (data['middleName'] ?? '').toString().trim();
+      final String lastName = (data['lastName'] ?? '').toString().trim();
+
+      String customDocId = '${firstName}_${middleName}_${lastName}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
+            .collection('DaloyClients')
+            .doc('WERT')
+            .collection('EForms')
+            .doc('Incidental Coverage Form')
+            .collection('submissions')
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID: $customDocId');
+      } else {
+        debugPrint('Using custom document ID: $customDocId');
+      }
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('WERT')
+          .collection('EForms')
+          .doc('Incidental Coverage Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'Incidental Coverage form data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Incidental Coverage Form submitted successfully!',
+          ),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling Incidental Coverage form submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting Incidental Coverage form: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleSalesOrderFormSubmission(String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed Sales Order form data: $data');
+
+      final String salesOrderNo =
+          (data['salesOrderNo'] ?? '').toString().trim();
+      final String soldTo = (data['soldTo'] ?? '').toString().trim();
+
+      String customDocId = '${salesOrderNo}_${soldTo}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
+            .collection('DaloyClients')
+            .doc('WERT')
+            .collection('EForms')
+            .doc('Sales Order Form')
+            .collection('submissions')
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID: $customDocId');
+      } else {
+        debugPrint('Using custom document ID: $customDocId');
+      }
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('WERT')
+          .collection('EForms')
+          .doc('Sales Order Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'Sales Order form data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sales Order Form submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling Sales Order form submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting Sales Order form: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleDemoLiquidationFormSubmission(
+      String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed Demo Liquidation form data: $data');
+
+      final String firstName = (data['firstName'] ?? '').toString().trim();
+      final String lastName = (data['lastName'] ?? '').toString().trim();
+      final String dateReceived =
+          (data['dateReceived'] ?? '').toString().trim();
+
+      String customDocId = '${firstName}_${lastName}_${dateReceived}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
+            .collection('DaloyClients')
+            .doc('IVA')
+            .collection('EForms')
+            .doc('Demo Liquidation Form')
+            .collection('submissions')
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID: $customDocId');
+      } else {
+        debugPrint('Using custom document ID: $customDocId');
+      }
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('EForms')
+          .doc('Demo Liquidation Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'Demo Liquidation form data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Demo Liquidation Form submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling Demo Liquidation form submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting Demo Liquidation form: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleCustomItineraryFormSubmission(String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed Custom Itinerary form data: $data');
+
+      final int year = (data['year'] ?? 0) as int;
+      final int month = (data['month'] ?? 0) as int; // 0‑based index
+      final String monthLabel = (data['monthLabel'] ?? '').toString();
+      final String userCode = (data['user']?['code'] ?? '').toString();
+      final String userName = (data['user']?['name'] ?? '').toString();
+
+      // Build a readable doc ID, e.g. 2025_03_RRICT‑RR143
+      final String safeUserCode = userCode.trim().isEmpty ? 'UNKNOWN' : userCode.trim();
+      final String safeUserName = userName.trim().isEmpty ? 'User' : userName.trim();
+
+      String customDocId =
+          '${year}_${month.toString().padLeft(2, '0')}_${safeUserCode}_$safeUserName'
+              .replaceAll(RegExp(r'[^\w\s-]'), '')
+              .replaceAll(RegExp(r'\s+'), '_')
+              .replaceAll(RegExp(r'_+'), '_')
+              .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
+            .collection('DaloyClients')
+            .doc('IVA')
+            .collection('EForms')
+            .doc('Custom Itinerary Form')
+            .collection('submissions')
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID for Custom Itinerary: $customDocId');
+      } else {
+        debugPrint('Using custom document ID for Custom Itinerary: $customDocId');
+      }
+
+      // Add server timestamp and some derived fields
+      final Map<String, dynamic> payload = Map<String, dynamic>.from(data)
+        ..['createdAt'] = FieldValue.serverTimestamp()
+        ..['yearMonthKey'] = '${year}_${month.toString().padLeft(2, '0')}'
+        ..['docId'] = customDocId;
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('EForms')
+          .doc('Custom Itinerary Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(payload);
+
+      debugPrint(
+        'Custom Itinerary data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Custom Itinerary submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling Custom Itinerary submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting Custom Itinerary: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+    
+  Future<void> _handleEndingInventoryReportSubmission(
+      String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed Ending Inventory Report data: $data');
+
+      // You can base the doc ID on EI reference + account name to keep it readable.
+      final String eiRef =
+          (data['eiReferenceNumber'] ?? '').toString().trim();
+      final String accountName =
+          (data['accountName'] ?? '').toString().trim();
+
+      String customDocId = '${eiRef}_${accountName}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
+            .collection('DaloyClients')
+            .doc('IVA')
+            .collection('EForms')
+            .doc('Ending Inventory Report')
+            .collection('submissions')
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID: $customDocId');
+      } else {
+        debugPrint('Using custom document ID: $customDocId');
+      }
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('EForms')
+          .doc('Ending Inventory Report')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'Ending Inventory Report saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ending Inventory Report submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint(
+        'Error handling Ending Inventory Report submission: $e',
+      );
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Error submitting Ending Inventory Report: $e',
+          ),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleF2FVisitFormSubmission(String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed F2F Visit Form data: $data');
+
+      final String visitRefNo =
+          (data['visitRefNo'] ?? '').toString().trim();
+      final String customerName =
+          (data['customerName'] ?? '').toString().trim();
+
+      // Build a readable custom ID: visitRefNo_customerName
+      String customDocId = '${visitRefNo}_${customerName}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
+            .collection('DaloyClients')
+            .doc('IVA')
+            .collection('EForms')
+            .doc('F2F Visit Form')
+            .collection('submissions')
+            .doc()
+            .id;
+        debugPrint('Using auto-generated document ID for F2F: $customDocId');
+      } else {
+        debugPrint('Using custom document ID for F2F: $customDocId');
+      }
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('EForms')
+          .doc('F2F Visit Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'F2F Visit Form data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('F2F Visit Form submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling F2F Visit Form submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting F2F Visit Form: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleCustomerLedgerFormSubmission(
+      String jsonMessage) async {
+    try {
+      final data = jsonDecode(jsonMessage) as Map<String, dynamic>;
+      debugPrint('Parsed Customer Ledger Form data: $data');
+
+      final String controlNumber =
+          (data['controlNumber'] ?? '').toString().trim();
+      final String customerName =
+          (data['customerName'] ?? '').toString().trim();
+
+      // Build a readable custom ID: controlNumber_customerName
+      String customDocId = '${controlNumber}_${customerName}'
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+
+      if (customDocId.isEmpty) {
+        customDocId = FirebaseFirestore.instance
+            .collection('DaloyClients')
+            .doc('IVA')
+            .collection('EForms')
+            .doc('Customer Ledger Form')
+            .collection('submissions')
+            .doc()
+            .id;
+        debugPrint(
+            'Using auto-generated document ID for Customer Ledger Form: $customDocId');
+      } else {
+        debugPrint(
+            'Using custom document ID for Customer Ledger Form: $customDocId');
+      }
+
+      await FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('EForms')
+          .doc('Customer Ledger Form')
+          .collection('submissions')
+          .doc(customDocId)
+          .set(data);
+
+      debugPrint(
+        'Customer Ledger Form data saved to Firestore successfully with ID: $customDocId',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Customer Ledger Form submitted successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e, stack) {
+      debugPrint('Error handling Customer Ledger Form submission: $e');
+      debugPrint('Stack trace: $stack');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error submitting Customer Ledger Form: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title),
+        backgroundColor: const Color(0xFF4A2371),
+        foregroundColor: Colors.white,
+      ),
+      body: WebViewWidget(controller: _controller),
+    );
+  }
 }

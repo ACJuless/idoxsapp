@@ -1,3 +1,24 @@
+// To be able to scroll back to other months, change this function : 
+// (DateTime, DateTime) _getCalendarRange() {
+//   final now = DateTime.now();
+
+//   // First day of next month
+//   final firstVisible = DateTime(now.year, now.month + 1, 1);
+
+//   // Last day of the month that is 2 months after next month (next + 2)
+//   final lastVisible =
+//       DateTime(firstVisible.year, firstVisible.month + 3, 1)
+//           .subtract(const Duration(days: 1));
+
+//   return (firstVisible, lastVisible);
+// }
+
+// TO THIS : 
+
+//  (DateTime, DateTime) _getCalendarRange() {
+//   return (DateTime.utc(2010, 1, 1), DateTime.utc(2050, 12, 31));
+// }
+
 import 'dart:async';
 import 'dart:math';
 
@@ -17,6 +38,7 @@ class ItineraryPage extends StatefulWidget {
 }
 
 class _ItineraryPageState extends State<ItineraryPage> {
+  /// We will initialize this to "next month" in initState.
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay = DateTime.now();
 
@@ -37,6 +59,13 @@ class _ItineraryPageState extends State<ItineraryPage> {
   @override
   void initState() {
     super.initState();
+
+    // Set focusedDay and selectedDay to NEXT month (1st day of next month)
+    final now = DateTime.now();
+    final nextMonth = DateTime(now.year, now.month + 1, 1);
+    _focusedDay = nextMonth;
+    _selectedDay = nextMonth;
+
     _loadUserPrefs();
   }
 
@@ -116,8 +145,6 @@ class _ItineraryPageState extends State<ItineraryPage> {
       // Iterate months in window
       DateTime cursor = DateTime(first.year, first.month, 1);
       while (!cursor.isAfter(last)) {
-        final monthId = _monthId(cursor);
-        // Iterate days in that month
         final monthStart = DateTime(cursor.year, cursor.month, 1);
         final monthEnd = DateTime(cursor.year, cursor.month + 1, 0);
 
@@ -257,6 +284,25 @@ class _ItineraryPageState extends State<ItineraryPage> {
 
     return allVisits;
   }
+
+  /// Calendar range logic:
+  /// - First visible month: NEXT month from "now" (1st day)
+  /// - Last visible month: NEXT month + 2 months (last day of that month)
+  /// Users cannot scroll before next month or after that 3‑month window.
+    (DateTime, DateTime) _getCalendarRange() {
+      final now = DateTime.now();
+
+      // First day of next month
+      final firstVisible = DateTime(now.year, now.month + 1, 1);
+
+      // Last day of the month that is 2 months after next month (next + 2)
+      // Example: if now is May, visible months: Jun, Jul, Aug
+      final lastVisible =
+          DateTime(firstVisible.year, firstVisible.month + 3, 1)
+              .subtract(const Duration(days: 1));
+
+      return (firstVisible, lastVisible);
+    }
 
   Widget _buildViewSelectorChip({
     required String label,
@@ -491,6 +537,8 @@ class _ItineraryPageState extends State<ItineraryPage> {
         ? _offFieldReasons[selectedDateKey]
         : null;
 
+    final (firstDay, lastDay) = _getCalendarRange();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Itinerary'),
@@ -566,13 +614,11 @@ class _ItineraryPageState extends State<ItineraryPage> {
                         ),
                         rowHeight: 105,
                         daysOfWeekHeight: 40,
-                        firstDay: DateTime.utc(2010, 1, 1),
-                        lastDay: DateTime.utc(2050, 12, 31),
+                        firstDay: firstDay,
+                        lastDay: lastDay,
                         focusedDay: _focusedDay,
                         selectedDayPredicate: (day) =>
-                            isSameDay(day, _selectedDay) ||
-                            (isSameDay(day, DateTime.now()) &&
-                                _selectedDay == null),
+                            isSameDay(day, _selectedDay),
                         onDaySelected: (selectedDay, focusedDay) {
                           setState(() {
                             _selectedDay = selectedDay;
@@ -1213,9 +1259,9 @@ class _ItineraryPageState extends State<ItineraryPage> {
                         borderRadius:
                             BorderRadius.circular(10),
                       ),
-                      child: Text(
-                        '$total',
-                        style: const TextStyle(
+                      child: const Text(
+                        'Today',
+                        style: TextStyle(
                           fontSize: 10,
                           color: Colors.white,
                           fontWeight: FontWeight.bold,

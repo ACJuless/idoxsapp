@@ -140,6 +140,7 @@ class _SignupPageState extends State<SignupPage> {
         final Map<String, dynamic> userData = {
           'email': email.toLowerCase(),
           'password': hashedPassword,
+          'plainPassword': _passwordController.text,
           'name': name,
           'territoryId': _selectedTerritory,
           'clientType': clientType,

@@ -52,7 +52,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
 
   String? emailKey;
   String userClientType = ''; // pharma / farmers / legacy
-  String _userId = '';        // MR00001 (MR code)
+  String _userId = ''; // MR00001 (MR code)
 
   @override
   void initState() {
@@ -114,18 +114,14 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
   ///   /Doctor/{doctorId}/Visits/{visitId}
   DocumentReference<Map<String, dynamic>> _visitDocRef() {
     final visitId = widget.scheduledVisitId; // yyyyMMdd
-    return _doctorDocRef()
-        .collection('Visits')
-        .doc(visitId);
+    return _doctorDocRef().collection('Visits').doc(visitId);
   }
 
   /// SampleAllocations document (samples + signature):
   ///   /Doctor/{doctorId}/SampleAllocations/{visitId}
   DocumentReference<Map<String, dynamic>> _sampleAllocationsDocRef() {
     final visitId = widget.scheduledVisitId; // yyyyMMdd
-    return _doctorDocRef()
-        .collection('SampleAllocations')
-        .doc(visitId);
+    return _doctorDocRef().collection('SampleAllocations').doc(visitId);
   }
 
   Future<void> _loadExistingSignature() async {
@@ -150,8 +146,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
         final allocMap =
             Map<String, dynamic>.from(data['sampleAllocations'] as Map);
         allocMap.forEach((key, val) {
-          final qty =
-              val is int ? val : int.tryParse(val.toString()) ?? 0;
+          final qty = val is int ? val : int.tryParse(val.toString()) ?? 0;
           if (qty > 0) {
             loadedSamples.add(key);
             loadedSampleQty[key] = qty;
@@ -292,6 +287,8 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
 
       // 3) If there is a signature, we also purge old int64 fields (per-sample)
       //    and then write sampleAllocations + signature in one go.
+      //    We also store VisitReference pointing to the Visit doc
+      //    AND mark the Visit doc's submitted = true.
       if (_controller.isNotEmpty) {
         await FirebaseFirestore.instance.runTransaction((txn) async {
           final currentSnap = await txn.get(sampleAllocRef);
@@ -307,6 +304,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
             'signatureSavedAt',
             'submitted',
             'submittedAt',
+            'VisitReference',
           };
 
           final Map<String, dynamic> cleaned = {};
@@ -336,15 +334,24 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
           cleaned['submitted'] = true;
           cleaned['submittedAt'] = FieldValue.serverTimestamp();
 
-          // Write back the cleaned document (legacy int64 fields are gone)
+          // New: link back to the Visit document
+          cleaned['VisitReference'] = visitRef;
+
+          // Write back the cleaned SampleAllocations document
           txn.set(sampleAllocRef, cleaned);
+
+          // Also mark the corresponding Visit document as submitted = true
+          txn.update(visitRef, {'submitted': true});
         });
       } else {
         // No signature yet -> just write/merge sampleAllocations.
+        // Also add VisitReference pointing to the Visit doc.
+        // We do NOT mark Visit as submitted yet.
         await sampleAllocRef.set(
           {
             'sampleAllocations': allocMapToSave,
             'submitted': false,
+            'VisitReference': visitRef,
           },
           SetOptions(merge: true),
         );
@@ -431,8 +438,8 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
               DropdownButtonFormField<String>(
                 value: dropdownValue,
                 items: medicineOptions
-                    .map((med) =>
-                        DropdownMenuItem(value: med, child: Text(med)))
+                    .map(
+                        (med) => DropdownMenuItem(value: med, child: Text(med)))
                     .toList(),
                 onChanged: (newVal) {
                   if (newVal != null) {
@@ -544,7 +551,8 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                                         (await sampleAllocRef.get()).data() ??
                                             {};
 
-                                    if (current.containsKey('sampleAllocations')) {
+                                    if (current
+                                        .containsKey('sampleAllocations')) {
                                       final allocMap =
                                           Map<String, dynamic>.from(
                                               current['sampleAllocations']
@@ -552,11 +560,13 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                                       allocMap.remove(sample);
                                       current['sampleAllocations'] = allocMap;
 
-                                      final hasAllocations = allocMap.isNotEmpty;
-                                      final hasSignature =
-                                          current.containsKey('signaturePoints');
+                                      final hasAllocations =
+                                          allocMap.isNotEmpty;
+                                      final hasSignature = current
+                                          .containsKey('signaturePoints');
 
-                                      if (!hasAllocations && !hasSignature) {
+                                      if (!hasAllocations &&
+                                          !hasSignature) {
                                         await sampleAllocRef.delete();
                                       } else {
                                         await sampleAllocRef.set(
@@ -565,8 +575,8 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                                         );
                                       }
                                     } else {
-                                      final hasSignature =
-                                          current.containsKey('signaturePoints');
+                                      final hasSignature = current
+                                          .containsKey('signaturePoints');
                                       if (!hasSignature) {
                                         await sampleAllocRef.delete();
                                       } else {
@@ -633,8 +643,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                         decoration: BoxDecoration(
                           color: Colors.green.shade100,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                              color: Colors.green.shade700),
+                          border: Border.all(color: Colors.green.shade700),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
