@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 import 'package:image/image.dart' as imgpkg;
 import 'dart:convert';
 import 'dart:io';
-import 'add_note_input_for_calldetail_page.dart';
 import 'add_visit_page.dart';
 import 'call_detail_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -107,7 +106,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
     if (userClientType == 'pharma') {
       final lower = userEmail.toLowerCase();
       if (lower.endsWith('@wert.com')) return 'WERT';
-      // Default pharma segment is IVA if not WERT. [file:15]
+      // Default pharma segment is IVA if not WERT.
       return 'IVA';
     }
     // fallback for 'both' or others: infer by email domain
@@ -554,6 +553,11 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                                     "Middle Name",
                                     widget.doctor?['middleName']?.toString(),
                                   ),
+                            // Frequency of Planned Visits below Middle Name
+                            infoRow(
+                              'Frequency of Planned Visits',
+                              widget.doctor?['freq']?.toString(),
+                            ),
                           ],
                         ),
                       ),
@@ -598,23 +602,6 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
                   ),
                 ),
               ),
-              sectionTitle(Icons.calendar_today, "Call Plan"),
-              Card(
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      infoRow(
-                        'Frequency of Planned Visits',
-                        widget.doctor?['freq']?.toString(),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
               sectionTitle(
                 Icons.home,
                 "Address",
@@ -624,7 +611,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
               Card(
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
-              child: Container(
+                child: Container(
                   padding: const EdgeInsets.all(18),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -697,7 +684,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
             ],
           ),
 
-          // CALL NOTES TAB
+          // CALL NOTES TAB (only visits that have Pre‑Call notes)
           CallNotesTab(
             docId: widget.doc_id,
             userId: _userId,
@@ -705,7 +692,7 @@ class _DoctorDetailPageState extends State<DoctorDetailPage>
             userEmail: _userEmail,
           ),
 
-          // VISITS TAB
+          // VISITS TAB (only visits in current month)
           VisitsTab(
             docId: widget.doc_id,
             doctor: widget.doctor,
@@ -816,58 +803,137 @@ class CallNotesTab extends StatelessWidget {
     return 'GENERAL';
   }
 
-  CollectionReference<Map<String, dynamic>> _doctorCollectionRef() {
+  CollectionReference<Map<String, dynamic>> _visitsCollection() {
     final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
     final clientSegment =
         _getClientSegment(userClientType: userClientType, userEmail: userEmail);
 
     final userDocRef =
         daloyRoot.doc(clientSegment).collection('Users').doc(userId);
-    return userDocRef.collection('Doctor');
+    return userDocRef.collection('Doctor').doc(docId).collection('Visits');
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8.0),
-      child: StreamBuilder<QuerySnapshot>(
-        stream: _doctorCollectionRef()
-            .doc(docId)
-            .collection('callNotes')
-            .orderBy('timestamp', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final notes = snapshot.data!.docs;
-          if (notes.isEmpty) {
-            return const Center(child: Text("No call notes yet."));
-          }
-          return ListView.builder(
-            itemCount: notes.length,
-            itemBuilder: (context, idx) {
-              final note = notes[idx].data() as Map<String, dynamic>?;
-              final ts = note?['timestamp'] as Timestamp?;
-              final DateTime dt = ts != null ? ts.toDate() : DateTime.now();
-              return Card(
-                margin:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                child: ListTile(
-                  title: Text(
-                    note?['text'] ?? '',
-                    style: const TextStyle(fontSize: 17),
-                  ),
-                  subtitle: Text(
-                    "${dt.year}/${dt.month.toString().padLeft(2, '0')}/${dt.day.toString().padLeft(2, '0')} "
-                    "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}",
-                  ),
-                ),
-              );
-            },
+    if (userId.isEmpty || userClientType.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: _visitsCollection().orderBy('scheduledDate').snapshots(),
+      builder: (context, visitSnapshot) {
+        if (visitSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (visitSnapshot.hasError) {
+          return Center(
+            child: Text("Error loading visits: ${visitSnapshot.error}"),
           );
-        },
-      ),
+        }
+        if (!visitSnapshot.hasData || visitSnapshot.data!.docs.isEmpty) {
+          return const Center(child: Text("No Pre-Call Notes yet."));
+        }
+
+        final visits = visitSnapshot.data!.docs;
+
+        return ListView.builder(
+          itemCount: visits.length,
+          itemBuilder: (context, idx) {
+            final visitDoc = visits[idx];
+            final visitId = visitDoc.id;
+            final scheduledDateRaw =
+                (visitDoc['scheduledDate'] ?? visitId).toString();
+            String displayDate = scheduledDateRaw;
+
+            if (scheduledDateRaw.length == 8) {
+              try {
+                final year = int.parse(scheduledDateRaw.substring(0, 4));
+                final month = int.parse(scheduledDateRaw.substring(4, 6));
+                final day = int.parse(scheduledDateRaw.substring(6, 8));
+                final visitDate = DateTime(year, month, day);
+                displayDate = DateFormat('yyyy-MM-dd').format(visitDate);
+              } catch (_) {}
+            }
+
+            final callNotesQuery = _visitsCollection()
+                .doc(visitId)
+                .collection('callNotes')
+                .orderBy('timestamp', descending: true);
+
+            return StreamBuilder<QuerySnapshot>(
+              stream: callNotesQuery.snapshots(),
+              builder: (context, notesSnapshot) {
+                if (notesSnapshot.connectionState ==
+                    ConnectionState.waiting) {
+                  // Small inline loader while notes for this visit load
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4.0),
+                    child: Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  );
+                }
+                if (notesSnapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Text(
+                      "Error loading notes for visit $visitId: ${notesSnapshot.error}",
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  );
+                }
+                if (!notesSnapshot.hasData ||
+                    notesSnapshot.data!.docs.isEmpty) {
+                  // This visit has no Pre‑Call notes -> hide it completely
+                  return const SizedBox.shrink();
+                }
+
+                final notes = notesSnapshot.data!.docs;
+
+                return Card(
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  child: ExpansionTile(
+                    title: Text(
+                      displayDate,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    children: [
+                      ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: notes.length,
+                        itemBuilder: (context, noteIdx) {
+                          final data = notes[noteIdx].data()
+                              as Map<String, dynamic>;
+                          final ts = data['timestamp'] as Timestamp?;
+                          final dt =
+                              ts != null ? ts.toDate() : DateTime.now();
+
+                          return ListTile(
+                            title: Text(
+                              data['note'] ?? '',
+                              style: const TextStyle(fontSize: 15),
+                            ),
+                            subtitle: Text(
+                              "${dt.year}/${dt.month.toString().padLeft(2, '0')}/${dt.day.toString().padLeft(2, '0')} "
+                              "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}",
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -922,6 +988,10 @@ class VisitsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final now = DateTime.now();
 
+    // Build current month prefix like "202605"
+    final String currentMonthPrefix =
+        "${now.year.toString().padLeft(4, '0')}${now.month.toString().padLeft(2, '0')}";
+
     // DaloyClients/{segment}/Users/{userId}/Doctor/{docId}/Visits
     final visitsCollection =
         _doctorCollectionRef().doc(docId).collection('Visits');
@@ -934,10 +1004,23 @@ class VisitsTab extends StatelessWidget {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final visits = snapshot.data!.docs;
+          // Filter to only docs whose scheduledDate starts with currentMonthPrefix
+          final allVisits = snapshot.data!.docs;
+          final visits = allVisits.where((doc) {
+            final data = doc.data() as Map<String, dynamic>?;
+            final visitId = doc.id;
+            final scheduledDateRaw =
+                (data?['scheduledDate'] ?? visitId).toString();
+            // scheduledDate is stored as yyyymmdd string, so prefix match on yyyymm
+            return scheduledDateRaw.startsWith(currentMonthPrefix);
+          }).toList();
+
           if (visits.isEmpty) {
-            return const Center(child: Text("No scheduled visits yet."));
+            return const Center(
+              child: Text("No scheduled visits for this month."),
+            );
           }
+
           return ListView.builder(
             itemCount: visits.length,
             itemBuilder: (context, idx) {

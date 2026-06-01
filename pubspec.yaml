@@ -92,15 +92,15 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/marketing_tools/NEW_EDA_BESINS_R2.pdf
-    - assets/marketing_tools/2023_Full_Detailer_03292023.pdf
-    - assets/marketing_tools/16_36_GAME.pdf
-    - assets/marketing_tools/2023_Full_Detailer.pdf
-    - assets/marketing_tools/Detailer_1_Full_Detailer.pdf
-    - assets/marketing_tools/Detailer_2_16_36.pdf
-    - assets/marketing_tools/BH_ELECTRONIC_DETAILING_AID_INTERACTIVE_011822.pdf
-    - assets/marketing_tools/Utrogestan.pdf
-    - assets/marketing_tools/Interactive_16_36_Detailer.pdf
+    # - assets/marketing_tools/NEW_EDA_BESINS_R2.pdf
+    # - assets/marketing_tools/2023_Full_Detailer_03292023.pdf
+    # - assets/marketing_tools/16_36_GAME.pdf
+    # - assets/marketing_tools/2023_Full_Detailer.pdf
+    # - assets/marketing_tools/Detailer_1_Full_Detailer.pdf
+    # - assets/marketing_tools/Detailer_2_16_36.pdf
+    # - assets/marketing_tools/BH_ELECTRONIC_DETAILING_AID_INTERACTIVE_011822.pdf
+    # - assets/marketing_tools/Utrogestan.pdf
+    # - assets/marketing_tools/Interactive_16_36_Detailer.pdf
     - assets/google_fonts/
     - assets/images/
     - assets/icons/

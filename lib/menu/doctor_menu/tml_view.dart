@@ -43,6 +43,11 @@ class _TmlViewPageState extends State<TmlViewPage> {
   late final DateTime _minMonth;
   late final DateTime _maxMonth;
 
+  // Copy–paste state
+  DateTime? _copiedMonthBase;
+  Map<String, List<String>>? _copiedWeekSelections;
+  Map<String, Map<int, String>>? _copiedScheduledTimes;
+
   @override
   void initState() {
     super.initState();
@@ -71,7 +76,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
     });
     _rightController.addListener(() {
       if (_leftController.hasClients &&
-          _rightController.offset != _rightController.offset) {
+          _leftController.offset != _rightController.offset) {
         _leftController.jumpTo(_rightController.offset);
       }
     });
@@ -97,7 +102,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
     super.dispose();
   }
 
-  /// Month navigation with clamping between _minMonth and _maxMonth. [file:15]
+  /// Month navigation with clamping between _minMonth and _maxMonth.
   void _changeMonth(int offset) {
     final candidate = DateTime(
       _currentMonthBase.year,
@@ -123,7 +128,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
   }
 
   /// Match HomePage.getClientSegment(userClientType, userEmail) so
-  /// all Daloy paths are aligned. [file:15]
+  /// all Daloy paths are aligned.
   String _getClientSegment() {
     if (_userClientType == 'farmers') {
       return 'INDOFIL';
@@ -405,12 +410,14 @@ class _TmlViewPageState extends State<TmlViewPage> {
       final itineraryRef = _calendarItineraryRef(dt, docId);
       final sampleAllocRef = _sampleAllocationsRefForVisit(docId, dateId);
       final callNotesRef = _callNotesRefForVisit(docId, dateId);
+      final doctorRef = _doctorsCollectionRef().doc(docId);
 
       await itineraryRef.set(
         {
           'doctorId': docId,
           'scheduledDate': dateId,
           'createdAt': FieldValue.serverTimestamp(),
+          'DoctorReference': doctorRef,
         },
         SetOptions(merge: true),
       );
@@ -423,6 +430,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
         "ItineraryReference": itineraryRef,
         "SampleAllocationsReference": sampleAllocRef,
         "CallNotesReference": callNotesRef,
+        "DoctorReference": doctorRef,
       };
       if (finalTime != null) {
         flatData["scheduledTime"] = finalTime;
@@ -475,12 +483,14 @@ class _TmlViewPageState extends State<TmlViewPage> {
     final itineraryRef = _calendarItineraryRef(visitDate, docId);
     final sampleAllocRef = _sampleAllocationsRefForVisit(docId, dateId);
     final callNotesRef = _callNotesRefForVisit(docId, dateId);
+    final doctorRef = _doctorsCollectionRef().doc(docId);
 
     await itineraryRef.set(
       {
         'doctorId': docId,
         'scheduledDate': dateId,
         'createdAt': FieldValue.serverTimestamp(),
+        'DoctorReference': doctorRef,
       },
       SetOptions(merge: true),
     );
@@ -495,6 +505,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
         "ItineraryReference": itineraryRef,
         "SampleAllocationsReference": sampleAllocRef,
         "CallNotesReference": callNotesRef,
+        "DoctorReference": doctorRef,
       },
       SetOptions(merge: true),
     );
@@ -593,12 +604,14 @@ class _TmlViewPageState extends State<TmlViewPage> {
       final itineraryRef = _calendarItineraryRef(visitDate, docId);
       final sampleAllocRef = _sampleAllocationsRefForVisit(docId, dateId);
       final callNotesRef = _callNotesRefForVisit(docId, dateId);
+      final doctorRef = _doctorsCollectionRef().doc(docId);
 
       await itineraryRef.set(
         {
           'doctorId': docId,
           'scheduledDate': dateId,
           'createdAt': FieldValue.serverTimestamp(),
+          'DoctorReference': doctorRef,
         },
         SetOptions(merge: true),
       );
@@ -612,6 +625,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
         "ItineraryReference": itineraryRef,
         "SampleAllocationsReference": sampleAllocRef,
         "CallNotesReference": callNotesRef,
+        "DoctorReference": doctorRef,
       }, SetOptions(merge: true));
 
       setState(() {
@@ -937,7 +951,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
     final firstOfMonth = DateTime(year, month, 1);
     final firstWeekday = firstOfMonth.weekday; // Mon=1..Sun=7
     final daysBackToSunday = firstWeekday % 7;
-    final gridStart = firstOfMonth.subtract(Duration(days: daysBackToSunday));
+    final gridStart =
+        firstOfMonth.subtract(Duration(days: daysBackToSunday));
 
     final lastOfMonth = DateTime(year, month + 1, 0);
     final totalDaysSpan = lastOfMonth.difference(gridStart).inDays + 1;
@@ -974,7 +989,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
     return idx;
   }
 
-  DateTime? _getDateFromGrid(int weekIndex, String dayCode, int year, int month) {
+  DateTime? _getDateFromGrid(
+      int weekIndex, String dayCode, int year, int month) {
     if (weekIndex < 0 || weekIndex >= _monthGrid.length) return null;
     final weekRow = _monthGrid[weekIndex];
     final col = _dayCodeToGridIndex(dayCode);
@@ -995,6 +1011,113 @@ class _TmlViewPageState extends State<TmlViewPage> {
         ],
       );
 
+  // COPY / PASTE HELPERS
+
+  void _copyCurrentMonthTemplate() {
+    // We copy only the *template* weeks for each doctor from Firestore snapshot-based
+    // data currently materialized in weekSelections.
+    final copiedWeeks = <String, List<String>>{};
+    final copiedTimes = <String, Map<int, String>>{};
+
+    weekSelections.forEach((docId, weeks) {
+      copiedWeeks[docId] = List<String>.from(weeks);
+    });
+
+    scheduledTimes.forEach((docId, times) {
+      copiedTimes[docId] = Map<int, String>.from(times);
+    });
+
+    setState(() {
+      _copiedMonthBase =
+          DateTime(_currentMonthBase.year, _currentMonthBase.month, 1);
+      _copiedWeekSelections = copiedWeeks;
+      _copiedScheduledTimes = copiedTimes;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Template copied for ${DateFormat('MMMM yyyy').format(_currentMonthBase)}',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  bool get _canPasteHere {
+    if (_copiedMonthBase == null) return false;
+    final copyMonth =
+        DateTime(_copiedMonthBase!.year, _copiedMonthBase!.month);
+    final thisMonth =
+        DateTime(_currentMonthBase.year, _currentMonthBase.month);
+    return copyMonth != thisMonth;
+  }
+
+  Future<void> _pasteTemplateToCurrentMonth() async {
+    if (_copiedWeekSelections == null) return;
+
+    final copiedWeeks = _copiedWeekSelections!;
+    final copiedTimes = _copiedScheduledTimes ?? {};
+
+    try {
+      setState(() {
+        isSaving = true;
+      });
+
+      final doctorsSnap = await _doctorsCollectionRef().get();
+      final originalById = <String, Map<String, dynamic>>{
+        for (final d in doctorsSnap.docs) d.id: d.data(),
+      };
+
+      for (final entry in copiedWeeks.entries) {
+        final docId = entry.key;
+        final newWeeks = entry.value;
+
+        final originalData = originalById[docId] ?? {};
+
+        final timesForDoctor = copiedTimes[docId] ?? {};
+
+        await _saveEditedWeeksWithTimes(
+          originalData,
+          newWeeks,
+          docId,
+          timesForDoctor,
+        );
+
+        await _autoSetTimesForNewVisits(
+          docId: docId,
+          originalData: originalData,
+          newWeeks: newWeeks,
+        );
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Template pasted to ${DateFormat('MMMM yyyy').format(_currentMonthBase)}',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error pasting schedule: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSaving = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -1014,6 +1137,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
     // Decide when arrows should be enabled
     final canGoPrev = !(now.year == _minMonth.year && now.month == _minMonth.month);
     final canGoNext = !(now.year == _maxMonth.year && now.month == _maxMonth.month);
+
+    final bool showPasteFab = editMode && _canPasteHere;
 
     return Stack(
       children: [
@@ -1165,6 +1290,14 @@ class _TmlViewPageState extends State<TmlViewPage> {
                           (bData['firstName'] ?? '').toString().toLowerCase();
                       return aFirst.compareTo(bFirst);
                     });
+
+                    if (doctors.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'No doctors yet. Tap Edit then Add Doctor to create one.',
+                        ),
+                      );
+                    }
 
                     return Column(
                       children: [
@@ -1437,8 +1570,7 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                               for (int w = 0; w < 5; w++) ...[
                                                 Container(
                                                   width: weekColWidth,
-                                                  alignment:
-                                                      Alignment.center,
+                                                  alignment: Alignment.center,
                                                   child: Row(
                                                     mainAxisAlignment:
                                                         MainAxisAlignment
@@ -1520,7 +1652,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
 
                                               final overFreq =
                                                   _isExceededFreq(
-                                                      currentWeeks, freq);
+                                                      currentWeeks,
+                                                      freq);
                                               final isSelectedRow =
                                                   selectedDoctorIdx ==
                                                       rowIdx;
@@ -1675,7 +1808,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                                     ),
                                     _labelValue(
                                       "SPECIALTY:",
-                                      selectedDoctorRowData?['specialty'] ??
+                                      selectedDoctorRowData
+                                              ?['specialty'] ??
                                           '',
                                     ),
                                     _labelValue(
@@ -1707,6 +1841,8 @@ class _TmlViewPageState extends State<TmlViewPage> {
                   },
                 ),
         ),
+
+        // Existing overlays
         if (isSaving)
           Container(
             color: Colors.black54,
@@ -1725,6 +1861,24 @@ class _TmlViewPageState extends State<TmlViewPage> {
                 valueColor:
                     AlwaysStoppedAnimation<Color>(Colors.white),
               ),
+            ),
+          ),
+
+        // Floating Copy/Paste button in Edit Mode
+        if (editMode)
+          Positioned(
+            bottom: 70,
+            right: 16,
+            child: FloatingActionButton(
+              heroTag: 'tml_copy_fab',
+              onPressed: showPasteFab
+                  ? () async {
+                      await _pasteTemplateToCurrentMonth();
+                    }
+                  : _copyCurrentMonthTemplate,
+              backgroundColor: Colors.blueAccent.withOpacity(0.3),
+              elevation: 0,
+              child: Icon(showPasteFab ? Icons.paste : Icons.copy),
             ),
           ),
       ],
@@ -1783,24 +1937,24 @@ class _TmlViewPageState extends State<TmlViewPage> {
   }
 
   Widget _labelValue(String label, String value) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-              color: Colors.blue,
-            ),
-          ),
-          const SizedBox(width: 2),
-          Flexible(
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 13),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
+          color: Colors.blue,
+        ),
+      ),
+      const SizedBox(width: 2),
+      Flexible(
+        child: Text(
+          value,
+          style: const TextStyle(fontSize: 13),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    ],
+  );
 }

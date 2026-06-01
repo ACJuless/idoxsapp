@@ -14,36 +14,61 @@ class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+
   String? _selectedTerritory;
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _rememberMe = false;
+  bool _isAutoLoginChecked = false;
 
   final List<String> _territoryOptions = ["PH-L", "PH-V", "PH-M"];
 
   @override
   void initState() {
     super.initState();
-    _checkRememberedLogin();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkRememberedLogin();
+    });
   }
 
-  // Check if user is already logged in
   Future<void> _checkRememberedLogin() async {
+    if (_isAutoLoginChecked) return;
+    _isAutoLoginChecked = true;
+
     final prefs = await SharedPreferences.getInstance();
     final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
-    if (isLoggedIn) {
-      Navigator.pushReplacementNamed(
-        context,
-        '/home',
-        arguments: {
-          'userEmail': prefs.getString('userEmail'),
-          'userId': prefs.getString('userId'),
-          'territoryId': prefs.getString('territoryId'),
-          'userName': prefs.getString('userName'),
-          'userClientType': prefs.getString('userClientType'),
-        },
-      );
+
+    if (!isLoggedIn) return;
+
+    final userEmail = prefs.getString('userEmail');
+    final userId = prefs.getString('userId');
+    final territoryId = prefs.getString('territoryId');
+    final userName = prefs.getString('userName') ?? '';
+    final userClientType = prefs.getString('userClientType') ?? 'both';
+
+    if (userEmail == null ||
+        userEmail.isEmpty ||
+        userId == null ||
+        userId.isEmpty ||
+        territoryId == null ||
+        territoryId.isEmpty) {
+      await prefs.setBool('isLoggedIn', false);
+      return;
     }
+
+    if (!mounted) return;
+
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/home',
+      (route) => false,
+      arguments: {
+        'userEmail': userEmail,
+        'userId': userId,
+        'territoryId': territoryId,
+        'userName': userName,
+        'userClientType': userClientType,
+      },
+    );
   }
 
   String _hashPassword(String password) {
@@ -52,68 +77,66 @@ class _LoginPageState extends State<LoginPage> {
     return hash.toString();
   }
 
-  /// Helper: find user in the new client structure used by signup, using email field:
-  /// - /DaloyClients/INDOFIL/Users   (query by email)
-  /// - /DaloyClients/IVA/Users       (query by email)
-  /// - /DaloyClients/WERT/Users      (query by email)
-  /// - /flowDB/client/GENERAL/users/users (query by email)
   Future<DocumentSnapshot<Map<String, dynamic>>?> _findUserInClientTree(
     String email,
   ) async {
     final lower = email.toLowerCase();
 
     if (lower.endsWith('@indofil.com')) {
-      // /DaloyClients/INDOFIL/Users  (ID is MRxxxxx, so query by email field)
       final usersRef = FirebaseFirestore.instance
           .collection('DaloyClients')
           .doc('INDOFIL')
           .collection('Users');
+
       final query = await usersRef
           .where('email', isEqualTo: lower)
           .limit(1)
           .get();
+
       if (query.docs.isNotEmpty) return query.docs.first;
     } else if (lower.endsWith('@iva.com')) {
-      // /DaloyClients/IVA/Users
       final usersRef = FirebaseFirestore.instance
           .collection('DaloyClients')
           .doc('IVA')
           .collection('Users');
+
       final query = await usersRef
           .where('email', isEqualTo: lower)
           .limit(1)
           .get();
+
       if (query.docs.isNotEmpty) return query.docs.first;
     } else if (lower.endsWith('@wert.com')) {
-      // /DaloyClients/WERT/Users
       final usersRef = FirebaseFirestore.instance
           .collection('DaloyClients')
           .doc('WERT')
           .collection('Users');
+
       final query = await usersRef
           .where('email', isEqualTo: lower)
           .limit(1)
           .get();
+
       if (query.docs.isNotEmpty) return query.docs.first;
     } else {
-      // /flowDB/client/GENERAL/users/users
       final usersRef = FirebaseFirestore.instance
           .collection('flowDB')
           .doc('client')
           .collection('GENERAL')
           .doc('users')
           .collection('users');
+
       final query = await usersRef
           .where('email', isEqualTo: lower)
           .limit(1)
           .get();
+
       if (query.docs.isNotEmpty) return query.docs.first;
     }
 
     return null;
   }
 
-  /// Only use new structure; lookups driven purely by email, not emailKey
   Future<DocumentSnapshot<Map<String, dynamic>>?> _findUserDoc(
     String email,
   ) async {
@@ -121,79 +144,86 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _signIn() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
+    FocusScope.of(context).unfocus();
 
-      try {
-        final email = _emailController.text.trim();
-        final hashedPassword = _hashPassword(_passwordController.text);
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
 
-        if (_selectedTerritory == null || _selectedTerritory!.isEmpty) {
-          throw Exception('Please select a territory');
-        }
+    if (_selectedTerritory == null || _selectedTerritory!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a territory')),
+      );
+      return;
+    }
 
-        // Use only the new client structure, querying by email
-        final userDocSnap = await _findUserDoc(email);
+    setState(() => _isLoading = true);
 
-        if (userDocSnap == null || !userDocSnap.exists) {
-          throw Exception('Invalid email, password, or territory');
-        }
+    try {
+      final email = _emailController.text.trim().toLowerCase();
+      final hashedPassword = _hashPassword(_passwordController.text.trim());
 
-        final userData = userDocSnap.data() as Map<String, dynamic>? ?? {};
+      final userDocSnap = await _findUserDoc(email);
 
-        // Check territory
-        if (userData['territoryId'] != _selectedTerritory) {
-          throw Exception('Invalid email, password, or territory');
-        }
+      if (userDocSnap == null || !userDocSnap.exists) {
+        throw Exception('Invalid email, password, or territory');
+      }
 
-        // Check password
-        if (userData['password'] != hashedPassword) {
-          throw Exception('Invalid password');
-        }
+      final userData = userDocSnap.data() as Map<String, dynamic>? ?? {};
 
-        // Get clientType from user document (set during signup)
-        final clientType = userData['clientType'] ?? 'both';
+      final firestoreTerritory = (userData['territoryId'] ?? '').toString();
+      if (firestoreTerritory != _selectedTerritory) {
+        throw Exception('Invalid email, password, or territory');
+      }
 
-        // Mark user active and update last login
-        await userDocSnap.reference.update({
-          'isActive': true,
-          'lastLogin': FieldValue.serverTimestamp(),
-        });
+      final firestorePassword = (userData['password'] ?? '').toString();
+      if (firestorePassword != hashedPassword) {
+        throw Exception('Invalid password');
+      }
 
-        // Store login timestamp
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('loginTimestamp', DateTime.now().toIso8601String());
-        await prefs.setString('userEmail', email);
-        await prefs.setString('userId', userDocSnap.id);
-        await prefs.setString('territoryId', _selectedTerritory ?? '');
-        await prefs.setString('userName', userData['name'] ?? '');
-        await prefs.setString('userClientType', clientType);
+      final clientType = (userData['clientType'] ?? 'both').toString();
+      final userName = (userData['name'] ?? '').toString();
 
-        // If "Remember Me" is checked, store values for auto-login next time
-        if (_rememberMe) {
-          await prefs.setBool('isLoggedIn', true);
-        }
+      await userDocSnap.reference.update({
+        'isActive': true,
+        'lastLogin': FieldValue.serverTimestamp(),
+      });
 
-        Navigator.pushReplacementNamed(
-          context,
-          '/home',
-          arguments: {
-            'userEmail': email,
-            'userId': userDocSnap.id,
-            'territoryId': _selectedTerritory,
-            'userName': userData['name'] ?? '',
-            'userClientType': clientType,
-          },
-        );
-      } catch (e) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isLoggedIn', true);
+      await prefs.setString('loginTimestamp', DateTime.now().toIso8601String());
+      await prefs.setString('userEmail', email);
+      await prefs.setString('userId', userDocSnap.id);
+      await prefs.setString('territoryId', _selectedTerritory ?? '');
+      await prefs.setString('userName', userName);
+      await prefs.setString('userClientType', clientType);
+      await prefs.setBool('rememberMe', _rememberMe);
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/home',
+        (route) => false,
+        arguments: {
+          'userEmail': email,
+          'userId': userDocSnap.id,
+          'territoryId': _selectedTerritory,
+          'userName': userName,
+          'userClientType': clientType,
+        },
+      );
+    } catch (e) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(e.toString().replaceAll('Exception: ', '')),
           ),
         );
       }
-
-      setState(() => _isLoading = false);
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -280,12 +310,7 @@ class _LoginPageState extends State<LoginPage> {
                                     style: TextStyle(
                                       fontSize: 100,
                                       fontWeight: FontWeight.bold,
-                                      color: Color.fromRGBO(
-                                        248,
-                                        242,
-                                        254,
-                                        1,
-                                      ),
+                                      color: Color.fromRGBO(248, 242, 254, 1),
                                     ),
                                   ),
                                   Text(
@@ -306,18 +331,15 @@ class _LoginPageState extends State<LoginPage> {
                                       labelStyle: TextStyle(color: Colors.white),
                                       labelText: 'Email',
                                       border: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(30),
+                                        borderRadius: BorderRadius.circular(30),
                                         borderSide: BorderSide.none,
                                       ),
                                       enabledBorder: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(30),
+                                        borderRadius: BorderRadius.circular(30),
                                         borderSide: BorderSide.none,
                                       ),
                                       focusedBorder: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(30),
+                                        borderRadius: BorderRadius.circular(30),
                                         borderSide: BorderSide.none,
                                       ),
                                     ),
@@ -350,24 +372,20 @@ class _LoginPageState extends State<LoginPage> {
                                         ),
                                         onPressed: () {
                                           setState(() {
-                                            _obscurePassword =
-                                                !_obscurePassword;
+                                            _obscurePassword = !_obscurePassword;
                                           });
                                         },
                                       ),
                                       border: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(24),
+                                        borderRadius: BorderRadius.circular(24),
                                         borderSide: BorderSide.none,
                                       ),
                                       enabledBorder: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(24),
+                                        borderRadius: BorderRadius.circular(24),
                                         borderSide: BorderSide.none,
                                       ),
                                       focusedBorder: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(24),
+                                        borderRadius: BorderRadius.circular(24),
                                         borderSide: BorderSide.none,
                                       ),
                                     ),
@@ -385,8 +403,7 @@ class _LoginPageState extends State<LoginPage> {
                                   SizedBox(height: 16),
                                   DropdownButtonFormField<String>(
                                     value: _selectedTerritory,
-                                    items: _territoryOptions
-                                        .map((territory) {
+                                    items: _territoryOptions.map((territory) {
                                       return DropdownMenuItem(
                                         value: territory,
                                         child: Text(
@@ -399,26 +416,22 @@ class _LoginPageState extends State<LoginPage> {
                                         ),
                                       );
                                     }).toList(),
-                                    dropdownColor: Color.fromRGBO(
-                                        69, 56, 98, 0.6),
+                                    dropdownColor: Color.fromRGBO(69, 56, 98, 0.6),
                                     decoration: InputDecoration(
                                       fillColor: Color(0xFF3d3876),
                                       filled: true,
                                       labelStyle: TextStyle(color: Colors.white),
                                       labelText: 'Territory ID',
                                       border: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(36),
+                                        borderRadius: BorderRadius.circular(36),
                                         borderSide: BorderSide.none,
                                       ),
                                       enabledBorder: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(36),
+                                        borderRadius: BorderRadius.circular(36),
                                         borderSide: BorderSide.none,
                                       ),
                                       focusedBorder: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(36),
+                                        borderRadius: BorderRadius.circular(36),
                                         borderSide: BorderSide.none,
                                       ),
                                     ),
@@ -433,9 +446,7 @@ class _LoginPageState extends State<LoginPage> {
                                       });
                                     },
                                     validator: (value) =>
-                                        value == null
-                                            ? 'Please select a territory'
-                                            : null,
+                                        value == null ? 'Please select a territory' : null,
                                   ),
                                   SizedBox(height: 8),
                                   Row(
@@ -448,11 +459,9 @@ class _LoginPageState extends State<LoginPage> {
                                           });
                                         },
                                         shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(5),
+                                          borderRadius: BorderRadius.circular(5),
                                         ),
-                                        activeColor:
-                                            Colors.deepPurpleAccent,
+                                        activeColor: Colors.deepPurpleAccent,
                                       ),
                                       Text(
                                         'Remember Me',
@@ -465,32 +474,25 @@ class _LoginPageState extends State<LoginPage> {
                                   ),
                                   SizedBox(height: 16),
                                   Padding(
-                                    padding:
-                                        EdgeInsets.symmetric(horizontal: 50),
+                                    padding: EdgeInsets.symmetric(horizontal: 50),
                                     child: SizedBox(
                                       width: double.infinity,
                                       child: ElevatedButton(
-                                        onPressed:
-                                            _isLoading ? null : _signIn,
+                                        onPressed: _isLoading ? null : _signIn,
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: Color(0xFFa95dee),
                                           foregroundColor: Colors.white,
                                           shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(30),
+                                            borderRadius: BorderRadius.circular(30),
                                           ),
-                                          padding: EdgeInsets.symmetric(
-                                            vertical: 16,
-                                          ),
+                                          padding: EdgeInsets.symmetric(vertical: 16),
                                         ),
                                         child: _isLoading
                                             ? SizedBox(
                                                 height: 20,
                                                 width: 20,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                  color:
-                                                      Colors.deepPurpleAccent,
+                                                child: CircularProgressIndicator(
+                                                  color: Colors.deepPurpleAccent,
                                                   strokeWidth: 2,
                                                 ),
                                               )
@@ -505,7 +507,6 @@ class _LoginPageState extends State<LoginPage> {
                                     ),
                                   ),
                                   SizedBox(height: 16),
-                                  // SIGNUP BUTTON
                                   TextButton(
                                     onPressed: () {
                                       Navigator.of(context).push(
@@ -525,8 +526,7 @@ class _LoginPageState extends State<LoginPage> {
                                         ),
                                         children: [
                                           TextSpan(
-                                            text:
-                                                "Don't have an account? ",
+                                            text: "Don't have an account? ",
                                           ),
                                           TextSpan(
                                             text: "Sign up",

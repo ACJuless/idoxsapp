@@ -40,8 +40,11 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
   List<String> sampleProducts = [];
   late Map<String, int> sampleCounts;
 
+  // These are the samples actually allocated/saved.
   List<String> samples = [];
   Map<String, int> sampleQty = {};
+
+  // Static list you wanted to show under "Promo Materials Allocated:"
   final List<String> medicineOptions = [
     'Indofil fungicide',
     'Zinc Phosphide',
@@ -285,10 +288,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
         }
       });
 
-      // 3) If there is a signature, we also purge old int64 fields (per-sample)
-      //    and then write sampleAllocations + signature in one go.
-      //    We also store VisitReference pointing to the Visit doc
-      //    AND mark the Visit doc's submitted = true.
+      // 3) Save allocations + signature
       if (_controller.isNotEmpty) {
         await FirebaseFirestore.instance.runTransaction((txn) async {
           final currentSnap = await txn.get(sampleAllocRef);
@@ -297,7 +297,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
             existing = Map<String, dynamic>.from(currentSnap.data() ?? {});
           }
 
-          // Reserved keys we want to keep; everything else at top level is considered legacy
+          // Reserved keys we want to keep; everything else at top level is legacy
           const reservedKeys = {
             'sampleAllocations',
             'signaturePoints',
@@ -309,7 +309,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
 
           final Map<String, dynamic> cleaned = {};
 
-          // Copy only reserved keys from existing (we will override some of them below anyway)
+          // Copy only reserved keys from existing (we will override some below anyway)
           existing.forEach((key, value) {
             if (reservedKeys.contains(key)) {
               cleaned[key] = value;
@@ -334,7 +334,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
           cleaned['submitted'] = true;
           cleaned['submittedAt'] = FieldValue.serverTimestamp();
 
-          // New: link back to the Visit document
+          // Link back to the Visit document
           cleaned['VisitReference'] = visitRef;
 
           // Write back the cleaned SampleAllocations document
@@ -423,80 +423,28 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
     });
   }
 
-  void _showAddSampleDialog() {
-    String dropdownValue = medicineOptions[0];
-    int tempQty = 1;
-    showDialog(
-      context: context,
-      builder: (context) =>
-          StatefulBuilder(builder: (context, setStateDialog) {
-        return AlertDialog(
-          title: Text('ProMat Allocation'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                value: dropdownValue,
-                items: medicineOptions
-                    .map(
-                        (med) => DropdownMenuItem(value: med, child: Text(med)))
-                    .toList(),
-                onChanged: (newVal) {
-                  if (newVal != null) {
-                    setStateDialog(() => dropdownValue = newVal);
-                  }
-                },
-                decoration: InputDecoration(
-                  labelText: "Select ProMats",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              SizedBox(height: 16),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.remove_circle_outline,
-                        color: Colors.red, size: 28),
-                    onPressed: tempQty > 1
-                        ? () => setStateDialog(() => tempQty--)
-                        : null,
-                  ),
-                  Text(
-                    '$tempQty',
-                    style: TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.add_circle_outline,
-                        color: Colors.green, size: 28),
-                    onPressed: () => setStateDialog(() => tempQty++),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (!samples.contains(dropdownValue)) {
-                  setState(() {
-                    samples.add(dropdownValue);
-                    sampleQty[dropdownValue] = tempQty;
-                  });
-                  Navigator.pop(context);
-                }
-              },
-              child: Text('Submit'),
-            ),
-          ],
-        );
-      }),
-    );
+  void _incrementQty(String sample) {
+    setState(() {
+      final current = sampleQty[sample] ?? 0;
+      sampleQty[sample] = current + 1;
+      if (!samples.contains(sample) && sampleQty[sample]! > 0) {
+        samples.add(sample);
+      }
+    });
+  }
+
+  void _decrementQty(String sample) {
+    setState(() {
+      final current = sampleQty[sample] ?? 0;
+      if (current > 0) {
+        final newValue = current - 1;
+        sampleQty[sample] = newValue;
+        // Optional: if you want to remove from samples when it hits zero:
+        if (newValue == 0) {
+          samples.remove(sample);
+        }
+      }
+    });
   }
 
   @override
@@ -528,100 +476,54 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                         TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                   SizedBox(height: 16),
-                  ...samples.map(
-                    (sample) => Card(
+                  // Show the static medicineOptions list as cards
+                  for (var sample in medicineOptions)
+                    Card(
                       elevation: 0,
                       margin: EdgeInsets.symmetric(vertical: 2),
                       child: ListTile(
-                        leading: IconButton(
-                          icon: Icon(Icons.close,
-                              color: Colors.red, size: 22),
-                          onPressed: _hasSignature
-                              ? null
-                              : () async {
-                                  setState(() {
-                                    samples.remove(sample);
-                                    sampleQty.remove(sample);
-                                  });
-
-                                  if (_userId.isNotEmpty) {
-                                    final sampleAllocRef =
-                                        _sampleAllocationsDocRef();
-                                    final current =
-                                        (await sampleAllocRef.get()).data() ??
-                                            {};
-
-                                    if (current
-                                        .containsKey('sampleAllocations')) {
-                                      final allocMap =
-                                          Map<String, dynamic>.from(
-                                              current['sampleAllocations']
-                                                  as Map);
-                                      allocMap.remove(sample);
-                                      current['sampleAllocations'] = allocMap;
-
-                                      final hasAllocations =
-                                          allocMap.isNotEmpty;
-                                      final hasSignature = current
-                                          .containsKey('signaturePoints');
-
-                                      if (!hasAllocations &&
-                                          !hasSignature) {
-                                        await sampleAllocRef.delete();
-                                      } else {
-                                        await sampleAllocRef.set(
-                                          current,
-                                          SetOptions(merge: false),
-                                        );
-                                      }
-                                    } else {
-                                      final hasSignature = current
-                                          .containsKey('signaturePoints');
-                                      if (!hasSignature) {
-                                        await sampleAllocRef.delete();
-                                      } else {
-                                        await sampleAllocRef.set(
-                                          current,
-                                          SetOptions(merge: false),
-                                        );
-                                      }
-                                    }
-                                  }
-                                },
+                        leading: Icon(
+                          Icons.medication,
+                          color: Colors.green.shade700,
+                          size: 24,
                         ),
                         title: Text(
                           sample,
                           style: TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w500),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                        trailing: Text(
-                          'Qty: ${sampleQty[sample] ?? 1}',
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                Icons.remove_circle_outline,
+                                color: Colors.red,
+                                size: 22,
+                              ),
+                              onPressed: () => _decrementQty(sample),
+                            ),
+                            Text(
+                              'Qty: ${sampleQty[sample] ?? 0}',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                Icons.add_circle_outline,
+                                color: Colors.green,
+                                size: 22,
+                              ),
+                              onPressed: () => _incrementQty(sample),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ),
-                  SizedBox(height: 16),
-                  Center(
-                    child: ElevatedButton.icon(
-                      onPressed:
-                          _hasSignature ? null : _showAddSampleDialog,
-                      icon: Icon(Icons.add),
-                      label: Text(
-                        'Add ProMats',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: 28, vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
                   SizedBox(height: 30),
 
                   // ================================
@@ -629,96 +531,106 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                   //   1) has samples
                   //   2) user pressed Save & Submit at least once
                   // ================================
-                  if (samples.isNotEmpty && _allocationsSavedOnce) ...[
-                    Text(
-                      "Draw the doctor's signature below:",
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                    SizedBox(height: 8),
-                    if (_hasSignature)
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.green.shade100,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.green.shade700),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.check_circle,
-                              color: Colors.green.shade700,
-                              size: 18,
-                            ),
-                            SizedBox(width: 6),
-                            Text(
-                              'Signature Saved & Submitted',
-                              style: TextStyle(
-                                color: Colors.green.shade700,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
+                  if (samples.isNotEmpty && _allocationsSavedOnce)
+                    ...[
+                      Text(
+                        "Draw the doctor's signature below:",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
                         ),
                       ),
-                    SizedBox(height: 12),
-                    Listener(
-                      onPointerDown: (_) =>
-                          widget.onDrawing?.call(true),
-                      onPointerUp: (_) =>
-                          widget.onDrawing?.call(false),
-                      child: Stack(
-                        children: [
-                          Container(
-                            height: signPadHeight,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                  color: Colors.black45, width: 2),
-                              color: Colors.white,
-                            ),
-                            child: Signature(
-                              controller: _controller,
-                              backgroundColor: Colors.transparent,
+                      SizedBox(height: 8),
+                      if (_hasSignature)
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.green.shade700,
                             ),
                           ),
-                          if (_hasSignature)
-                            Positioned.fill(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(10),
-                                  color: Colors.grey.withOpacity(0.1),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.check_circle,
+                                color: Colors.green.shade700,
+                                size: 18,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'Signature Saved & Submitted',
+                                style: TextStyle(
+                                  color: Colors.green.shade700,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
                                 ),
-                                child: Center(
-                                  child: Container(
-                                    padding: EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black54,
-                                      borderRadius:
-                                          BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      'Signature Locked',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
+                              ),
+                            ],
+                          ),
+                        ),
+                      SizedBox(height: 12),
+                      Listener(
+                        onPointerDown: (_) => widget.onDrawing?.call(true),
+                        onPointerUp: (_) =>
+                            widget.onDrawing?.call(false),
+                        child: Stack(
+                          children: [
+                            Container(
+                              height: signPadHeight,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Colors.black45,
+                                  width: 2,
+                                ),
+                                color: Colors.white,
+                              ),
+                              child: Signature(
+                                controller: _controller,
+                                backgroundColor: Colors.transparent,
+                              ),
+                            ),
+                            if (_hasSignature)
+                              Positioned.fill(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(10),
+                                    color: Colors.grey.withOpacity(0.1),
+                                  ),
+                                  child: Center(
+                                    child: Container(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius:
+                                            BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        'Signature Locked',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    SizedBox(height: 30),
-                  ],
+                      SizedBox(height: 30),
+                    ],
 
                   // ================================
                   //           SINGLE BUTTON
@@ -746,8 +658,7 @@ class _CallSignaturePageState extends State<CallSignaturePage> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green.shade700,
                           foregroundColor: Colors.white,
-                          padding:
-                              EdgeInsets.symmetric(vertical: 14),
+                          padding: EdgeInsets.symmetric(vertical: 14),
                           disabledBackgroundColor: Colors.grey,
                         ),
                       ),

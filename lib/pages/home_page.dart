@@ -30,6 +30,7 @@ import '../pages/messages_page.dart';
 import '../pages/notif_page.dart';
 import 'profile_view_page.dart';
 import 'package:flutter/services.dart';
+import '../menu/doctor_menu/add_doctor_page.dart';
 
 import '../menu/doctor_menu/call_detail_page.dart';
 import '../constants/app_constants.dart';
@@ -159,7 +160,7 @@ Map<int, bool> checkedStates = {};
     return result;
   }
 
-// CALL PERFORMANCE STATS
+  // CALL PERFORMANCE STATS
 
   Future<List<Map<String, dynamic>>> getAllScheduledVisitsForToday({
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs,
@@ -611,20 +612,7 @@ class _HomePageState extends State<HomePage> {
   final _quantityController = TextEditingController();
   final _preCallPlanController = TextEditingController();
 
-  // Controllers for Add New Client
-  final _firstNameController = TextEditingController();
-  final _lastNameController = TextEditingController();
-  final _middleNameController = TextEditingController();
-  final _birthDateController = TextEditingController();
-  final _specialtyController = TextEditingController();
-  final _contactNumberController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _hospitalClinicController = TextEditingController();
-  final _frequencyController = TextEditingController();
   final ScrollController _doctorsScrollController = ScrollController();
-
-  // Gender dropdown state
-  String? _selectedGender;
 
   @override
   void initState() {
@@ -638,8 +626,6 @@ class _HomePageState extends State<HomePage> {
 
     // initialize with one product row
     _addUnplannedProductRow();
-
-    
   }
 
   @override
@@ -3859,292 +3845,14 @@ class _HomePageState extends State<HomePage> {
   );
   }
 
-  void _openAddNewClientDialog() {
-  showDialog(
-    context: context,
-    barrierDismissible: true,
-    builder: (ctx) {
-      return Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        insetPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 24,
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.85,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Header
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF4e2f80),
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(16),
-                    topRight: Radius.circular(16),
-                  ),
-                ),
-                child: const Text(
-                  'Add New Client',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // First Name / Last Name (1st row)
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _firstNameController,
-                              decoration: const InputDecoration(
-                                labelText: 'First Name',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: _lastNameController,
-                              decoration: const InputDecoration(
-                                labelText: 'Last Name',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Middle Name (2nd row)
-                      TextField(
-                        controller: _middleNameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Middle Name',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Birth Date + Gender (3rd row)
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _birthDateController,
-                              readOnly: true,
-                              onTap: () async {
-                                final now = DateTime.now();
-                                final picked = await showDatePicker(
-                                  context: ctx,
-                                  initialDate: DateTime(now.year - 25),
-                                  firstDate: DateTime(1900),
-                                  lastDate: now,
-                                );
-                                if (picked != null) {
-                                  _birthDateController.text =
-                                      '${picked.year.toString().padLeft(4, '0')}-'
-                                      '${picked.month.toString().padLeft(2, '0')}-'
-                                      '${picked.day.toString().padLeft(2, '0')}';
-                                }
-                              },
-                              decoration: const InputDecoration(
-                                labelText: 'Birth Date',
-                                hintText: 'YYYY-MM-DD',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: _selectedGender,
-                              decoration: const InputDecoration(
-                                labelText: 'Gender',
-                                border: OutlineInputBorder(),
-                              ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'Male',
-                                  child: Text('Male'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'Female',
-                                  child: Text('Female'),
-                                ),
-                              ],
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedGender = value;
-                                });
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Specialty (4th row)
-                      TextField(
-                        controller: _specialtyController,
-                        decoration: const InputDecoration(
-                          labelText: 'Specialty',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Contact Number + Email (4th row continuation)
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _contactNumberController,
-                              keyboardType: TextInputType.phone,
-                              decoration: const InputDecoration(
-                                labelText: 'Contact Number',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: _emailController,
-                              keyboardType: TextInputType.emailAddress,
-                              decoration: const InputDecoration(
-                                labelText: 'Email',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Hospital / Clinic (5th row)
-                      TextField(
-                        controller: _hospitalClinicController,
-                        decoration: const InputDecoration(
-                          labelText: 'Hospital / Clinic',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Frequency of Planned Visits per Month (numeric only, up to 4)
-                      TextField(
-                        controller: _frequencyController,
-                        keyboardType: TextInputType.number,
-                        maxLength: 1,
-                        decoration: const InputDecoration(
-                          labelText: 'Frequency of Planned Visits per Month',
-                          border: OutlineInputBorder(),
-                          counterText: '',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const Divider(height: 1),
-
-              // Floating buttons inside form
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                child: Row(
-                  children: [
-                    // Cancel (grey)
-                    Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.grey[800],
-                          side: BorderSide(color: Colors.grey.shade400),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        onPressed: () {
-                          Navigator.of(ctx).pop();
-                        },
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-
-                    // Add Client (purple gradient)
-                    Expanded(
-                      child: SizedBox(
-                        height: 48,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            elevation: 0,
-                            backgroundColor: Colors.transparent,
-                          ),
-                          onPressed: () {
-                            // TODO: Add validation & save client logic here
-                            Navigator.of(ctx).pop();
-                          },
-                          child: Ink(
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Color(0xFF4e2f80),
-                                  Color(0xFF715999),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius:
-                                  BorderRadius.all(Radius.circular(8)),
-                            ),
-                            child: Container(
-                              alignment: Alignment.center,
-                              child: const Text(
-                                'Add Client',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    },
+void _openAddNewClientDialog() {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => AddDoctorPage(),
+    ),
   );
-  }
-
+}
   Widget _buildEFormTypeTile({
     required IconData icon,
     required String title,
@@ -4641,13 +4349,12 @@ class _HomePageState extends State<HomePage> {
                                             "Scheduled Doctors for Today",
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
-                                              fontSize:
-                                                  availableWidth < 360 ? 13 : 15,
-                                              color: Color(0xFFf7ad01),
+                                              fontSize: availableWidth < 360 ? 13 : 15,
+                                              color: const Color(0xFFf7ad01),
                                             ),
                                           ),
                                         ),
-                                        SizedBox(height: 4),
+                                        const SizedBox(height: 4),
                                         FittedBox(
                                           fit: BoxFit.scaleDown,
                                           alignment: Alignment.centerLeft,
@@ -4656,17 +4363,16 @@ class _HomePageState extends State<HomePage> {
                                             style: TextStyle(
                                               fontFamily: 'OpenSauce',
                                               fontWeight: FontWeight.w700,
-                                              fontSize:
-                                                  availableWidth < 360 ? 15 : 17,
+                                              fontSize: availableWidth < 360 ? 15 : 17,
                                               color: Colors.black,
                                             ),
                                           ),
                                         ),
-                                      
                                       ],
                                     ),
                                   ),
                                   const SizedBox(width: 12),
+                                  
                                   Expanded(
                                     flex: 4,
                                     child: Column(
@@ -4700,6 +4406,7 @@ class _HomePageState extends State<HomePage> {
                                       ],
                                     ),
                                   ),
+                                
                                 ],
                               );
                             },
@@ -4936,650 +4643,549 @@ class _HomePageState extends State<HomePage> {
                                   ),
                                 ),
                               ),
-                              SizedBox(height: 8),
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  children: [
-                                    // TODAY'S ACCOMPLISHED
-                                    Container(
-                                      width: 220,
-                                      margin: const EdgeInsets.only(right: 16),
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(18),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(0.05),
-                                            blurRadius: 10,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                                        future: (() {
-                                          final doctorsCol = _doctorCollectionRefForHome(
-                                            userClientType: userClientType,
-                                            userId: _userId,
-                                          );
-
-                                          return doctorsCol.get().timeout(
-                                            const Duration(seconds: 10),
-                                            onTimeout: () {
-                                              throw TimeoutException('Failed to load doctors data');
-                                            },
-                                          );
-                                        })(),
-                                        builder: (context, doctorSnapshot) {
-                                          if (doctorSnapshot.hasError) {
-                                            print('Error loading doctors for count: ${doctorSnapshot.error}');
-                                            return SizedBox(
-                                              height: 120,
-                                              child: Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  const Icon(
-                                                    Icons.error_outline,
-                                                    color: Colors.red,
-                                                    size: 24,
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  const Text(
-                                                    'Error loading data',
-                                                    textAlign: TextAlign.center,
-                                                    style: TextStyle(color: Colors.red, fontSize: 11),
-                                                  ),
-                                                  TextButton(
-                                                    onPressed: () {
-                                                      setState(() {});
-                                                    },
-                                                    child: const Text(
-                                                      'Retry',
-                                                      style: TextStyle(fontSize: 10),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
+                                SizedBox(height: 8),
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: [
+                                      // TODAY'S ACCOMPLISHED
+                                      Container(
+                                        width: 220,
+                                        margin: const EdgeInsets.only(right: 16),
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(18),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(0.05),
+                                              blurRadius: 10,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                                          future: (() {
+                                            final doctorsCol = _doctorCollectionRefForHome(
+                                              userClientType: userClientType,
+                                              userId: _userId,
                                             );
-                                          }
 
-                                          if (doctorSnapshot.connectionState == ConnectionState.waiting) {
-                                            return const SizedBox(
-                                              height: 120,
-                                              child: Center(
-                                                child: CircularProgressIndicator(),
-                                              ),
-                                            );
-                                          }
-
-                                          if (!doctorSnapshot.hasData || doctorSnapshot.data!.docs.isEmpty) {
-                                            return SizedBox(
-                                              height: 120,
-                                              child: Center(
-                                                child: Text(
-                                                  _isOffline
-                                                      ? "Offline: showing last known data."
-                                                      : "No doctors found.",
-                                                  textAlign: TextAlign.center,
-                                                  style: TextStyle(
-                                                    color: Colors.grey[700],
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                              ),
-                                            );
-                                          }
-
-                                          final List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs =
-                                              doctorSnapshot.data!.docs;
-
-                                          return FutureBuilder<Map<String, int>>(
-                                            future: getAccomplishedVisitsForToday(
-                                              doctorDocs: doctorDocs,
-                                              selectedDay: DateTime.now(),
-                                            ).timeout(
+                                            return doctorsCol.get().timeout(
                                               const Duration(seconds: 10),
                                               onTimeout: () {
-                                                print('Timeout counting scheduled visits');
-                                                return {'total': 0, 'submitted': 0};
+                                                throw TimeoutException('Failed to load doctors data');
                                               },
-                                            ),
-                                            builder: (context, countSnapshot) {
-                                              if (countSnapshot.hasError) {
-                                                print('Error counting visits: ${countSnapshot.error}');
-                                                return SizedBox(
-                                                  height: 120,
-                                                  child: Column(
-                                                    mainAxisAlignment: MainAxisAlignment.center,
-                                                    children: [
-                                                      const Icon(
-                                                        Icons.error_outline,
-                                                        color: Colors.red,
-                                                        size: 24,
-                                                      ),
-                                                      const SizedBox(height: 4),
-                                                      const Text(
-                                                        'Error loading count',
-                                                        textAlign: TextAlign.center,
-                                                        style: TextStyle(color: Colors.red, fontSize: 11),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                );
-                                              }
-
-                                              if (countSnapshot.connectionState == ConnectionState.waiting &&
-                                                  !countSnapshot.hasData) {
-                                                return const SizedBox(
-                                                  height: 120,
-                                                  child: Center(
-                                                    child: CircularProgressIndicator(),
-                                                  ),
-                                                );
-                                              }
-
-                                              final Map<String, int> counts = countSnapshot.data ?? {'total': 0, 'submitted': 0};
-                                              final int scheduledCount = counts['total'] ?? 0;
-                                              final int submittedCount = counts['submitted'] ?? 0;
-
-                                              final double ratio = scheduledCount == 0
-                                                  ? 0.0
-                                                  : submittedCount / scheduledCount;
-                                              final double percent = ratio.clamp(0.0, 1.0);
-
-                                              return Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  const Text(
-                                                    "Today's Accomplished",
-                                                    style: TextStyle(
-                                                      fontFamily: 'Lato',
-                                                      fontSize: 16,
-                                                      fontWeight: FontWeight.w700,
-                                                      color: Colors.black,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Row(
-                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                    children: [
-                                                      const SizedBox.shrink(),
-                                                      Container(
-                                                        width: 26,
-                                                        height: 26,
-                                                        decoration: const BoxDecoration(
-                                                          color: Color(0xFFF5F4FF),
-                                                          shape: BoxShape.circle,
-                                                        ),
-                                                        child: Icon(
-                                                          Icons.speed,
-                                                          size: 16,
-                                                          color: Colors.purple.shade400,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  SizedBox(
-                                                    height: 96,
-                                                    child: Row(
-                                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                                      children: [
-                                                        Expanded(
-                                                          child: Text(
-                                                            ratio.toStringAsFixed(2),
-                                                            maxLines: 1,
-                                                            overflow: TextOverflow.ellipsis,
-                                                            style: const TextStyle(
-                                                              fontFamily: 'Lato',
-                                                              fontSize: 32,
-                                                              fontWeight: FontWeight.w900,
-                                                              color: Colors.black,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                        const SizedBox(width: 8),
-                                                        SizedBox(
-                                                          width: 70,
-                                                          height: 70,
-                                                          child: CustomPaint(
-                                                            painter: _DonutPainter(
-                                                              progress: percent,
-                                                              color: Colors.green.shade500,
-                                                              strokeWidth: 12,
-                                                              backgroundColor: const Color(0xFFE8ECEF),
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Text(
-                                                    '$submittedCount / $scheduledCount',
-                                                    style: const TextStyle(
-                                                      fontFamily: 'Lato',
-                                                      fontSize: 11,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: Colors.black,
-                                                    ),
-                                                  ),
-                                                ],
-                                              );
-                                            },
-                                          );                                        
-                                        },
-                                      ),
-                                    ),                                    
-                                                                        
-                                    // MONTH'S ACCOMPLISHED
-                                    Container(
-                                      width: 220,
-                                      margin: const EdgeInsets.only(right: 16),
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(18),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(0.05),
-                                            blurRadius: 10,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                                        future: (() {
-                                          final doctorsCol = _doctorCollectionRefForHome(
-                                            userClientType: userClientType,
-                                            userId: _userId, // or mrCode if that’s your MR id
-                                          );
-
-                                          return doctorsCol.get().timeout(
-                                            const Duration(seconds: 10),
-                                            onTimeout: () {
-                                              throw TimeoutException('Failed to load doctors data for month');
-                                            },
-                                          );
-                                        })(),
-                                        builder: (context, doctorSnapshot) {
-                                          if (doctorSnapshot.hasError) {
-                                            print('Error loading doctors for month: ${doctorSnapshot.error}');
-                                            return SizedBox(
-                                              height: 120,
-                                              child: Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  const Icon(
-                                                    Icons.error_outline,
-                                                    color: Colors.red,
-                                                    size: 24,
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  const Text(
-                                                    'Error loading data',
-                                                    textAlign: TextAlign.center,
-                                                    style: TextStyle(color: Colors.red, fontSize: 11),
-                                                  ),
-                                                  TextButton(
-                                                    onPressed: () {
-                                                      setState(() {});
-                                                    },
-                                                    child: const Text(
-                                                      'Retry',
-                                                      style: TextStyle(fontSize: 10),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
                                             );
-                                          }
-
-                                          if (doctorSnapshot.connectionState == ConnectionState.waiting) {
-                                            return const SizedBox(
-                                              height: 120,
-                                              child: Center(
-                                                child: CircularProgressIndicator(),
-                                              ),
-                                            );
-                                          }
-
-                                          if (!doctorSnapshot.hasData || doctorSnapshot.data!.docs.isEmpty) {
-                                            return SizedBox(
-                                              height: 120,
-                                              child: Center(
-                                                child: Text(
-                                                  _isOffline
-                                                      ? "Offline: showing last known monthly data."
-                                                      : "No doctors found.",
-                                                  textAlign: TextAlign.center,
-                                                  style: TextStyle(
-                                                    color: Colors.grey[700],
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                              ),
-                                            );
-                                          }
-
-                                          final List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs =
-                                              doctorSnapshot.data!.docs;
-
-                                          // Second FutureBuilder: count monthly accomplished visits
-                                          return FutureBuilder<Map<String, int>>(
-                                            future: getAccomplishedVisitsForMonthFromDoctors(
-                                              doctorDocs: doctorDocs,
-                                              referenceDay: DateTime.now(),
-                                            ).timeout(
-                                              const Duration(seconds: 10),
-                                              onTimeout: () {
-                                                print('Timeout counting monthly accomplished visits');
-                                                return {'total': 0, 'accomplished': 0};
-                                              },
-                                            ),
-                                            builder: (context, monthSnapshot) {
-                                              if (monthSnapshot.hasError) {
-                                                print('Error counting monthly visits: ${monthSnapshot.error}');
-                                                return SizedBox(
-                                                  height: 120,
-                                                  child: Column(
-                                                    mainAxisAlignment: MainAxisAlignment.center,
-                                                    children: const [
-                                                      Icon(
-                                                        Icons.error_outline,
-                                                        color: Colors.red,
-                                                        size: 24,
-                                                      ),
-                                                      SizedBox(height: 4),
-                                                      Text(
-                                                        'Error loading count',
-                                                        textAlign: TextAlign.center,
-                                                        style: TextStyle(color: Colors.red, fontSize: 11),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                );
-                                              }
-
-                                              if (monthSnapshot.connectionState == ConnectionState.waiting &&
-                                                  !monthSnapshot.hasData) {
-                                                return const SizedBox(
-                                                  height: 120,
-                                                  child: Center(
-                                                    child: CircularProgressIndicator(),
-                                                  ),
-                                                );
-                                              }
-
-                                              final Map<String, int> counts =
-                                                  monthSnapshot.data ?? {'total': 0, 'accomplished': 0};
-                                              final int total = counts['total'] ?? 0;
-                                              final int accomplished = counts['accomplished'] ?? 0;
-
-                                              final double ratio =
-                                                  total == 0 ? 0.0 : accomplished / total;
-                                              final double percent = ratio.clamp(0.0, 1.0);
-
-                                              return Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  const Text(
-                                                    "Month's Accomplished",
-                                                    style: TextStyle(
-                                                      fontFamily: 'Lato',
-                                                      fontSize: 16,
-                                                      fontWeight: FontWeight.w700,
-                                                      color: Colors.black,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Row(
-                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                    children: [
-                                                      const SizedBox.shrink(),
-                                                      Container(
-                                                        width: 26,
-                                                        height: 26,
-                                                        decoration: const BoxDecoration(
-                                                          color: Color(0xFFF5F4FF),
-                                                          shape: BoxShape.circle,
-                                                        ),
-                                                        child: Icon(
-                                                          Icons.date_range,
-                                                          size: 16,
-                                                          color: Colors.purple.shade400,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  SizedBox(
-                                                    height: 96,
-                                                    child: Row(
-                                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                                      children: [
-                                                        Expanded(
-                                                          child: Text(
-                                                            ratio.toStringAsFixed(2),
-                                                            maxLines: 1,
-                                                            overflow: TextOverflow.ellipsis,
-                                                            style: const TextStyle(
-                                                              fontFamily: 'Lato',
-                                                              fontSize: 32,
-                                                              fontWeight: FontWeight.w900,
-                                                              color: Colors.black,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                        const SizedBox(width: 8),
-                                                        SizedBox(
-                                                          width: 70,
-                                                          height: 70,
-                                                          child: CustomPaint(
-                                                            painter: _DonutPainter(
-                                                              progress: percent,
-                                                              color: Colors.blue.shade500,
-                                                              strokeWidth: 12,
-                                                              backgroundColor: const Color(0xFFE8ECEF),
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Text(
-                                                    '$accomplished / $total', // e.g., "15 / 20"
-                                                    style: const TextStyle(
-                                                      fontFamily: 'Lato',
-                                                      fontSize: 11,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: Colors.black,
-                                                    ),
-                                                  ),
-                                                ],
-                                              );
-                                            },
-                                          );
-                                        },
-                                      ),
-                                    ),                                    
-                                    
-                                    // CALL REACH (Number of Doctors visited at least once divided by the number of Doctors)
-                                    Container(
-                                      width: 220,
-                                      margin: const EdgeInsets.only(right: 16),
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(18),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(0.05),
-                                            blurRadius: 10,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: FutureBuilder<Map<String, dynamic>>(
-                                        future: getCallReachStats('IVA', 'MR00001')  // Replace with your actual clientId/userId
-                                            .timeout(
-                                              Duration(seconds: 15),  // Increased timeout for more data
-                                              onTimeout: () {
-                                                print('Timeout loading monthly call reach');
-                                                return {
-                                                  'callReach': 0.0,
-                                                  'totalDoctors': 0,
-                                                  'visitedDoctors': 0,
-                                                };
-                                              },
-                                            ),
-                                        builder: (context, snapshot) {
-                                          if (snapshot.hasError) {
-                                            print('Error loading call reach: ${snapshot.error}');
-                                            return Container(
-                                              height: 120,
-                                              child: Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Icon(Icons.error_outline, color: Colors.red, size: 24),
-                                                  SizedBox(height: 4),
-                                                  Text(
-                                                    'Error loading data',
-                                                    textAlign: TextAlign.center,
-                                                    style: TextStyle(color: Colors.red, fontSize: 11),
-                                                  ),
-                                                  TextButton(
-                                                    onPressed: () {
-                                                      setState(() {});
-                                                    },
-                                                    child: Text('Retry', style: TextStyle(fontSize: 10)),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          }
-
-                                          if (snapshot.connectionState == ConnectionState.waiting &&
-                                              !snapshot.hasData) {
-                                            return const SizedBox(
-                                              height: 120,
-                                              child: Center(
-                                                child: CircularProgressIndicator(),
-                                              ),
-                                            );
-                                          }
-
-                                          if (!snapshot.hasData) {
-                                            return SizedBox(
-                                              height: 120,
-                                              child: Center(
-                                                child: Text(
-                                                  _isOffline
-                                                      ? "Offline: showing last known call reach from cache."
-                                                      : "Unable to load call reach data.",
-                                                  textAlign: TextAlign.center,
-                                                  style: TextStyle(
-                                                    color: Colors.grey[700],
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                              ),
-                                            );
-                                          }
-
-                                          final Map<String, dynamic> data = snapshot.data!;
-                                          final double callReach = (data['callReach'] ?? 0.0) as double;
-                                          final int totalDoctors = (data['totalDoctors'] ?? 0) as int;
-                                          final int visitedDoctors = (data['visitedDoctors'] ?? 0) as int;
-                                          final double percent = (callReach / 100.0).clamp(0.0, 1.0);
-
-                                          return Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                "Call Reach",
-                                                style: TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                children: [
-                                                  const SizedBox.shrink(),
-                                                  Container(
-                                                    width: 26,
-                                                    height: 26,
-                                                    decoration: const BoxDecoration(
-                                                      color: Color(0xFFF5F4FF),
-                                                      shape: BoxShape.circle,
-                                                    ),
-                                                    child: Icon(
-                                                      Icons.track_changes,
-                                                      size: 16,
-                                                      color: Colors.purple.shade400,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 4),
-                                              SizedBox(
-                                                height: 96,
-                                                child: Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                          })(),
+                                          builder: (context, doctorSnapshot) {
+                                            if (doctorSnapshot.hasError) {
+                                              print('Error loading doctors for count: ${doctorSnapshot.error}');
+                                              return SizedBox(
+                                                height: 120,
+                                                child: Column(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
                                                   children: [
-                                                    Expanded(
-                                                      child: Text(
-                                                        callReach.toStringAsFixed(2),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: const TextStyle(
-                                                          fontFamily: 'Lato',
-                                                          fontSize: 32,
-                                                          fontWeight: FontWeight.w900,
-                                                          color: Colors.black,
-                                                        ),
-                                                      ),
+                                                    const Icon(
+                                                      Icons.error_outline,
+                                                      color: Colors.red,
+                                                      size: 24,
                                                     ),
-                                                    const SizedBox(width: 8),
-                                                    SizedBox(
-                                                      width: 70,
-                                                      height: 70,
-                                                      child: CustomPaint(
-                                                        painter: _DonutPainter(
-                                                          progress: percent,
-                                                          color: Colors.orange.shade600,
-                                                          strokeWidth: 12,
-                                                          backgroundColor: const Color(0xFFE8ECEF),
-                                                        ),
+                                                    const SizedBox(height: 4),
+                                                    const Text(
+                                                      'Error loading data',
+                                                      textAlign: TextAlign.center,
+                                                      style: TextStyle(color: Colors.red, fontSize: 11),
+                                                    ),
+                                                    TextButton(
+                                                      onPressed: () {
+                                                        setState(() {});
+                                                      },
+                                                      child: const Text(
+                                                        'Retry',
+                                                        style: TextStyle(fontSize: 10),
                                                       ),
                                                     ),
                                                   ],
                                                 ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '$visitedDoctors / $totalDoctors',
-                                                style: const TextStyle(
-                                                  fontFamily: 'Lato',
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.black,
+                                              );
+                                            }
+
+                                            if (doctorSnapshot.connectionState == ConnectionState.waiting) {
+                                              return const SizedBox(
+                                                height: 120,
+                                                child: Center(
+                                                  child: CircularProgressIndicator(),
                                                 ),
+                                              );
+                                            }
+
+                                            if (!doctorSnapshot.hasData || doctorSnapshot.data!.docs.isEmpty) {
+                                              return SizedBox(
+                                                height: 120,
+                                                child: Center(
+                                                  child: Text(
+                                                    _isOffline
+                                                        ? "Offline: showing last known data."
+                                                        : "No doctors found.",
+                                                    textAlign: TextAlign.center,
+                                                    style: TextStyle(
+                                                      color: Colors.grey[700],
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                            }
+
+                                            final List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs =
+                                                doctorSnapshot.data!.docs;
+
+                                            return FutureBuilder<Map<String, int>>(
+                                              future: getAccomplishedVisitsForToday(
+                                                doctorDocs: doctorDocs,
+                                                selectedDay: DateTime.now(),
+                                              ).timeout(
+                                                const Duration(seconds: 10),
+                                                onTimeout: () {
+                                                  print('Timeout counting scheduled visits');
+                                                  return {'total': 0, 'submitted': 0};
+                                                },
                                               ),
-                                            ],
-                                          );
-                                        },
+                                              builder: (context, countSnapshot) {
+                                                if (countSnapshot.hasError) {
+                                                  print('Error counting visits: ${countSnapshot.error}');
+                                                  return SizedBox(
+                                                    height: 120,
+                                                    child: Column(
+                                                      mainAxisAlignment: MainAxisAlignment.center,
+                                                      children: [
+                                                        const Icon(
+                                                          Icons.error_outline,
+                                                          color: Colors.red,
+                                                          size: 24,
+                                                        ),
+                                                        const SizedBox(height: 4),
+                                                        const Text(
+                                                          'Error loading count',
+                                                          textAlign: TextAlign.center,
+                                                          style: TextStyle(color: Colors.red, fontSize: 11),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                }
+
+                                                if (countSnapshot.connectionState == ConnectionState.waiting &&
+                                                    !countSnapshot.hasData) {
+                                                  return const SizedBox(
+                                                    height: 120,
+                                                    child: Center(
+                                                      child: CircularProgressIndicator(),
+                                                    ),
+                                                  );
+                                                }
+
+                                                final Map<String, int> counts =
+                                                    countSnapshot.data ?? {'total': 0, 'submitted': 0};
+                                                final int scheduledCount = counts['total'] ?? 0;
+                                                final int submittedCount = counts['submitted'] ?? 0;
+
+                                                final double ratio = scheduledCount == 0
+                                                    ? 0.0
+                                                    : submittedCount / scheduledCount;
+                                                final double percent = ratio.clamp(0.0, 1.0);
+
+                                                return Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    const Text(
+                                                      "Today's Accomplished",
+                                                      style: TextStyle(
+                                                        fontFamily: 'Lato',
+                                                        fontSize: 16,
+                                                        fontWeight: FontWeight.w700,
+                                                        color: Colors.black,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Row(
+                                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                      children: [
+                                                        const SizedBox.shrink(),
+                                                        Container(
+                                                          width: 26,
+                                                          height: 26,
+                                                          decoration: const BoxDecoration(
+                                                            color: Color(0xFFF5F4FF),
+                                                            shape: BoxShape.circle,
+                                                          ),
+                                                          child: Icon(
+                                                            Icons.speed,
+                                                            size: 16,
+                                                            color: Colors.purple.shade400,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    SizedBox(
+                                                      height: 96,
+                                                      child: Row(
+                                                        crossAxisAlignment: CrossAxisAlignment.center,
+                                                        children: [
+                                                          Expanded(
+                                                            child: Text(
+                                                              ratio.toStringAsFixed(2),
+                                                              maxLines: 1,
+                                                              overflow: TextOverflow.ellipsis,
+                                                              style: const TextStyle(
+                                                                fontFamily: 'Lato',
+                                                                fontSize: 32,
+                                                                fontWeight: FontWeight.w900,
+                                                                color: Colors.black,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          const SizedBox(width: 8),
+                                                          SizedBox(
+                                                            width: 70,
+                                                            height: 70,
+                                                            child: CustomPaint(
+                                                              painter: _DonutPainter(
+                                                                progress: percent,
+                                                                color: Colors.green.shade500,
+                                                                strokeWidth: 12,
+                                                                backgroundColor: const Color(0xFFE8ECEF),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      '$submittedCount / $scheduledCount',
+                                                      style: const TextStyle(
+                                                        fontFamily: 'Lato',
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: Colors.black,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                );
+                                              },
+                                            );
+                                          },
+                                        ),
                                       ),
-                                    ),
-                                                                        
-                                    // CALL FREQUENCY (Number of Doctors with completed frequency visits divided by the number of Doctors)
-                                    Container(
+
+                                      // MONTH'S ACCOMPLISHED
+                                      Container(
+                                        width: 220,
+                                        margin: const EdgeInsets.only(right: 16),
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(18),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(0.05),
+                                              blurRadius: 10,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                                          future: (() {
+                                            final doctorsCol = _doctorCollectionRefForHome(
+                                              userClientType: userClientType,
+                                              userId: _userId, // or mrCode if that’s your MR id
+                                            );
+
+                                            return doctorsCol.get().timeout(
+                                              const Duration(seconds: 10),
+                                              onTimeout: () {
+                                                throw TimeoutException('Failed to load doctors data for month');
+                                              },
+                                            );
+                                          })(),
+                                          builder: (context, doctorSnapshot) {
+                                            if (doctorSnapshot.hasError) {
+                                              print('Error loading doctors for month: ${doctorSnapshot.error}');
+                                              return SizedBox(
+                                                height: 120,
+                                                child: Column(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.error_outline,
+                                                      color: Colors.red,
+                                                      size: 24,
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    const Text(
+                                                      'Error loading data',
+                                                      textAlign: TextAlign.center,
+                                                      style: TextStyle(color: Colors.red, fontSize: 11),
+                                                    ),
+                                                    TextButton(
+                                                      onPressed: () {
+                                                        setState(() {});
+                                                      },
+                                                      child: const Text(
+                                                        'Retry',
+                                                        style: TextStyle(fontSize: 10),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            }
+
+                                            if (doctorSnapshot.connectionState == ConnectionState.waiting) {
+                                              return const SizedBox(
+                                                height: 120,
+                                                child: Center(
+                                                  child: CircularProgressIndicator(),
+                                                ),
+                                              );
+                                            }
+
+                                            if (!doctorSnapshot.hasData || doctorSnapshot.data!.docs.isEmpty) {
+                                              return SizedBox(
+                                                height: 120,
+                                                child: Center(
+                                                  child: Text(
+                                                    _isOffline
+                                                        ? "Offline: showing last known monthly data."
+                                                        : "No doctors found.",
+                                                    textAlign: TextAlign.center,
+                                                    style: TextStyle(
+                                                      color: Colors.grey[700],
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                            }
+
+                                            final List<QueryDocumentSnapshot<Map<String, dynamic>>> doctorDocs =
+                                                doctorSnapshot.data!.docs;
+
+                                            // Second FutureBuilder: count monthly accomplished visits
+                                            return FutureBuilder<Map<String, int>>(
+                                              future: getAccomplishedVisitsForMonthFromDoctors(
+                                                doctorDocs: doctorDocs,
+                                                referenceDay: DateTime.now(),
+                                              ).timeout(
+                                                const Duration(seconds: 10),
+                                                onTimeout: () {
+                                                  print('Timeout counting monthly accomplished visits');
+                                                  return {'total': 0, 'accomplished': 0};
+                                                },
+                                              ),
+                                              builder: (context, monthSnapshot) {
+                                                if (monthSnapshot.hasError) {
+                                                  print('Error counting monthly visits: ${monthSnapshot.error}');
+                                                  return SizedBox(
+                                                    height: 120,
+                                                    child: Column(
+                                                      mainAxisAlignment: MainAxisAlignment.center,
+                                                      children: const [
+                                                        Icon(
+                                                          Icons.error_outline,
+                                                          color: Colors.red,
+                                                          size: 24,
+                                                        ),
+                                                        SizedBox(height: 4),
+                                                        Text(
+                                                          'Error loading count',
+                                                          textAlign: TextAlign.center,
+                                                          style: TextStyle(color: Colors.red, fontSize: 11),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                }
+
+                                                if (monthSnapshot.connectionState == ConnectionState.waiting &&
+                                                    !monthSnapshot.hasData) {
+                                                  return const SizedBox(
+                                                    height: 120,
+                                                    child: Center(
+                                                      child: CircularProgressIndicator(),
+                                                    ),
+                                                  );
+                                                }
+
+                                                final Map<String, int> counts =
+                                                    monthSnapshot.data ?? {'total': 0, 'accomplished': 0};
+                                                final int total = counts['total'] ?? 0;
+                                                final int accomplished = counts['accomplished'] ?? 0;
+
+                                                final double ratio =
+                                                    total == 0 ? 0.0 : accomplished / total;
+                                                final double percent = ratio.clamp(0.0, 1.0);
+
+                                                return Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    const Text(
+                                                      "Month's Accomplished",
+                                                      style: TextStyle(
+                                                        fontFamily: 'Lato',
+                                                        fontSize: 16,
+                                                        fontWeight: FontWeight.w700,
+                                                        color: Colors.black,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Row(
+                                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                      children: [
+                                                        const SizedBox.shrink(),
+                                                        Container(
+                                                          width: 26,
+                                                          height: 26,
+                                                          decoration: const BoxDecoration(
+                                                            color: Color(0xFFF5F4FF),
+                                                            shape: BoxShape.circle,
+                                                          ),
+                                                          child: Icon(
+                                                            Icons.date_range,
+                                                            size: 16,
+                                                            color: Colors.purple.shade400,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    SizedBox(
+                                                      height: 96,
+                                                      child: Row(
+                                                        crossAxisAlignment: CrossAxisAlignment.center,
+                                                        children: [
+                                                          Expanded(
+                                                            child: Text(
+                                                              ratio.toStringAsFixed(2),
+                                                              maxLines: 1,
+                                                              overflow: TextOverflow.ellipsis,
+                                                              style: const TextStyle(
+                                                                fontFamily: 'Lato',
+                                                                fontSize: 32,
+                                                                fontWeight: FontWeight.w900,
+                                                                color: Colors.black,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          const SizedBox(width: 8),
+                                                          SizedBox(
+                                                            width: 70,
+                                                            height: 70,
+                                                            child: CustomPaint(
+                                                              painter: _DonutPainter(
+                                                                progress: percent,
+                                                                color: Colors.blue.shade500,
+                                                                strokeWidth: 12,
+                                                                backgroundColor: const Color(0xFFE8ECEF),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      '$accomplished / $total', // e.g., "15 / 20"
+                                                      style: const TextStyle(
+                                                        fontFamily: 'Lato',
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: Colors.black,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                );
+                                              },
+                                            );
+                                          },
+                                        ),
+                                      ),
+
+                                      // NEW: CALL PERFORMANCE CARD (between Month's Accomplished and Call Reach)
+                                      Container(
+                                        width: 220,
+                                        margin: const EdgeInsets.only(right: 16),
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(18),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(0.05),
+                                              blurRadius: 10,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              "Call Performance",
+                                              style: TextStyle(
+                                                fontFamily: 'Lato',
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.black,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                const SizedBox.shrink(),
+                                                Container(
+                                                  width: 26,
+                                                  height: 26,
+                                                  decoration: const BoxDecoration(
+                                                    color: Color(0xFFF5F4FF),
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.analytics,
+                                                    size: 16,
+                                                    color: Colors.purple.shade400,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 12),
+                                            const Text(
+                                              "Overview of your monthly call KPIs.",
+                                              style: TextStyle(
+                                                fontFamily: 'Lato',
+                                                fontSize: 12,
+                                                color: Colors.black87,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            const Text(
+                                              "You can later plug in more metrics or a small chart here.",
+                                              style: TextStyle(
+                                                fontFamily: 'Lato',
+                                                fontSize: 11,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+
+                                      // CALL REACH (Number of Doctors visited at least once divided by the number of Doctors)
+                                      Container(
                                         width: 220,
                                         margin: const EdgeInsets.only(right: 16),
                                         padding: const EdgeInsets.all(16),
@@ -5595,18 +5201,191 @@ class _HomePageState extends State<HomePage> {
                                           ],
                                         ),
                                         child: FutureBuilder<Map<String, dynamic>>(
-                                          future: _getCallFrequencyStatss()
+                                          future: getCallReachStats('IVA', 'MR00001') // Replace with your actual clientId/userId
                                               .timeout(
-                                                Duration(seconds: 10),
-                                                onTimeout: () {
-                                                  print('Timeout loading call frequency');
-                                                  return {
-                                                    'frequencyPercent': 0.0,
-                                                    'totalDoctors': 0,
-                                                    'completedFrequency': 0,
-                                                  };
-                                                },
-                                              ),
+                                            Duration(seconds: 15), // Increased timeout for more data
+                                            onTimeout: () {
+                                              print('Timeout loading monthly call reach');
+                                              return {
+                                                'callReach': 0.0,
+                                                'totalDoctors': 0,
+                                                'visitedDoctors': 0,
+                                              };
+                                            },
+                                          ),
+                                          builder: (context, snapshot) {
+                                            if (snapshot.hasError) {
+                                              print('Error loading call reach: ${snapshot.error}');
+                                              return Container(
+                                                height: 120,
+                                                child: Column(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    Icon(Icons.error_outline, color: Colors.red, size: 24),
+                                                    SizedBox(height: 4),
+                                                    Text(
+                                                      'Error loading data',
+                                                      textAlign: TextAlign.center,
+                                                      style: TextStyle(color: Colors.red, fontSize: 11),
+                                                    ),
+                                                    TextButton(
+                                                      onPressed: () {
+                                                        setState(() {});
+                                                      },
+                                                      child: Text('Retry', style: TextStyle(fontSize: 10)),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            }
+
+                                            if (snapshot.connectionState == ConnectionState.waiting &&
+                                                !snapshot.hasData) {
+                                              return const SizedBox(
+                                                height: 120,
+                                                child: Center(
+                                                  child: CircularProgressIndicator(),
+                                                ),
+                                              );
+                                            }
+
+                                            if (!snapshot.hasData) {
+                                              return SizedBox(
+                                                height: 120,
+                                                child: Center(
+                                                  child: Text(
+                                                    _isOffline
+                                                        ? "Offline: showing last known call reach from cache."
+                                                        : "Unable to load call reach data.",
+                                                    textAlign: TextAlign.center,
+                                                    style: TextStyle(
+                                                      color: Colors.grey[700],
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                            }
+
+                                            final Map<String, dynamic> data = snapshot.data!;
+                                            final double callReach = (data['callReach'] ?? 0.0) as double;
+                                            final int totalDoctors = (data['totalDoctors'] ?? 0) as int;
+                                            final int visitedDoctors =
+                                                (data['visitedDoctors'] ?? 0) as int;
+                                            final double percent =
+                                                (callReach / 100.0).clamp(0.0, 1.0);
+
+                                            return Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                const Text(
+                                                  "Call Reach",
+                                                  style: TextStyle(
+                                                    fontFamily: 'Lato',
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: Colors.black,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Row(
+                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                  children: [
+                                                    const SizedBox.shrink(),
+                                                    Container(
+                                                      width: 26,
+                                                      height: 26,
+                                                      decoration: const BoxDecoration(
+                                                        color: Color(0xFFF5F4FF),
+                                                        shape: BoxShape.circle,
+                                                      ),
+                                                      child: Icon(
+                                                        Icons.track_changes,
+                                                        size: 16,
+                                                        color: Colors.purple.shade400,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 4),
+                                                SizedBox(
+                                                  height: 96,
+                                                  child: Row(
+                                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                                    children: [
+                                                      Expanded(
+                                                        child: Text(
+                                                          callReach.toStringAsFixed(2),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: const TextStyle(
+                                                            fontFamily: 'Lato',
+                                                            fontSize: 32,
+                                                            fontWeight: FontWeight.w900,
+                                                            color: Colors.black,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      SizedBox(
+                                                        width: 70,
+                                                        height: 70,
+                                                        child: CustomPaint(
+                                                          painter: _DonutPainter(
+                                                            progress: percent,
+                                                            color: Colors.orange.shade600,
+                                                            strokeWidth: 12,
+                                                            backgroundColor: const Color(0xFFE8ECEF),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  '$visitedDoctors / $totalDoctors',
+                                                  style: const TextStyle(
+                                                    fontFamily: 'Lato',
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.black,
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          },
+                                        ),
+                                      ),
+
+                                      // CALL FREQUENCY (Number of Doctors with completed frequency visits divided by the number of Doctors)
+                                      Container(
+                                        width: 220,
+                                        margin: const EdgeInsets.only(right: 16),
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(18),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(0.05),
+                                              blurRadius: 10,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: FutureBuilder<Map<String, dynamic>>(
+                                          future: _getCallFrequencyStatss().timeout(
+                                            Duration(seconds: 10),
+                                            onTimeout: () {
+                                              print('Timeout loading call frequency');
+                                              return {
+                                                'frequencyPercent': 0.0,
+                                                'totalDoctors': 0,
+                                                'completedFrequency': 0,
+                                              };
+                                            },
+                                          ),
                                           builder: (context, snapshot) {
                                             if (snapshot.hasError) {
                                               print('Error loading call frequency: ${snapshot.error}');
@@ -5664,7 +5443,8 @@ class _HomePageState extends State<HomePage> {
                                             final Map<String, dynamic> data = snapshot.data!;
                                             final double frequencyPercent =
                                                 (data['frequencyPercent'] ?? 0.0) as double;
-                                            final int totalDoctors = (data['totalDoctors'] ?? 0) as int;
+                                            final int totalDoctors =
+                                                (data['totalDoctors'] ?? 0) as int;
                                             final int completedFrequency =
                                                 (data['completedFrequency'] ?? 0) as int;
                                             final double percent =
@@ -5751,11 +5531,10 @@ class _HomePageState extends State<HomePage> {
                                             );
                                           },
                                         ),
-                                      ), 
-                                  
-                                  ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
                             
                             ],
                           ),
@@ -6161,7 +5940,12 @@ class _HomePageState extends State<HomePage> {
                     } else if (_selectedIndex == 2) {
                       _openAddPlannedVisitDialog();
                     } else if (_selectedIndex == 3) {
-                      _openAddNewClientDialog();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AddDoctorPage(),
+                        ),
+                      );
                     }
                   },
                   child: Container(
