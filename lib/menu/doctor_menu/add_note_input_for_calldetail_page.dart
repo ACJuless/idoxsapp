@@ -21,6 +21,7 @@ class AddNoteInputForCallDetailPage extends StatefulWidget {
 class _AddNoteInputForCallDetailPageState
     extends State<AddNoteInputForCallDetailPage> {
   final TextEditingController _noteController = TextEditingController();
+  final TextEditingController _titleController = TextEditingController();
   bool _isSaving = false;
 
   String? _userId; // MR id like MR00001
@@ -44,20 +45,20 @@ class _AddNoteInputForCallDetailPageState
   String _docIdForNow() {
     final dt = DateTime.now();
 
-    final datePart = DateFormat('yyyyMMdd').format(dt);     // 20260417
-    final timePart = DateFormat('hhmm').format(dt);         // 1230
-    final amPmPart = DateFormat('a').format(dt);            // AM or PM
+    final datePart = DateFormat('yyyyMMdd').format(dt); // 20260417
+    final timePart = DateFormat('hhmm').format(dt); // 1230
+    final amPmPart = DateFormat('a').format(dt); // AM or PM
 
-    return "$datePart$timePart$amPmPart";                   // 202604171230PM
+    return "$datePart$timePart$amPmPart"; // 202604171230PM
   }
 
   /// Human-readable time: h:mm a (e.g., 1:05 PM)
   String _displayTimeForNow() {
     final dt = DateTime.now();
-    return DateFormat('h:mm a').format(dt); // 12‑hour with AM/PM [web:139]
+    return DateFormat('h:mm a').format(dt);
   }
 
-  /// Root collection for the current user's doctors
+  /// Root collection for the current user's doctors:
   /// /DaloyClients/IVA/Users/{_userId}/Doctor
   CollectionReference<Map<String, dynamic>> _doctorRoot() {
     if (_userId == null || _userId!.isEmpty) {
@@ -86,7 +87,16 @@ class _AddNoteInputForCallDetailPageState
       return;
     }
 
+    final title = _titleController.text.trim();
     final text = _noteController.text.trim();
+
+    if (title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please enter a title")),
+      );
+      return;
+    }
+
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please enter a note")),
@@ -100,14 +110,16 @@ class _AddNoteInputForCallDetailPageState
       final noteDocId = _docIdForNow();
       final timeDisplay = _displayTimeForNow();
 
-      // Path:
-      // /DaloyClients/IVA/Users/{userId}/Doctor/{doctorId}/CallNotes/{noteDocId}
-      // Note: scheduledVisitId is stored as a field to keep the linkage.
+      // New path:
+      // /DaloyClients/IVA/Users/{userId}/Doctor/{doctorId}/Visits/{scheduledVisitId}/callNotes/{noteDocId}
       await _doctorRoot()
           .doc(widget.doctorId)
-          .collection('CallNotes')
+          .collection('Visits')
+          .doc(widget.scheduledVisitId)
+          .collection('callNotes')
           .doc(noteDocId)
           .set({
+        'title': title,
         'note': text,
         'timestamp': FieldValue.serverTimestamp(),
         'timeDisplay': timeDisplay, // e.g., "1:05 PM"
@@ -132,6 +144,7 @@ class _AddNoteInputForCallDetailPageState
   @override
   void dispose() {
     _noteController.dispose();
+    _titleController.dispose();
     super.dispose();
   }
 
@@ -156,6 +169,15 @@ class _AddNoteInputForCallDetailPageState
                   style: TextStyle(color: Colors.red),
                 ),
               ),
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: "Title",
+                hintText: "Enter a short title for this plan",
+              ),
+            ),
+            const SizedBox(height: 16),
             TextField(
               controller: _noteController,
               minLines: 5,
@@ -192,7 +214,7 @@ class _AddNoteInputForCallDetailPageState
                     ),
                     onPressed: isUserLoaded ? _saveNote : null,
                     child: const Text(
-                      "Done",
+                      "Submit",
                       style: TextStyle(color: Colors.white),
                     ),
                   ),

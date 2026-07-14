@@ -15,20 +15,127 @@ class _AddVisitPageState extends State<AddVisitPage> {
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
   bool _isSaving = false;
-  String? emailKey;
+
+  String? _userEmail;
+  String? _userClientType;
+  String? _userId;
 
   @override
   void initState() {
     super.initState();
-    _loadEmailKey();
+    _loadUserPrefs();
   }
 
-  Future<void> _loadEmailKey() async {
+  Future<void> _loadUserPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     final userEmail = prefs.getString('userEmail') ?? '';
+    final clientType = prefs.getString('userClientType') ?? 'both';
+    final userId = prefs.getString('userId') ?? '';
+
     setState(() {
-      emailKey = userEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
+      _userEmail = userEmail;
+      _userClientType = clientType;
+      _userId = userId;
     });
+  }
+
+  /// Match TmlViewPage.getClientSegment so all Daloy paths align.
+  String _getClientSegment({
+    required String userClientType,
+    required String userEmail,
+  }) {
+    if (userClientType == 'farmers') return 'INDOFIL';
+    if (userClientType == 'pharma') {
+      final lower = userEmail.toLowerCase();
+      if (lower.endsWith('@wert.com')) return 'WERT';
+      return 'IVA';
+    }
+    final lower = userEmail.toLowerCase();
+    if (lower.endsWith('@indofil.com')) return 'INDOFIL';
+    if (lower.endsWith('@wert.com')) return 'WERT';
+    if (lower.endsWith('@iva.com')) return 'IVA';
+    return 'GENERAL';
+  }
+
+  /// /DaloyClients/{segment}/Users/{_userId}/Doctor
+  CollectionReference<Map<String, dynamic>> _doctorsCollectionRef() {
+    final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
+
+    if ((_userId ?? '').isEmpty) {
+      return daloyRoot
+          .doc('GENERAL')
+          .collection('Users')
+          .doc('_DUMMY')
+          .collection('Doctor');
+    }
+
+    final segment = _getClientSegment(
+      userClientType: _userClientType ?? '',
+      userEmail: _userEmail ?? '',
+    );
+
+    return daloyRoot
+        .doc(segment)
+        .collection('Users')
+        .doc(_userId)
+        .collection('Doctor');
+  }
+
+  /// Visits: /DaloyClients/{segment}/Users/{_userId}/Doctor/{docId}/Visits
+  CollectionReference<Map<String, dynamic>> _visitsCollection() {
+    return _doctorsCollectionRef().doc(widget.docId).collection('Visits');
+  }
+
+  /// Calendar itinerary:
+  /// /DaloyClients/{segment}/Users/{_userId}/Calendar/{yyyy-MM}/Days/{d}/Itinerary/{doctorId}
+  DocumentReference<Map<String, dynamic>> _calendarItineraryRef(
+    DateTime visitDate,
+    String doctorId,
+  ) {
+    final monthId =
+        "${visitDate.year}-${visitDate.month.toString().padLeft(2, '0')}";
+    final dayId = visitDate.day.toString();
+
+    final daloyRoot = FirebaseFirestore.instance.collection('DaloyClients');
+    final segment = _getClientSegment(
+      userClientType: _userClientType ?? '',
+      userEmail: _userEmail ?? '',
+    );
+
+    return daloyRoot
+        .doc(segment)
+        .collection('Users')
+        .doc(_userId)
+        .collection('Calendar')
+        .doc(monthId)
+        .collection('Days')
+        .doc(dayId)
+        .collection('Itinerary')
+        .doc(doctorId);
+  }
+
+  /// SampleAllocations:
+  /// /DaloyClients/{segment}/Users/{_userId}/Doctor/{doctorId}/SampleAllocations/{yyyyMMdd}
+  DocumentReference<Map<String, dynamic>> _sampleAllocationsRefForVisit(
+    String doctorId,
+    String dateId,
+  ) {
+    return _doctorsCollectionRef()
+        .doc(doctorId)
+        .collection('SampleAllocations')
+        .doc(dateId);
+  }
+
+  /// CallNotes:
+  /// /DaloyClients/{segment}/Users/{_userId}/Doctor/{doctorId}/CallNotes/{yyyyMMdd}
+  DocumentReference<Map<String, dynamic>> _callNotesRefForVisit(
+    String doctorId,
+    String dateId,
+  ) {
+    return _doctorsCollectionRef()
+        .doc(doctorId)
+        .collection('CallNotes')
+        .doc(dateId);
   }
 
   Future<void> _pickDate(BuildContext context) async {
@@ -53,8 +160,14 @@ class _AddVisitPageState extends State<AddVisitPage> {
     }
   }
 
-  String _formatDate(DateTime date) =>
+  String _formatDisplayDate(DateTime date) =>
       "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+
+  /// Firestore key format used by TML/Visits: yyyyMMdd
+  String _formatScheduledDateKey(DateTime date) =>
+      "${date.year.toString().padLeft(4, '0')}"
+      "${date.month.toString().padLeft(2, '0')}"
+      "${date.day.toString().padLeft(2, '0')}";
 
   String _formatTime(TimeOfDay time) {
     final hour = time.hourOfPeriod;
@@ -64,62 +177,104 @@ class _AddVisitPageState extends State<AddVisitPage> {
   }
 
   Future<void> _saveVisit() async {
-    if (emailKey == null || emailKey!.isEmpty) {
+    if ((_userEmail == null || _userEmail!.isEmpty) ||
+        (_userClientType == null || _userClientType!.isEmpty) ||
+        (_userId == null || _userId!.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("User credentials not loaded.")),
+        const SnackBar(content: Text("User credentials not loaded.")),
       );
       return;
     }
+
     if (_selectedDate == null || _selectedTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Please select both a date and time.")),
+        const SnackBar(content: Text("Please select both a date and time.")),
       );
       return;
     }
+
     setState(() => _isSaving = true);
 
-    final now = DateTime.now();
-    final todayOnly = DateTime(now.year, now.month, now.day);
-    final chosenOnly = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day);
-    final isSurprise = todayOnly == chosenOnly;
+    try {
+      final visitDate = DateTime(
+        _selectedDate!.year,
+        _selectedDate!.month,
+        _selectedDate!.day,
+      );
 
-    final visitDocId = _formatDate(_selectedDate!);
-    await FirebaseFirestore.instance
-        .collection('flowDB')
-        .doc('users')
-        .collection(emailKey!)
-        .doc('doctors')
-        .collection('doctors')
-        .doc(widget.docId)
-        .collection('scheduledVisits')
-        .doc(visitDocId)
-        .set({
-          'scheduledDate': visitDocId,
-          'scheduledTime': _formatTime(_selectedTime!),
-          'timestamp': FieldValue.serverTimestamp(),
-          'surprise': isSurprise,
-          // Add more visit fields here if needed
-        });
+      final dateId = _formatScheduledDateKey(visitDate);
+      final timeStr = _formatTime(_selectedTime!);
 
-    setState(() => _isSaving = false);
-    Navigator.pop(context);
+      final visitsRef = _visitsCollection();
+      final visitDocRef = visitsRef.doc(dateId);
+
+      final itineraryRef = _calendarItineraryRef(visitDate, widget.docId);
+      final sampleAllocRef = _sampleAllocationsRefForVisit(widget.docId, dateId);
+      final callNotesRef = _callNotesRefForVisit(widget.docId, dateId);
+      final doctorRef = _doctorsCollectionRef().doc(widget.docId);
+
+      // Create/merge itinerary document
+      await itineraryRef.set(
+        {
+          'doctorId': widget.docId,
+          'scheduledDate': dateId,
+          'createdAt': FieldValue.serverTimestamp(),
+          'DoctorReference': doctorRef,
+        },
+        SetOptions(merge: true),
+      );
+
+      // Visit document with all four references and surprise visit flags
+      await visitDocRef.set(
+        {
+          "scheduledDate": dateId,
+          "scheduledTime": timeStr,
+          "Visit": true,
+          "submitted": false,
+          "surprise": true,
+          "ItineraryReference": itineraryRef,
+          "SampleAllocationsReference": sampleAllocRef,
+          "CallNotesReference": callNotesRef,
+          "DoctorReference": doctorRef,
+        },
+        SetOptions(merge: true),
+      );
+
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Failed to save visit: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (emailKey == null || emailKey!.isEmpty) {
+    if (_userId == null ||
+        _userId!.isEmpty ||
+        _userClientType == null ||
+        _userClientType!.isEmpty ||
+        _userEmail == null ||
+        _userEmail!.isEmpty) {
       return Scaffold(
         appBar: AppBar(
-          title: Text("Add Visit"),
+          title: const Text("Add Surprise Visit"),
           backgroundColor: Colors.red.shade600,
         ),
-        body: Center(child: CircularProgressIndicator()),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("Add Visit"),
+        title: const Text("Add Surprise Visit"),
         backgroundColor: Colors.red.shade600,
       ),
       body: Padding(
@@ -129,27 +284,31 @@ class _AddVisitPageState extends State<AddVisitPage> {
           children: [
             Card(
               child: ListTile(
-                title: Text("Date"),
-                subtitle: Text(_selectedDate != null
-                    ? _formatDate(_selectedDate!)
-                    : "Pick a date"),
-                trailing: Icon(Icons.calendar_today),
+                title: const Text("Date"),
+                subtitle: Text(
+                  _selectedDate != null
+                      ? _formatDisplayDate(_selectedDate!)
+                      : "Pick a date",
+                ),
+                trailing: const Icon(Icons.calendar_today),
                 onTap: () => _pickDate(context),
               ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             Card(
               child: ListTile(
-                title: Text("Time"),
-                subtitle: Text(_selectedTime != null
-                    ? _formatTime(_selectedTime!)
-                    : "Pick a time"),
-                trailing: Icon(Icons.access_time),
+                title: const Text("Time"),
+                subtitle: Text(
+                  _selectedTime != null
+                      ? _formatTime(_selectedTime!)
+                      : "Pick a time",
+                ),
+                trailing: const Icon(Icons.access_time),
                 onTap: () => _pickTime(context),
               ),
             ),
-            SizedBox(height: 28),
-            if (_isSaving) Center(child: CircularProgressIndicator()),
+            const SizedBox(height: 28),
+            if (_isSaving) const Center(child: CircularProgressIndicator()),
             if (!_isSaving)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -161,14 +320,20 @@ class _AddVisitPageState extends State<AddVisitPage> {
                     onPressed: () {
                       Navigator.pop(context);
                     },
-                    child: Text("Cancel", style: TextStyle(color: Colors.black)),
+                    child: const Text(
+                      "Cancel",
+                      style: TextStyle(color: Colors.black),
+                    ),
                   ),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red.shade600,
                     ),
                     onPressed: _saveVisit,
-                    child: Text("Done", style: TextStyle(color: Colors.white)),
+                    child: const Text(
+                      "Done",
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
                 ],
               ),

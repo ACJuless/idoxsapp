@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'deduction_input_for_calldetail_page.dart';
+import 'package:firebase_storage/firebase_storage.dart'; // NEW: for Storage [web:74]
 import 'add_note_input_for_calldetail_page.dart';
 import 'call_loc_page.dart';
-import '../call_postcall_page.dart';
 import 'call_signature_page.dart';
-import 'call_tools_page.dart';
+// We will not use the old local-files CallToolsPage; instead, we implement a tools tab here.
+// import 'call_tools_page.dart';
 
 class CallDetailPage extends StatefulWidget {
   final Map<String, dynamic> doctor;
   final String scheduledVisitId;
+
   const CallDetailPage({
     Key? key,
     required this.doctor,
@@ -21,7 +22,26 @@ class CallDetailPage extends StatefulWidget {
   State<CallDetailPage> createState() => _CallDetailPageState();
 }
 
-class _CallDetailPageState extends State<CallDetailPage> {
+class _CallDetailPageState extends State<CallDetailPage>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    // 4 tabs: Pre-Call, Location, Tools, Signature
+    _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(() {
+      setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final doctorName =
@@ -30,82 +50,104 @@ class _CallDetailPageState extends State<CallDetailPage> {
     final hospital = widget.doctor['hospital'] ?? '';
     final specialty = widget.doctor['specialty'] ?? '';
 
-    return DefaultTabController(
-      length: 4,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("$doctorName ($doctorId)", style: const TextStyle(fontSize: 18)),
-              Text(
-                hospital,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.normal),
-              ),
-              Text(
-                specialty,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
-              ),
-            ],
-          ),
-          backgroundColor: const Color(0xFF5958b2),
-          bottom: const TabBar(
-            isScrollable: false,
-            labelColor: Colors.amber,
-            unselectedLabelColor: Colors.white,
-            indicatorColor: Colors.amber,
-            tabs: [
-              Tab(text: "Pre-Call"),
-              Tab(text: "Location"),
-              Tab(text: "Tools"),
-              Tab(text: "Signature"),
-            ],
-          ),
-        ),
-        body: TabBarView(
+    return Scaffold(
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            PreCallTab(
-              doctorId: doctorId,
-              scheduledVisitId: widget.scheduledVisitId,
+            Text(
+              "$doctorName ($doctorId)",
+              style: const TextStyle(fontSize: 18),
             ),
-            CallLocPage(
-              doctorId: doctorId,
-              scheduledVisitId: widget.scheduledVisitId,
+            Text(
+              hospital,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.normal,
+              ),
             ),
-            const CallToolsPage(),
-            CallSignaturePage(
-              doctorId: doctorId,
-              scheduledVisitId: widget.scheduledVisitId,
+            Text(
+              specialty,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.normal,
+              ),
             ),
           ],
         ),
-        floatingActionButton: Builder(
-          builder: (context) {
-            final tabController = DefaultTabController.of(context);
-            return StreamBuilder<Object>(
-              stream: null,
-              builder: (context, snapshot) {
-                return FloatingActionButton(
-                  onPressed: () async {
-                    final doctorId = widget.doctor['doc_id'] ?? '';
-                    final scheduledVisitId = widget.scheduledVisitId;
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => AddNoteInputForCallDetailPage(
-                          doctorId: doctorId,
-                          scheduledVisitId: scheduledVisitId,
-                        ),
-                      ),
-                    );
-                  },
-                  child: const Icon(Icons.add),
-                );
-              },
-            );
-          },
+        backgroundColor: const Color(0xFF5958b2),
+        bottom: TabBar(
+          controller: _tabController,
+          isScrollable: false,
+          labelColor: Colors.amber,
+          unselectedLabelColor: Colors.white,
+          indicatorColor: Colors.amber,
+          tabs: const [
+            Tab(text: "Pre-Call"),
+            Tab(text: "Location"),
+            Tab(text: "Tools"),
+            Tab(text: "Signature"),
+          ],
         ),
       ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          PreCallTab(
+            doctorId: doctorId,
+            scheduledVisitId: widget.scheduledVisitId,
+          ),
+          CallLocPage(
+            doctorId: doctorId,
+            scheduledVisitId: widget.scheduledVisitId,
+          ),
+          // New tools implementation that reads from Firebase Storage
+          ToolsTabStorage(
+            doctorId: doctorId,
+            scheduledVisitId: widget.scheduledVisitId,
+          ),
+          CallSignaturePage(
+            doctorId: doctorId,
+            scheduledVisitId: widget.scheduledVisitId,
+          ),
+        ],
+      ),
+      // FAB varies by tab:
+      // index 0 -> Pre-Call FAB (existing behavior)
+      // index 1 -> Location FAB (no functionality yet)
+      // others -> no FAB
+      floatingActionButton: () {
+        final index = _tabController.index;
+        if (index == 0) {
+          // Pre-Call FAB (existing)
+          return FloatingActionButton(
+            onPressed: () async {
+              final doctorId = widget.doctor['doc_id'] ?? '';
+              final scheduledVisitId = widget.scheduledVisitId;
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AddNoteInputForCallDetailPage(
+                    doctorId: doctorId,
+                    scheduledVisitId: scheduledVisitId,
+                  ),
+                ),
+              );
+            },
+            child: const Icon(Icons.add),
+          );
+        } else if (index == 1) {
+          // Location FAB (placeholder, no functionality yet)
+          return FloatingActionButton(
+            onPressed: () {
+              // TODO: add functionality later
+            },
+            child: const Icon(Icons.add_location_alt),
+          );
+        } else {
+          return null;
+        }
+      }(),
     );
   }
 }
@@ -113,6 +155,7 @@ class _CallDetailPageState extends State<CallDetailPage> {
 class PreCallTab extends StatelessWidget {
   final String doctorId;
   final String scheduledVisitId;
+
   const PreCallTab({
     Key? key,
     required this.doctorId,
@@ -156,8 +199,11 @@ class PreCallTab extends StatelessWidget {
 class DeductionListUserScoped extends StatefulWidget {
   final String doctorId;
   final String scheduledVisitId;
-  const DeductionListUserScoped(
-      {required this.doctorId, required this.scheduledVisitId});
+
+  const DeductionListUserScoped({
+    required this.doctorId,
+    required this.scheduledVisitId,
+  });
 
   @override
   State<DeductionListUserScoped> createState() =>
@@ -198,8 +244,11 @@ class _DeductionListUserScopedState extends State<DeductionListUserScoped> {
 class _PreCallNotesListUserScoped extends StatefulWidget {
   final String doctorId;
   final String scheduledVisitId;
-  const _PreCallNotesListUserScoped(
-      {required this.doctorId, required this.scheduledVisitId});
+
+  const _PreCallNotesListUserScoped({
+    required this.doctorId,
+    required this.scheduledVisitId,
+  });
 
   @override
   State<_PreCallNotesListUserScoped> createState() =>
@@ -208,7 +257,7 @@ class _PreCallNotesListUserScoped extends StatefulWidget {
 
 class _PreCallNotesListUserScopedState
     extends State<_PreCallNotesListUserScoped> {
-  String? emailKey;
+  String? _userId; // MR id like MR00001
   String _userClientType = '';
 
   @override
@@ -219,47 +268,45 @@ class _PreCallNotesListUserScopedState
 
   Future<void> _loadUserPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    final userEmail = prefs.getString('userEmail') ?? '';
+    final userId = prefs.getString('userId') ?? '';
     final clientType = prefs.getString('userClientType') ?? 'both';
     setState(() {
-      emailKey = userEmail.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
+      _userId = userId.isEmpty ? null : userId;
       _userClientType = clientType;
     });
   }
 
-  /// Base doctors collection for this user, matching other updated pages:
-  /// - pharma  -> /flowDB/users/RR/{emailKey}/doctors/doctors
-  /// - farmers -> /flowDB/users/INDOFIL/{emailKey}/doctors/doctors
-  /// - both    -> /flowDB/users/{emailKey}/doctors/doctors
-  CollectionReference<Map<String, dynamic>> _doctorsCollectionRef() {
-    final root =
-        FirebaseFirestore.instance.collection('flowDB').doc('users');
-
-    if (_userClientType == 'pharma') {
-      return root
-          .collection('RR')
-          .doc(emailKey)
-          .collection('doctors')
-          .doc('doctors')
-          .collection('doctors');
-    } else if (_userClientType == 'farmers') {
-      return root
-          .collection('INDOFIL')
-          .doc(emailKey)
-          .collection('doctors')
-          .doc('doctors')
-          .collection('doctors');
-    } else {
-      return root
-          .collection(emailKey!)
-          .doc('doctors')
-          .collection('doctors');
+  /// Root:
+  /// /DaloyClients/IVA/Users/{_userId}/Doctor/{doctorId}/Visits/{scheduledVisitId}/callNotes
+  CollectionReference<Map<String, dynamic>> _callNotesCollection() {
+    if (_userId == null || _userId!.isEmpty) {
+      return FirebaseFirestore.instance
+          .collection('DaloyClients')
+          .doc('IVA')
+          .collection('Users')
+          .doc('_DUMMY')
+          .collection('Doctor')
+          .doc('DUMMY_DOCTOR')
+          .collection('Visits')
+          .doc('DUMMY_VISIT')
+          .collection('callNotes');
     }
+
+    return FirebaseFirestore.instance
+        .collection('DaloyClients')
+        .doc('IVA')
+        .collection('Users')
+        .doc(_userId)
+        .collection('Doctor')
+        .doc(widget.doctorId)
+        .collection('Visits')
+        .doc(widget.scheduledVisitId)
+        .collection('callNotes');
   }
 
   @override
   Widget build(BuildContext context) {
-    if (emailKey == null || emailKey!.isEmpty || _userClientType.isEmpty) {
+    if (_userId == null || _userId!.isEmpty || _userClientType.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
 
@@ -273,11 +320,7 @@ class _PreCallNotesListUserScopedState
         const SizedBox(height: 6),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: _doctorsCollectionRef()
-                .doc(widget.doctorId)
-                .collection('scheduledVisits')
-                .doc(widget.scheduledVisitId)
-                .collection('callNotes')
+            stream: _callNotesCollection()
                 .orderBy('timestamp', descending: true)
                 .snapshots(),
             builder: (context, snapshot) {
@@ -291,37 +334,35 @@ class _PreCallNotesListUserScopedState
               return ListView.builder(
                 itemCount: docs.length,
                 itemBuilder: (context, idx) {
-                  final data =
-                      docs[idx].data() as Map<String, dynamic>;
+                  final data = docs[idx].data() as Map<String, dynamic>;
                   final ts = data['timestamp'] as Timestamp?;
-                  final dt =
-                      ts != null ? ts.toDate() : DateTime.now();
+                  final dt = ts != null ? ts.toDate() : DateTime.now();
                   return Card(
-                    margin:
-                        const EdgeInsets.symmetric(vertical: 6, horizontal: 5),
+                    margin: const EdgeInsets.symmetric(
+                        vertical: 6, horizontal: 5),
                     elevation: 2,
                     child: Padding(
                       padding: const EdgeInsets.all(12.0),
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             data['note'] ?? "Pre-Call Plan",
                             style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                           Padding(
-                            padding:
-                                const EdgeInsets.only(top: 4),
+                            padding: const EdgeInsets.only(top: 4),
                             child: Text(
                               "${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} "
                               "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}",
                               style: const TextStyle(
-                                  color: Colors.red,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13),
+                                color: Colors.red,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                         ],
@@ -334,6 +375,87 @@ class _PreCallNotesListUserScopedState
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Tools tab that loads doctor-specific files from Firebase Storage instead of local files. [web:74]
+class ToolsTabStorage extends StatefulWidget {
+  final String doctorId;
+  final String scheduledVisitId;
+
+  const ToolsTabStorage({
+    Key? key,
+    required this.doctorId,
+    required this.scheduledVisitId,
+  }) : super(key: key);
+
+  @override
+  State<ToolsTabStorage> createState() => _ToolsTabStorageState();
+}
+
+class _ToolsTabStorageState extends State<ToolsTabStorage> {
+  late Future<List<Reference>> _filesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _filesFuture = _loadDoctorFiles();
+  }
+
+  /// Adjust this path to match your bucket structure, e.g.:
+  /// tools/{doctorId}/... or tools/{doctorId}/{scheduledVisitId}/...
+  Future<List<Reference>> _loadDoctorFiles() async {
+    final storage = FirebaseStorage.instance;
+    // Example: all files under "tools/{doctorId}"
+    final doctorFolderRef =
+        storage.ref().child('tools/${widget.doctorId}');
+
+    final listResult = await doctorFolderRef.listAll(); // small dir only [web:74]
+    return listResult.items;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Reference>>(
+      future: _filesFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text('Error loading tools: ${snapshot.error}'),
+          );
+        }
+        final files = snapshot.data ?? [];
+        if (files.isEmpty) {
+          return const Center(
+            child: Text('No tools available for this doctor.'),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: files.length,
+          itemBuilder: (context, index) {
+            final fileRef = files[index];
+            final name = fileRef.name;
+
+            return ListTile(
+              leading: const Icon(Icons.insert_drive_file),
+              title: Text(name),
+              subtitle: Text(fileRef.fullPath),
+              onTap: () async {
+                // You can later implement:
+                // final url = await fileRef.getDownloadURL();
+                // then open it in a PDF/image viewer or browser.
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
